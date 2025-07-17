@@ -1,0 +1,468 @@
+import React from 'react';
+
+const TechStackSlide = () => {
+  return (
+    <div style={{
+      width: '1920px',
+      height: '1440px',
+      backgroundColor: '#ffffff',
+      fontFamily: '"Noto Sans KR", "Roboto", sans-serif',
+      display: 'flex',
+      flexDirection: 'column',
+      padding: '80px 120px',
+      boxSizing: 'border-box',
+      overflow: 'hidden'
+    }}>
+      {/* 헤더 */}
+      <div style={{
+        textAlign: 'center',
+        marginBottom: '50px'
+      }}>
+        <h1 style={{
+          fontSize: '52px',
+          fontWeight: '800',
+          color: '#1e293b',
+          margin: '0'
+        }}>
+          🛠️ 기술 스택 & 구현 방안
+        </h1>
+        <div style={{
+          fontSize: '28px',
+          color: '#64748b',
+          marginTop: '16px',
+          fontWeight: '500'
+        }}>
+          현대적 클라우드 네이티브 기술 스택과 자동화 워크플로우
+        </div>
+      </div>
+
+      {/* 메인 콘텐츠 - 좌우 2열 */}
+      <div style={{
+        display: 'flex',
+        gap: '60px',
+        flex: 1,
+        minHeight: '1100px'
+      }}>
+        
+        {/* 좌측 열 - 기술 스택 */}
+        <div style={{
+          flex: 1,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '30px'
+        }}>
+          <h2 style={{
+            fontSize: '36px',
+            fontWeight: '700',
+            color: '#059669',
+            textAlign: 'center',
+            marginBottom: '20px'
+          }}>
+            💻 Technology Stack
+            <br />
+            <span style={{ fontSize: '28px', color: '#64748b' }}>기술 스택</span>
+          </h2>
+
+          {/* 클라우드 인프라 */}
+          <div style={{
+            backgroundColor: '#f0f9ff',
+            padding: '30px',
+            borderRadius: '16px',
+            border: '2px solid #bae6fd'
+          }}>
+            <h3 style={{
+              fontSize: '28px',
+              fontWeight: '700',
+              color: '#0891b2',
+              marginBottom: '16px',
+              textAlign: 'center'
+            }}>
+              ☁️ Cloud Infrastructure
+            </h3>
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: '1fr 1fr',
+              gap: '12px',
+              fontSize: '22px'
+            }}>
+              <div style={{ backgroundColor: '#ffffff', padding: '15px', borderRadius: '8px', textAlign: 'center' }}>
+                <strong style={{ color: '#dc2626' }}>AWS</strong> Cloud Provider
+              </div>
+              <div style={{ backgroundColor: '#ffffff', padding: '15px', borderRadius: '8px', textAlign: 'center' }}>
+                <strong style={{ color: '#dc2626' }}>EC2, ECS</strong> Fargate
+              </div>
+              <div style={{ backgroundColor: '#ffffff', padding: '15px', borderRadius: '8px', textAlign: 'center' }}>
+                <strong style={{ color: '#dc2626' }}>S3</strong> Storage
+              </div>
+              <div style={{ backgroundColor: '#ffffff', padding: '15px', borderRadius: '8px', textAlign: 'center' }}>
+                <strong style={{ color: '#dc2626' }}>RDS, DynamoDB</strong>
+              </div>
+              <div style={{ backgroundColor: '#ffffff', padding: '15px', borderRadius: '8px', textAlign: 'center' }}>
+                <strong style={{ color: '#dc2626' }}>VPC, ALB</strong> Networking
+              </div>
+              <div style={{ backgroundColor: '#ffffff', padding: '15px', borderRadius: '8px', textAlign: 'center' }}>
+                <strong style={{ color: '#dc2626' }}>Docker, ECR</strong>
+              </div>
+            </div>
+          </div>
+
+          {/* 보안 모니터링 */}
+          <div style={{
+            backgroundColor: '#fef2f2',
+            padding: '30px',
+            borderRadius: '16px',
+            border: '2px solid #fecaca'
+          }}>
+            <h3 style={{
+              fontSize: '28px',
+              fontWeight: '700',
+              color: '#dc2626',
+              marginBottom: '16px',
+              textAlign: 'center'
+            }}>
+              🔒 Security Monitoring
+            </h3>
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: '1fr 1fr',
+              gap: '12px',
+              fontSize: '22px'
+            }}>
+              <div style={{ backgroundColor: '#ffffff', padding: '15px', borderRadius: '8px', textAlign: 'center' }}>
+                <strong style={{ color: '#059669' }}>Splunk</strong> Universal Forwarder
+              </div>
+              <div style={{ backgroundColor: '#ffffff', padding: '15px', borderRadius: '8px', textAlign: 'center' }}>
+                <strong style={{ color: '#059669' }}>CloudWatch</strong> Logs
+              </div>
+              <div style={{ backgroundColor: '#ffffff', padding: '15px', borderRadius: '8px', textAlign: 'center' }}>
+                <strong style={{ color: '#059669' }}>CloudTrail</strong> Audit
+              </div>
+              <div style={{ backgroundColor: '#ffffff', padding: '15px', borderRadius: '8px', textAlign: 'center' }}>
+                <strong style={{ color: '#059669' }}>GuardDuty</strong> Threat Detection
+              </div>
+            </div>
+          </div>
+
+          {/* 개발 도구 */}
+          <div style={{
+            backgroundColor: '#f0fdf4',
+            padding: '30px',
+            borderRadius: '16px',
+            border: '2px solid #bbf7d0'
+          }}>
+            <h3 style={{
+              fontSize: '28px',
+              fontWeight: '700',
+              color: '#059669',
+              marginBottom: '16px',
+              textAlign: 'center'
+            }}>
+              🔧 Development Tools
+            </h3>
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: '1fr 1fr',
+              gap: '12px',
+              fontSize: '22px'
+            }}>
+              <div style={{ backgroundColor: '#ffffff', padding: '15px', borderRadius: '8px', textAlign: 'center' }}>
+                <strong style={{ color: '#7c3aed' }}>Python</strong> FastAPI, boto3
+              </div>
+              <div style={{ backgroundColor: '#ffffff', padding: '15px', borderRadius: '8px', textAlign: 'center' }}>
+                <strong style={{ color: '#7c3aed' }}>Terraform</strong> IaC
+              </div>
+              <div style={{ backgroundColor: '#ffffff', padding: '15px', borderRadius: '8px', textAlign: 'center' }}>
+                <strong style={{ color: '#7c3aed' }}>GitHub</strong> Version Control
+              </div>
+              <div style={{ backgroundColor: '#ffffff', padding: '15px', borderRadius: '8px', textAlign: 'center' }}>
+                <strong style={{ color: '#7c3aed' }}>GitHub Actions</strong> CI/CD
+              </div>
+            </div>
+          </div>
+
+          {/* 자동화 엔진 */}
+          <div style={{
+            backgroundColor: '#fefce8',
+            padding: '30px',
+            borderRadius: '16px',
+            border: '2px solid #fde047'
+          }}>
+            <h3 style={{
+              fontSize: '28px',
+              fontWeight: '700',
+              color: '#ca8a04',
+              marginBottom: '16px',
+              textAlign: 'center'
+            }}>
+              ⚡ Automation Engine
+            </h3>
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: '1fr 1fr',
+              gap: '12px',
+              fontSize: '22px'
+            }}>
+              <div style={{ backgroundColor: '#ffffff', padding: '15px', borderRadius: '8px', textAlign: 'center' }}>
+                <strong style={{ color: '#0891b2' }}>boto3</strong> AWS SDK
+              </div>
+              <div style={{ backgroundColor: '#ffffff', padding: '15px', borderRadius: '8px', textAlign: 'center' }}>
+                <strong style={{ color: '#0891b2' }}>Terraform</strong> Provider API
+              </div>
+              <div style={{ backgroundColor: '#ffffff', padding: '15px', borderRadius: '8px', textAlign: 'center' }}>
+                <strong style={{ color: '#0891b2' }}>EventBridge</strong> + Lambda
+              </div>
+              <div style={{ backgroundColor: '#ffffff', padding: '15px', borderRadius: '8px', textAlign: 'center' }}>
+                <strong style={{ color: '#0891b2' }}>Slack API</strong>, SNS
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* 우측 열 - 구현 워크플로우 */}
+        <div style={{
+          flex: 1,
+          display: 'flex',
+          flexDirection: 'column'
+        }}>
+          <h2 style={{
+            fontSize: '36px',
+            fontWeight: '700',
+            color: '#7c3aed',
+            textAlign: 'center',
+            marginBottom: '30px'
+          }}>
+            🔄 Implementation Workflow
+            <br />
+            <span style={{ fontSize: '28px', color: '#64748b' }}>구현 워크플로우</span>
+          </h2>
+
+          {/* 워크플로우 단계들 */}
+          <div style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '20px',
+            flex: 1
+          }}>
+            {/* 1단계 */}
+            <div style={{
+              backgroundColor: '#f8fafc',
+              padding: '25px',
+              borderRadius: '16px',
+              border: '2px solid #e2e8f0',
+              position: 'relative'
+            }}>
+              <div style={{
+                position: 'absolute',
+                top: '-15px',
+                left: '30px',
+                backgroundColor: '#dc2626',
+                color: '#ffffff',
+                padding: '8px 16px',
+                borderRadius: '20px',
+                fontSize: '18px',
+                fontWeight: '700'
+              }}>
+                STEP 1
+              </div>
+              <h3 style={{
+                fontSize: '26px',
+                fontWeight: '700',
+                color: '#1e293b',
+                marginBottom: '12px',
+                marginTop: '10px'
+              }}>
+                🔍 실시간 보안 진단
+              </h3>
+              <p style={{
+                fontSize: '22px',
+                color: '#64748b',
+                lineHeight: '1.4',
+                margin: 0
+              }}>
+                <strong>boto3</strong>로 SK Shieldus 41개 항목 실시간 점검
+                <br />
+                AWS 리소스 상태 모니터링 및 취약점 탐지
+              </p>
+            </div>
+
+            {/* 2단계 */}
+            <div style={{
+              backgroundColor: '#f8fafc',
+              padding: '25px',
+              borderRadius: '16px',
+              border: '2px solid #e2e8f0',
+              position: 'relative'
+            }}>
+              <div style={{
+                position: 'absolute',
+                top: '-15px',
+                left: '30px',
+                backgroundColor: '#0891b2',
+                color: '#ffffff',
+                padding: '8px 16px',
+                borderRadius: '20px',
+                fontSize: '18px',
+                fontWeight: '700'
+              }}>
+                STEP 2
+              </div>
+              <h3 style={{
+                fontSize: '26px',
+                fontWeight: '700',
+                color: '#1e293b',
+                marginBottom: '12px',
+                marginTop: '10px'
+              }}>
+                🔧 Terraform 코드 자동 생성
+              </h3>
+              <p style={{
+                fontSize: '22px',
+                color: '#64748b',
+                lineHeight: '1.4',
+                margin: 0
+              }}>
+                취약점 발견 시 <strong>안전한 수정 코드</strong> 자동 생성
+                <br />
+                Infrastructure as Code 기반 표준화된 템플릿
+              </p>
+            </div>
+
+            {/* 3단계 */}
+            <div style={{
+              backgroundColor: '#f8fafc',
+              padding: '25px',
+              borderRadius: '16px',
+              border: '2px solid #e2e8f0',
+              position: 'relative'
+            }}>
+              <div style={{
+                position: 'absolute',
+                top: '-15px',
+                left: '30px',
+                backgroundColor: '#059669',
+                color: '#ffffff',
+                padding: '8px 16px',
+                borderRadius: '20px',
+                fontSize: '18px',
+                fontWeight: '700'
+              }}>
+                STEP 3
+              </div>
+              <h3 style={{
+                fontSize: '26px',
+                fontWeight: '700',
+                color: '#1e293b',
+                marginBottom: '12px',
+                marginTop: '10px'
+              }}>
+                📋 Git PR 승인 프로세스
+              </h3>
+              <p style={{
+                fontSize: '22px',
+                color: '#64748b',
+                lineHeight: '1.4',
+                margin: 0
+              }}>
+                <strong>GitHub Pull Request</strong> 자동 생성
+                <br />
+                팀 리뷰 → 승인 → 안전한 배포 프로세스
+              </p>
+            </div>
+
+            {/* 4단계 */}
+            <div style={{
+              backgroundColor: '#f8fafc',
+              padding: '25px',
+              borderRadius: '16px',
+              border: '2px solid #e2e8f0',
+              position: 'relative'
+            }}>
+              <div style={{
+                position: 'absolute',
+                top: '-15px',
+                left: '30px',
+                backgroundColor: '#7c3aed',
+                color: '#ffffff',
+                padding: '8px 16px',
+                borderRadius: '20px',
+                fontSize: '18px',
+                fontWeight: '700'
+              }}>
+                STEP 4
+              </div>
+              <h3 style={{
+                fontSize: '26px',
+                fontWeight: '700',
+                color: '#1e293b',
+                marginBottom: '12px',
+                marginTop: '10px'
+              }}>
+                🚀 자동 배포 & 모니터링
+              </h3>
+              <p style={{
+                fontSize: '22px',
+                color: '#64748b',
+                lineHeight: '1.4',
+                margin: 0
+              }}>
+                <strong>GitHub Actions</strong> CI/CD 파이프라인
+                <br />
+                Splunk 실시간 모니터링 & 차등 알림 시스템
+              </p>
+            </div>
+
+            {/* 5단계 */}
+            <div style={{
+              backgroundColor: '#f8fafc',
+              padding: '25px',
+              borderRadius: '16px',
+              border: '2px solid #e2e8f0',
+              position: 'relative'
+            }}>
+              <div style={{
+                position: 'absolute',
+                top: '-15px',
+                left: '30px',
+                backgroundColor: '#ca8a04',
+                color: '#ffffff',
+                padding: '8px 16px',
+                borderRadius: '20px',
+                fontSize: '18px',
+                fontWeight: '700'
+              }}>
+                STEP 5
+              </div>
+              <h3 style={{
+                fontSize: '26px',
+                fontWeight: '700',
+                color: '#1e293b',
+                marginBottom: '12px',
+                marginTop: '10px'
+              }}>
+                📊 ISMS-P 증적 자동 생성
+              </h3>
+              <p style={{
+                fontSize: '22px',
+                color: '#64748b',
+                lineHeight: '1.4',
+                margin: 0
+              }}>
+                <strong>31개 매핑 항목</strong> 자동 증적 관리
+                <br />
+                실시간 컴플라이언스 상태 추적 & 보고서 생성
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Google Fonts 로드 */}
+      <link 
+        href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700;800&family=Roboto:wght@400;500;600;700;800&display=swap" 
+        rel="stylesheet" 
+      />
+    </div>
+  );
+};
+
+export default TechStackSlide;
