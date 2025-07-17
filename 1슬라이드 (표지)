@@ -1,0 +1,164 @@
+import React from 'react';
+
+const CoverSlide = () => {
+  return (
+    <div style={{
+      width: '1920px',
+      height: '1440px',
+      backgroundColor: '#ffffff',
+      fontFamily: '"Noto Sans KR", "Roboto", sans-serif',
+      display: 'flex',
+      flexDirection: 'column',
+      padding: '80px 120px',
+      boxSizing: 'border-box',
+      overflow: 'hidden'
+    }}>
+      {/* 헤더 - 학교/과정 정보 */}
+      <div style={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: '60px'
+      }}>
+        <div style={{ 
+          fontSize: '32px', 
+          fontWeight: '600',
+          color: '#2563eb'
+        }}>
+          🚗 현대오토에버 모빌리티 SW스쿨
+        </div>
+        <div style={{
+          fontSize: '28px',
+          color: '#64748b',
+          fontWeight: '500'
+        }}>
+          2025.07.18
+        </div>
+      </div>
+
+      {/* 과정 및 팀 정보 */}
+      <div style={{
+        display: 'flex',
+        gap: '60px',
+        marginBottom: '120px'
+      }}>
+        <div style={{
+          backgroundColor: '#f1f5f9',
+          padding: '20px 40px',
+          borderRadius: '16px',
+          fontSize: '24px',
+          fontWeight: '600',
+          color: '#334155'
+        }}>
+          🔐 IT보안 2기
+        </div>
+        <div style={{
+          backgroundColor: '#dbeafe',
+          padding: '20px 40px',
+          borderRadius: '16px',
+          fontSize: '24px',
+          fontWeight: '600',
+          color: '#1e40af'
+        }}>
+          @ Team 2
+        </div>
+      </div>
+
+      {/* 메인 제목 */}
+      <div style={{
+        textAlign: 'center',
+        marginBottom: '80px'
+      }}>
+        <h1 style={{
+          fontSize: '56px',
+          fontWeight: '800',
+          lineHeight: '1.2',
+          color: '#1e293b',
+          margin: '0 0 30px 0'
+        }}>
+          <span style={{ color: '#dc2626' }}>Terraform</span> 기반 <span style={{ color: '#0891b2' }}>AWS 인프라 보안 자동화</span> 및
+          <br />
+          <span style={{ color: '#059669' }}>Splunk 통합</span> 보안 모니터링 플랫폼
+        </h1>
+
+      </div>
+
+      {/* 팀 정보 */}
+      <div style={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        backgroundColor: '#f8fafc',
+        padding: '80px 100px',
+        borderRadius: '20px',
+        border: '2px solid #e2e8f0'
+      }}>
+        {/* 팀원 정보 영역 */}
+        <div style={{
+          flex: 1,
+          paddingLeft: '60px'
+        }}>
+          <div style={{
+            fontSize: '28px',
+            color: '#64748b',
+            marginBottom: '24px',
+            fontWeight: '500'
+          }}>
+            Team Members
+          </div>
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: '1fr 1fr 1fr',
+            gap: '20px'
+          }}>
+            {['박부성', '김태곤', '김선혁'].map((member, index) => (
+              <div key={index} style={{
+                backgroundColor: '#ffffff',
+                padding: '20px',
+                borderRadius: '12px',
+                border: '1px solid #e2e8f0',
+                fontSize: '20px',
+                color: '#334155',
+                textAlign: 'center',
+                fontWeight: '600'
+              }}>
+                👤 {member}
+              </div>
+            ))}
+          </div>
+          <div style={{
+            marginTop: '20px',
+            display: 'grid',
+            gridTemplateColumns: '1fr 1fr',
+            gap: '20px'
+          }}>
+            {['고은서', '황태영'].map((member, index) => (
+              <div key={index} style={{
+                backgroundColor: '#ffffff',
+                padding: '20px',
+                borderRadius: '12px',
+                border: '1px solid #e2e8f0',
+                fontSize: '20px',
+                color: '#334155',
+                textAlign: 'center',
+                fontWeight: '600'
+              }}>
+                👤 {member}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+
+
+      {/* Google Fonts 로드 */}
+      <link 
+        href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700;800&family=Roboto:wght@400;500;600;700;800&display=swap" 
+        rel="stylesheet" 
+      />
+    </div>
+  );
+};
+
+export default CoverSlide;
