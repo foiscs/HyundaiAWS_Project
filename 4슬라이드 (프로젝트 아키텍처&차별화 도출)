@@ -1,0 +1,369 @@
+import React from 'react';
+
+const SolutionSlide = () => {
+  return (
+    <div style={{
+      width: '1920px',
+      height: '1440px',
+      backgroundColor: '#ffffff',
+      fontFamily: '"Noto Sans KR", "Roboto", sans-serif',
+      display: 'flex',
+      flexDirection: 'column',
+      padding: '80px 120px',
+      boxSizing: 'border-box',
+      overflow: 'hidden'
+    }}>
+      {/* 헤더 */}
+      <div style={{
+        textAlign: 'center',
+        marginBottom: '50px'
+      }}>
+        <h1 style={{
+          fontSize: '52px',
+          fontWeight: '800',
+          color: '#1e293b',
+          margin: '0'
+        }}>
+          🛡️ 솔루션 아키텍처 & 차별성
+        </h1>
+        <div style={{
+          fontSize: '28px',
+          color: '#64748b',
+          marginTop: '16px',
+          fontWeight: '500'
+        }}>
+          통합 보안 자동화 플랫폼의 핵심 구조
+        </div>
+      </div>
+
+      {/* 상단 - 프로젝트 목표 3가지 */}
+      <div style={{
+        display: 'flex',
+        gap: '30px',
+        marginBottom: '40px'
+      }}>
+        <div style={{
+          flex: 1,
+          backgroundColor: '#fef2f2',
+          padding: '30px',
+          borderRadius: '16px',
+          border: '2px solid #fecaca',
+          textAlign: 'center'
+        }}>
+          <h3 style={{
+            fontSize: '24px',
+            fontWeight: '700',
+            color: '#dc2626',
+            marginBottom: '16px'
+          }}>
+            🔧 Terraform + boto3
+            <br />
+            하이브리드 자동화
+          </h3>
+          <p style={{
+            fontSize: '18px',
+            color: '#334155',
+            lineHeight: '1.4',
+            margin: 0
+          }}>
+            <strong>boto3:</strong> 실시간 진단
+            <br />
+            <strong>Terraform:</strong> 안전한 자동 수정
+            <br />
+            코드 생성 → PR → 승인 → 적용
+          </p>
+        </div>
+
+        <div style={{
+          flex: 1,
+          backgroundColor: '#f0f9ff',
+          padding: '30px',
+          borderRadius: '16px',
+          border: '2px solid #bae6fd',
+          textAlign: 'center'
+        }}>
+          <h3 style={{
+            fontSize: '24px',
+            fontWeight: '700',
+            color: '#0891b2',
+            marginBottom: '16px'
+          }}>
+            📋 ISMS-P 컴플라이언스
+            <br />
+            완전 자동화
+          </h3>
+          <p style={{
+            fontSize: '18px',
+            color: '#334155',
+            lineHeight: '1.4',
+            margin: 0
+          }}>
+            <strong>ISMS-P 31개</strong> 매핑 항목
+            <br />
+            <strong>SK Shieldus 41개</strong> 체크리스트
+            <br />
+            자동 검증 & 증적 생성
+          </p>
+        </div>
+
+        <div style={{
+          flex: 1,
+          backgroundColor: '#f0fdf4',
+          padding: '30px',
+          borderRadius: '16px',
+          border: '2px solid #bbf7d0',
+          textAlign: 'center'
+        }}>
+          <h3 style={{
+            fontSize: '24px',
+            fontWeight: '700',
+            color: '#059669',
+            marginBottom: '16px'
+          }}>
+            📊 Splunk 기반
+            <br />
+            통합 모니터링
+          </h3>
+          <p style={{
+            fontSize: '18px',
+            color: '#334155',
+            lineHeight: '1.4',
+            margin: 0
+          }}>
+            실시간 보안 이벤트 알림
+            <br />
+            <strong>위험도별 차등 알림</strong>
+            <br />
+            Slack, Teams, Email, SMS
+          </p>
+        </div>
+      </div>
+
+      {/* 중단 - 아키텍처 다이어그램 */}
+      <div style={{
+        backgroundColor: '#f8fafc',
+        padding: '40px',
+        borderRadius: '20px',
+        border: '2px solid #e2e8f0',
+        marginBottom: '30px',
+        minHeight: '360px',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center'
+      }}>
+        <h2 style={{
+          fontSize: '32px',
+          fontWeight: '700',
+          color: '#1e293b',
+          marginBottom: '25px',
+          textAlign: 'center'
+        }}>
+          🏗️ 시스템 아키텍처
+        </h2>
+        
+        {/* 아키텍처 다이어그램 플레이스홀더 */}
+        <div style={{
+          width: '100%',
+          height: '280px',
+          backgroundColor: '#e5e7eb',
+          borderRadius: '12px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          border: '3px dashed #9ca3af'
+        }}>
+          <div style={{
+            textAlign: 'center',
+            color: '#6b7280',
+            fontSize: '22px',
+            fontWeight: '600',
+            lineHeight: '1.4'
+          }}>
+            📐 여기에 시스템 아키텍처 다이어그램을 넣으면 됩니다!
+            <br />
+            <span style={{ fontSize: '20px' }}>
+              (Developer → GitHub → Terraform → AWS → Splunk → Alert 플로우)
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* 하단 - 차별성 */}
+      <div style={{
+        display: 'flex',
+        gap: '40px'
+      }}>
+        <div style={{
+          flex: 1,
+          backgroundColor: '#fefce8',
+          padding: '25px',
+          borderRadius: '16px',
+          border: '2px solid #fde047'
+        }}>
+          <h3 style={{
+            fontSize: '28px',
+            fontWeight: '700',
+            color: '#ca8a04',
+            marginBottom: '20px',
+            textAlign: 'center'
+          }}>
+            🚀 핵심 차별성
+          </h3>
+          <div style={{
+            display: 'flex',
+            gap: '12px',
+            fontSize: '20px',
+            color: '#334155'
+          }}>
+            <div style={{ 
+              flex: 1,
+              backgroundColor: '#ffffff',
+              padding: '20px 15px',
+              borderRadius: '8px',
+              border: '1px solid #fde047',
+              textAlign: 'center'
+            }}>
+              <strong style={{ color: '#dc2626', display: 'block', marginBottom: '10px', fontSize: '18px' }}>🔧 IaC 실시간</strong>
+              <span style={{ fontSize: '16px' }}>Terraform 코드 자동 생성→배포</span>
+            </div>
+            <div style={{ 
+              flex: 1,
+              backgroundColor: '#ffffff',
+              padding: '20px 15px',
+              borderRadius: '8px',
+              border: '1px solid #fde047',
+              textAlign: 'center'
+            }}>
+              <strong style={{ color: '#0891b2', display: 'block', marginBottom: '10px', fontSize: '18px' }}>📋 SK Shieldus</strong>
+              <span style={{ fontSize: '16px' }}>41개 완전 커버 AWS 특화</span>
+            </div>
+            <div style={{ 
+              flex: 1,
+              backgroundColor: '#ffffff',
+              padding: '20px 15px',
+              borderRadius: '8px',
+              border: '1px solid #fde047',
+              textAlign: 'center'
+            }}>
+              <strong style={{ color: '#059669', display: 'block', marginBottom: '10px', fontSize: '18px' }}>⚡ 엔드투엔드</strong>
+              <span style={{ fontSize: '16px' }}>개발→운영→보안 통합</span>
+            </div>
+            <div style={{ 
+              flex: 1,
+              backgroundColor: '#ffffff',
+              padding: '20px 15px',
+              borderRadius: '8px',
+              border: '1px solid #fde047',
+              textAlign: 'center'
+            }}>
+              <strong style={{ color: '#7c3aed', display: 'block', marginBottom: '10px', fontSize: '18px' }}>🎯 Shift-Left</strong>
+              <span style={{ fontSize: '16px' }}>코드 작성 단계 예방</span>
+            </div>
+          </div>
+        </div>
+
+        <div style={{
+          flex: 1,
+          backgroundColor: '#f5f3ff',
+          padding: '25px',
+          borderRadius: '16px',
+          border: '2px solid #c4b5fd'
+        }}>
+          <h3 style={{
+            fontSize: '28px',
+            fontWeight: '700',
+            color: '#7c3aed',
+            marginBottom: '20px',
+            textAlign: 'center'
+          }}>
+            🆚 기존 솔루션과의 비교
+          </h3>
+          <div style={{
+            display: 'flex',
+            gap: '12px',
+            fontSize: '17px',
+            color: '#334155'
+          }}>
+            <div style={{
+              flex: 1,
+              padding: '20px 12px',
+              backgroundColor: '#ffffff',
+              borderRadius: '8px',
+              border: '1px solid #c4b5fd',
+              textAlign: 'center'
+            }}>
+              <div style={{ marginBottom: '10px' }}>
+                <strong style={{ color: '#dc2626', fontSize: '16px' }}>❌ 기존</strong>
+              </div>
+              <div style={{ marginBottom: '10px', fontSize: '15px' }}>단순 점검 & 알림</div>
+              <div style={{ borderTop: '1px solid #e5e7eb', paddingTop: '10px' }}>
+                <strong style={{ color: '#059669', fontSize: '16px' }}>✅ 우리</strong>
+              </div>
+              <div style={{ fontSize: '15px' }}>실제 자동 수정</div>
+            </div>
+            <div style={{
+              flex: 1,
+              padding: '20px 12px',
+              backgroundColor: '#ffffff',
+              borderRadius: '8px',
+              border: '1px solid #c4b5fd',
+              textAlign: 'center'
+            }}>
+              <div style={{ marginBottom: '10px' }}>
+                <strong style={{ color: '#dc2626', fontSize: '16px' }}>❌ 기존</strong>
+              </div>
+              <div style={{ marginBottom: '10px', fontSize: '15px' }}>배포 후 관제</div>
+              <div style={{ borderTop: '1px solid #e5e7eb', paddingTop: '10px' }}>
+                <strong style={{ color: '#059669', fontSize: '16px' }}>✅ 우리</strong>
+              </div>
+              <div style={{ fontSize: '15px' }}>코드 단계 예방</div>
+            </div>
+            <div style={{
+              flex: 1,
+              padding: '20px 12px',
+              backgroundColor: '#ffffff',
+              borderRadius: '8px',
+              border: '1px solid #c4b5fd',
+              textAlign: 'center'
+            }}>
+              <div style={{ marginBottom: '10px' }}>
+                <strong style={{ color: '#dc2626', fontSize: '16px' }}>❌ 기존</strong>
+              </div>
+              <div style={{ marginBottom: '10px', fontSize: '15px' }}>개별 도구 분산</div>
+              <div style={{ borderTop: '1px solid #e5e7eb', paddingTop: '10px' }}>
+                <strong style={{ color: '#059669', fontSize: '16px' }}>✅ 우리</strong>
+              </div>
+              <div style={{ fontSize: '15px' }}>통합 원스톱</div>
+            </div>
+            <div style={{
+              flex: 1,
+              padding: '20px 12px',
+              backgroundColor: '#ffffff',
+              borderRadius: '8px',
+              border: '1px solid #c4b5fd',
+              textAlign: 'center'
+            }}>
+              <div style={{ marginBottom: '10px' }}>
+                <strong style={{ color: '#dc2626', fontSize: '16px' }}>❌ 기존</strong>
+              </div>
+              <div style={{ marginBottom: '10px', fontSize: '15px' }}>수동 증적</div>
+              <div style={{ borderTop: '1px solid #e5e7eb', paddingTop: '10px' }}>
+                <strong style={{ color: '#059669', fontSize: '16px' }}>✅ 우리</strong>
+              </div>
+              <div style={{ fontSize: '15px' }}>자동 증적 생성</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Google Fonts 로드 */}
+      <link 
+        href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700;800&family=Roboto:wght@400;500;600;700;800&display=swap" 
+        rel="stylesheet" 
+      />
+    </div>
+  );
+};
+
+export default SolutionSlide;
