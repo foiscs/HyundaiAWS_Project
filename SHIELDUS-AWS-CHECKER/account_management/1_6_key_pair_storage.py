@@ -3,7 +3,6 @@ from botocore.exceptions import ClientError
 import json
 
 def is_bucket_public(s3_client, bucket_name):
-    # (이전 답변과 동일한 헬퍼 함수)
     try:
         pab = s3_client.get_public_access_block(Bucket=bucket_name)['PublicAccessBlockConfiguration']
         if all([pab.get('BlockPublicAcls'), pab.get('IgnorePublicAcls'), pab.get('BlockPublicPolicy'), pab.get('RestrictPublicBuckets')]):
