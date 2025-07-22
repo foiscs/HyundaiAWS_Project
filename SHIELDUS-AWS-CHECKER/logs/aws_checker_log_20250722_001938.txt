@@ -1,0 +1,212 @@
+============================================================
+      SK Shieldus AWS Security Checker Start
+============================================================
+[INFO] 1.1 사용자 계정 관리 체크 중...
+[✓ COMPLIANT] 1.1 관리자 권한 사용자 수가 적절함 (1명)
+  └─ 관리자: terraform-user
+--------------------------------------------------
+[INFO] 1.2 IAM 사용자 계정 단일화 관리 체크 중...
+[⚠ WARNING] 1.2 장기 미사용(90일 이상) 사용자 계정이 존재합니다 (1개).
+  ├─ 비활성 의심 사용자: asset-user (활동 기록 없음)
+  └─ 🔧 퇴사자, 테스트, 불필요한 계정은 삭제하거나 비활성화하세요.
+  └─ 🔧 명령어 (비활성화): aws iam deactivate-login-profile --user-name <사용자명>
+  └─ 🔧 명령어 (삭제): aws iam delete-user --user-name <사용자명>
+--------------------------------------------------
+[INFO] 1.3 IAM 사용자 계정 식별 관리 체크 중...
+[⚠ WARNING] 1.3 태그가 없는 사용자 계정 존재 (6개)
+  ├─ 태그 없는 사용자: asset-user, ecs-fargate-user, github-actions-eks-user, github-actions-user, post-server, terraform-user
+  └─ 🔧 각 사용자에 식별 태그를 추가하세요 (예: 부서, 역할).
+  └─ 🔧 명령어: aws iam tag-user --user-name <사용자명> --tags Key=Department,Value=<부서명> Key=Role,Value=<역할>
+--------------------------------------------------
+[INFO] 1.4 IAM 그룹 사용자 계정 관리 체크 중...
+[⚠ WARNING] 1.4 그룹에 속하지 않은 사용자 존재 (6개)
+  ├─ 그룹 미소속 사용자: asset-user, ecs-fargate-user, github-actions-eks-user, github-actions-user, post-server, terraform-user
+  └─ 🔧 권한 관리를 위해 사용자를 적절한 그룹에 추가하세요.
+  └─ 🔧 명령어: aws iam add-user-to-group --user-name <사용자명> --group-name <그룹명>
+--------------------------------------------------
+[INFO] 1.5 Key Pair 접근 관리 체크 중...
+[✓ COMPLIANT] 1.5 실행 중인 모든 EC2 인스턴스에 Key Pair가 할당되어 있습니다.
+--------------------------------------------------
+[INFO] 1.6 Key Pair 보관 관리 체크 중...
+[✓ COMPLIANT] 1.6 공개 가능한 S3 버킷에서 Key Pair 파일이 발견되지 않았습니다.
+--------------------------------------------------
+[INFO] 1.7 Admin Console(Root) 관리자 정책 관리 체크 중...
+[✓ COMPLIANT] 1.7 Root 계정에 Access Key가 생성되어 있지 않습니다.
+--------------------------------------------------
+[INFO] 1.8 Access Key 활성화 및 사용주기 관리 체크 중...
+[✓ COMPLIANT] 1.8 모든 활성 Access Key가 주기 관리 기준을 준수합니다.
+--------------------------------------------------
+[INFO] 1.9 MFA 설정 체크 중...
+[⚠ WARNING] 1.9 Root 계정에 MFA가 활성화되어 있지 않습니다.
+  └─ 🔧 Root 계정의 보안을 위해 즉시 MFA를 설정하세요.
+[✓ COMPLIANT] 1.9 모든 콘솔 접근 가능 IAM 사용자에게 MFA가 활성화되어 있습니다.
+--------------------------------------------------
+[INFO] 1.10 AWS 계정 패스워드 정책 관리 체크 중...
+[⚠ WARNING] 1.10 계정에 패스워드 정책이 설정되어 있지 않습니다.
+  └─ 🔧 IAM 대시보드에서 계정 설정 > 암호 정책을 설정하여 보안을 강화하세요.
+--------------------------------------------------
+[INFO] 1.11 EKS 사용자 관리 체크 중...
+[ⓘ MANUAL] 이 항목은 Kubernetes API 접근이 필요하여 자동 점검이 제한됩니다.
+ ├─ EKS 클러스터의 'aws-auth' ConfigMap을 수동으로 확인해야 합니다.
+ ├─ 아래 명령어를 사용하여 각 클러스터의 사용자 및 역할 매핑을 확인하세요.
+ └─ 🔧 명령어: kubectl describe configmap aws-auth -n kube-system
+ └─ 🔧 점검사항: 'mapUsers' 및 'mapRoles'에 불필요하거나 과도한 권한(예: system:masters)을 가진 항목이 없는지 확인하세요.
+--------------------------------------------------
+[INFO] 1.12 EKS 서비스 어카운트 관리 체크 중...
+[ⓘ MANUAL] 이 항목은 Kubernetes API 접근이 필요하여 자동 점검이 제한됩니다.
+  ├─ Kubernetes API 접근이 필요 없는 Pod/ServiceAccount의 'automountServiceAccountToken' 설정을 확인해야 합니다.
+  ├─ 확인 방법 1: Pod Spec 확인
+  │ └─ `spec.automountServiceAccountToken: false` 설정 여부 확인
+  ├─ 확인 방법 2: ServiceAccount 확인
+  │ └─ `automountServiceAccountToken: false` 설정 여부 확인
+  └─ 🔧 명령어 (기본 SA 확인): kubectl get serviceaccount default -n <네임스페이스> -o yaml
+  └─ 🔧 점검사항: API 접근이 불필요한 애플리케이션에 토큰이 자동으로 마운트되지 않도록 위 설정을 적용하세요.
+--------------------------------------------------
+[INFO] 1.13 EKS 불필요한 익명 접근 관리 체크 중...
+[ⓘ MANUAL] 이 항목은 Kubernetes API 접근이 필요하여 자동 점검이 제한됩니다.
+ ├─ 익명 사용자에 대한 RoleBinding/ClusterRoleBinding을 수동으로 확인해야 합니다.
+ ├─ 아래 명령어를 사용하여 'system:anonymous' 또는 'system:unauthenticated'에 대한 바인딩을 확인하세요.
+ └─ 🔧 명령어 (ClusterRoleBinding): kubectl get clusterrolebindings -o jsonpath='{.items[?(@.subjects[0].name=="system:anonymous")]}'
+ └─ 🔧 명령어 (RoleBinding): kubectl get rolebindings --all-namespaces -o jsonpath='{.items[?(@.subjects[0].name=="system:anonymous")]}'
+ └─ 🔧 점검사항: 'system:public-info-viewer' 외의 불필요한 권한이 익명 사용자에게 부여되지 않았는지 확인하고, 있다면 제거하세요.
+--------------------------------------------------
+[INFO] 2.1 인스턴스 서비스 정책 관리 체크 중...
+[CRITICAL] 'authorization.2_1_instance_service_policy' 점검 중 오류 발생: 'Arn'
+[INFO] 2.2 네트워크 서비스 정책 관리 체크 중...
+[✓ COMPLIANT] 2.2 네트워크 관련 서비스에 과도한 권한(FullAccess)이 부여된 주체가 없습니다.
+--------------------------------------------------
+[INFO] 2.3 기타 서비스 정책 관리 체크 중...
+[✓ COMPLIANT] 2.3 기타 주요 서비스에 과도한 권한(FullAccess/PowerUser)이 부여된 주체가 없습니다.
+--------------------------------------------------
+[INFO] 3.1 보안 그룹 인/아웃바운드 ANY 설정 관리 체크 중...
+[⚠ WARNING] 3.1 모든 IP에 개방된 위험한 인바운드 규칙이 존재합니다 (10건).
+  ├─ SG 'sg-09e776582c818b35e' (fast-server-sg)에 모든 IP로부터 위험한 포트 22(SSH)가 허용됨
+  ├─ SG 'sg-0c67f31ce212fb499' (docker-rds-sg)에 모든 IP로부터 위험한 포트 22(SSH)가 허용됨
+  ├─ SG 'sg-0948b4f63cbf93904' (launch-wizard-2)에 모든 IP로부터 위험한 포트 22(SSH)가 허용됨
+  ├─ SG 'sg-0e5a8178bcaf21340' (launch-wizard-1)에 모든 IP로부터 위험한 포트 22(SSH)가 허용됨
+  ├─ SG 'sg-098e3dc37ed5c1ec3' (fast-rds-sg)에 모든 IP로부터 위험한 포트 22(SSH)가 허용됨
+  ├─ SG 'sg-0a040fd5a866cc586' (spring-ec2-sg)에 모든 IP로부터 위험한 포트 22(SSH)가 허용됨
+  ├─ SG 'sg-036c7fff5665f0b83' (default)에 모든 IP로부터 위험한 포트 22(SSH)가 허용됨
+  ├─ SG 'sg-05f7d2414ea66f717' (music-app-ec2-sg)에 모든 IP로부터 위험한 포트 22(SSH)가 허용됨
+  ├─ SG 'sg-0e3e1bce7c38a7ec5' (launch-wizard-3)에 모든 IP로부터 위험한 포트 22(SSH)가 허용됨
+  ├─ SG 'sg-0658f30e8cca98bb0' (auto-server-sg)에 모든 IP로부터 위험한 포트 22(SSH)가 허용됨
+  └─ 🔧 소스 IP를 신뢰할 수 있는 특정 IP 대역으로 제한하거나 규칙을 삭제하세요.
+  └─ 🔧 명령어: aws ec2 revoke-security-group-ingress --group-id <SG_ID> ...
+--------------------------------------------------
+[INFO] 3.2 보안 그룹 아웃바운드 불필요 정책 관리 체크 중...
+[⚠ WARNING] 3.2 모든 트래픽을 외부로 허용하는 아웃바운드 규칙이 존재합니다 (20개).
+  ├─ 해당 SG: 'sg-09e776582c818b35e' (fast-server-sg), 'sg-0c67f31ce212fb499' (docker-rds-sg), 'sg-0948b4f63cbf93904' (launch-wizard-2), 'sg-0e5a8178bcaf21340' (launch-wizard-1), 'sg-098e3dc37ed5c1ec3' (fast-rds-sg), 'sg-0a040fd5a866cc586' (spring-ec2-sg), 'sg-09db05a12f150f555' (music-app-sg), 'sg-0fbb779c1198acab0' (music-app2-alb-sg), 'sg-005dcfe51540ebaeb' (music-app1-alb-sg), 'sg-036c7fff5665f0b83' (default), 'sg-05f7d2414ea66f717' (music-app-ec2-sg), 'sg-0ee15fc61e50bd371' (music-app-alb-sg2), 'sg-0379c7ff27337426a' (fast-rds), 'sg-030c006a205b4d9eb' (default), 'sg-0e3e1bce7c38a7ec5' (launch-wizard-3), 'sg-0ed6f2cfa8e09637e' (alb-sg), 'sg-0ece833f372b1a88d' (default), 'sg-0493553dc8f0fa93f' (alb-sg), 'sg-0f4eee773ead1e39c' (music-app-alb-sg), 'sg-0658f30e8cca98bb0' (auto-server-sg)
+  └─ 🔧 이는 기본 설정일 수 있으나, 서버의 역할에 따라 필요한 최소한의 아웃바운드 트래픽만 허용하도록 규칙을 강화하세요.
+--------------------------------------------------
+[INFO] 3.3 네트워크 ACL 트래픽 정책 관리 체크 중...
+[⚠ WARNING] 3.3 모든 트래픽을 허용하는 광범위한 NACL 규칙이 존재합니다 (6건).
+  ├─ NACL 'acl-036a9770270dd4221' (Default: True)에 모든 IP로부터의 모든 아웃바운드 트래픽 허용 규칙(#100)이 존재
+  ├─ NACL 'acl-036a9770270dd4221' (Default: True)에 모든 IP로부터의 모든 인바운드 트래픽 허용 규칙(#100)이 존재
+  ├─ NACL 'acl-01d0a9e0eae209105' (Default: True)에 모든 IP로부터의 모든 아웃바운드 트래픽 허용 규칙(#100)이 존재
+  ├─ NACL 'acl-01d0a9e0eae209105' (Default: True)에 모든 IP로부터의 모든 인바운드 트래픽 허용 규칙(#100)이 존재
+  ├─ NACL 'acl-019eba204a2c15fad' (Default: True)에 모든 IP로부터의 모든 아웃바운드 트래픽 허용 규칙(#100)이 존재
+  ├─ NACL 'acl-019eba204a2c15fad' (Default: True)에 모든 IP로부터의 모든 인바운드 트래픽 허용 규칙(#100)이 존재
+  └─ 🔧 NACL은 Stateless 방화벽이므로, 필요한 인/아웃바운드 트래픽을 명시적으로 허용하고 나머지는 거부하도록 정책을 강화하세요.
+--------------------------------------------------
+[INFO] 3.4 라우팅 테이블 정책 관리 체크 중...
+[✓ COMPLIANT] 3.4 라우팅 테이블 구성에 명백한 오류가 발견되지 않았습니다.
+--------------------------------------------------
+[INFO] 3.5 인터넷 게이트웨이 연결 관리 체크 중...
+[✓ COMPLIANT] 3.5 모든 인터넷 게이트웨이가 VPC에 정상적으로 연결되어 있습니다.
+--------------------------------------------------
+[INFO] 3.6 NAT 게이트웨이 연결 관리 체크 중...
+[✓ COMPLIANT] 3.6 모든 NAT 게이트웨이가 라우팅 테이블에서 사용 중입니다.
+--------------------------------------------------
+[INFO] 3.7 S3 버킷/객체 접근 관리 체크 중...
+[⚠ WARNING] 3.7 공개적으로 액세스 가능한 S3 버킷이 존재합니다 (2개).
+  ├─ 버킷 'ko-front' (사유: 일부 퍼블릭 액세스 차단 비활성, 버킷 정책으로 전체에 공개됨)
+  ├─ 버킷 'ko-post-server' (사유: 일부 퍼블릭 액세스 차단 비활성)
+  └─ 🔧 S3 콘솔에서 [권한] > [퍼블릭 액세스 차단]을 모두 활성화하고, 버킷 정책 및 ACL을 검토하여 공개 설정을 제거하세요.
+--------------------------------------------------
+[INFO] 3.8 RDS 서브넷 가용 영역 관리 체크 중...
+[✓ COMPLIANT] 3.8 모든 RDS DB 서브넷 그룹이 Multi-AZ로 구성되어 있습니다.
+--------------------------------------------------
+[INFO] 3.9 EKS Pod 보안 정책 관리 체크 중...
+[ⓘ MANUAL] 이 항목은 Kubernetes API 접근이 필요하여 자동 점검이 제한됩니다.
+  ├─ 네임스페이스에 Pod Security Standards(PSS) 레이블이 적절히 적용되었는지 수동으로 확인해야 합니다.
+  ├─ 아래 명령어를 사용하여 네임스페이스의 보안 레이블을 확인하세요.
+  └─ 🔧 명령어: kubectl get namespaces --show-labels
+  └─ 🔧 점검사항: 'pod-security.kubernetes.io/enforce' 레이블이 'privileged'로 설정되었거나, 레이블 자체가 없는 네임스페이스가 있는지 확인하세요. 'baseline' 또는 'restricted' 사용을 권장합니다.
+--------------------------------------------------
+[INFO] 3.10 ELB 연결 관리 체크 중...
+[INFO] 3.10 점검할 로드 밸런서(ALB/NLB/GLB)가 없습니다.
+--------------------------------------------------
+[INFO] 4.1 EBS 및 볼륨 암호화 설정 체크 중...
+[⚠ WARNING] 4.1 기본 EBS 암호화가 비활성화된 리전이 있습니다: ap-south-1, eu-north-1, eu-west-3, eu-west-2, eu-west-1, ap-northeast-3, ap-northeast-2, ap-northeast-1, ca-central-1, sa-east-1, ap-southeast-1, ap-southeast-2, eu-central-1, us-east-1, us-east-2, us-west-1, us-west-2
+  └─ 🔧 EC2 대시보드 > 설정 > EBS 암호화에서 기본 암호화를 활성화하세요.
+[✓ COMPLIANT] 4.1 암호화되지 않은 EBS 볼륨이 없습니다.
+--------------------------------------------------
+[INFO] 4.2 RDS 암호화 설정 체크 중...
+[✓ COMPLIANT] 4.2 모든 RDS DB 인스턴스가 암호화되어 있습니다.
+--------------------------------------------------
+[INFO] 4.3 S3 암호화 설정 체크 중...
+[✓ COMPLIANT] 4.3 모든 S3 버킷에 기본 암호화가 설정되어 있습니다.
+--------------------------------------------------
+[INFO] 4.4 통신구간 암호화 설정 체크 중...
+[ⓘ MANUAL] 통신구간 암호화는 서비스 구성에 따라 달라지므로 자동 점검이 제한됩니다.
+  ├─ 점검 1: ELB/ALB/NLB 리스너가 HTTPS/TLS를 사용하는지 확인하세요.
+  │ └─ [3.10 ELB 연결 관리] 항목에서 관련 내용을 점검합니다.
+  ├─ 점검 2: CloudFront 배포가 'Redirect HTTP to HTTPS' 또는 'HTTPS Only'로 설정되었는지 확인하세요.
+  ├─ 점검 3: EC2 인스턴스에 직접 접근 시 SSH/RDP 등 암호화된 프로토콜을 사용하는지 확인하세요.
+  └─ 🔧 애플리케이션과 클라이언트 간, 서비스 간 통신에 TLS/SSL을 적용하여 데이터 유출을 방지하세요.
+--------------------------------------------------
+[INFO] 4.5 CloudTrail 암호화 설정 체크 중...
+[⚠ WARNING] 4.5 SSE-KMS 암호화가 적용되지 않은 CloudTrail이 존재합니다 (1개).
+  ├─ 해당 Trail: music-app-cloudtrail
+  └─ 🔧 CloudTrail 설정에서 로그 파일 암호화를 활성화하고 관리형 키(KMS)를 지정하여 보안을 강화하세요.
+--------------------------------------------------
+[INFO] 4.6 CloudWatch 암호화 설정 체크 중...
+[⚠ WARNING] 4.6 KMS 암호화가 적용되지 않은 CloudWatch 로그 그룹이 존재합니다 (5개).
+  ├─ /aws/ecs/containerinsights/music-app-cluster/performance
+  ├─ /aws/eks/music1-cluster/cluster
+  ├─ /ecs/music-app
+  ├─ /ecs/music-app-task
+  ├─ music-app-cloudtreail-logs
+  └─ 🔧 로그 그룹 생성 시 또는 기존 로그 그룹에 대해 KMS 키를 연결하여 암호화를 활성화하세요.
+  └─ 🔧 명령어: aws logs associate-kms-key --log-group-name <그룹명> --kms-key-id <KMS_KEY_ARN>
+--------------------------------------------------
+[INFO] 4.7 AWS 사용자 계정 로깅 설정 체크 중...
+[⚠ WARNING] 4.7 계정의 모든 활동을 기록하는 Multi-region CloudTrail이 없습니다.
+  └─ 🔧 CloudTrail 서비스에서 [모든 리전에 적용] 옵션을 활성화한 새 추적을 생성하여 계정 전체의 API 활동을 기록하세요.
+--------------------------------------------------
+[INFO] 4.8 인스턴스 로깅 설정 체크 중...
+[ⓘ MANUAL] EC2 인스턴스 내부의 로그 설정은 자동 점검이 불가능합니다.
+  ├─ 점검 1: 인스턴스에 CloudWatch Agent가 설치 및 실행 중인지 확인하세요.
+  ├─ 점검 2: CloudWatch Agent 구성 파일(/opt/aws/amazon-cloudwatch-agent/bin/config.json)에 OS 로그(예: /var/log/messages), 보안 로그(예: /var/log/secure), 애플리케이션 로그 파일이 정의되어 있는지 확인하세요.
+  └─ 🔧 CloudWatch Agent를 설치하고 구성하여 중요한 인스턴스 로그를 CloudWatch Logs로 중앙 집중화하여 모니터링 및 분석하세요.
+--------------------------------------------------
+[INFO] 4.9 RDS 로깅 설정 체크 중...
+[⚠ WARNING] 4.9 주요 로그(Error/Audit)가 활성화되지 않은 RDS DB 인스턴스가 존재합니다 (3개).
+  ├─ database-1 (활성 로그: ['general'])
+  ├─ database-2 (활성 로그: 없음)
+  ├─ database-3 (활성 로그: ['general'])
+  └─ 🔧 RDS 인스턴스 수정 페이지의 [로그 내보내기] 섹션에서 Error, Audit, General, Slow-query 등 필요한 로그를 선택하여 활성화하세요.
+--------------------------------------------------
+[INFO] 4.10 S3 버킷 로깅 설정 체크 중...
+[⚠ WARNING] 4.10 서버 액세스 로깅이 비활성화된 S3 버킷이 존재합니다 (3개).
+  ├─ 해당 버킷: ko-front, ko-post-server
+  └─ 🔧 S3 버킷의 [속성] 탭에서 [서버 액세스 로깅]을 활성화하여 객체 수준의 요청을 기록하세요.
+--------------------------------------------------
+[INFO] 4.11 VPC 플로우 로깅 설정 체크 중...
+[⚠ WARNING] 4.11 Flow Logs가 비활성화된 VPC가 존재합니다 (3개).
+  ├─ 해당 VPC: vpc-0f093065319c94eac, vpc-0c7d8532cde3ad9e3, vpc-01d7a96e8037a0c72
+  └─ 🔧 VPC 대시보드에서 해당 VPC를 선택하고 [작업] > [플로우 로그 생성]을 통해 설정을 활성화하세요.
+--------------------------------------------------
+[INFO] 4.12 로그 보관 기간 설정 체크 중...
+[✓ COMPLIANT] 4.12 주요 로그 그룹의 보관 기간이 1년 이상으로 적절히 설정되어 있습니다.
+--------------------------------------------------
+[INFO] 4.13 백업 사용 여부 체크 중...
+[⚠ WARNING] 4.13 AWS Backup 플랜이 존재하지 않습니다.
+  └─ 🔧 AWS Backup, RDS 자동 백업, EBS 스냅샷 정책 등을 활용하여 중요 데이터의 백업 및 복구 절차를 수립하세요.
+--------------------------------------------------
+[INFO] 4.14 EKS Cluster 제어 플레인 로깅 설정 체크 중...
+[INFO] 4.14 점검할 EKS 클러스터가 없습니다.
+--------------------------------------------------
+[INFO] 4.15 EKS Cluster 암호화 설정 체크 중...
+[INFO] 4.15 점검할 EKS 클러스터가 없습니다.
+--------------------------------------------------
