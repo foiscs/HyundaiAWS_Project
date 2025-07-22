@@ -1,44 +1,87 @@
 import boto3
 from botocore.exceptions import ClientError
-import os, sys
+from datetime import datetime, timezone
+import re
 
-# 상위 디렉토리 경로 추가
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.append(BASE_DIR)
-
-from aws_client import AWSClientManager
+def is_test_user(user_name):
+    return bool(re.match(r'^(test|tmp|guest|retired|퇴직|미사용)', user_name, re.IGNORECASE))
 
 def check():
-    """
-    [1.1] 사용자 계정 관리
-    - AdministratorAccess 권한을 가진 IAM 사용자가 최소한으로 유지되는지 점검
-    - 기준: 관리자 권한을 가진 사용자가 3명 이상일 경우 WARNING
-    """
-    print("[INFO] 1.1 사용자 계정 관리 체크 중...")
+    print("[INFO] 사용자 계정 점검 시작")
     iam = boto3.client('iam')
-    policy_arn = "arn:aws:iam::aws:policy/AdministratorAccess"
-    admin_users = []
-    
+
+    now = datetime.now(timezone.utc)
+    admin_users = set()
+    test_users = set()
+
     try:
-        # 정책에 연결된 모든 사용자 목록 가져오기
-        response = iam.list_entities_for_policy(PolicyArn=policy_arn)
-        admin_users.extend([user['UserName'] for user in response.get('PolicyUsers', [])])
+        paginator = iam.get_paginator('list_users')
+        for page in paginator.paginate():
+            for user in page['Users']:
+                name = user['UserName']
+                is_admin = False
 
-        # 페이징 처리
-        while response.get('IsTruncated'):
-            response = iam.list_entities_for_policy(PolicyArn=policy_arn, Marker=response['Marker'])
-            admin_users.extend([user['UserName'] for user in response.get('PolicyUsers', [])])
+                if is_test_user(name):
+                    test_users.add(name)
 
-        if not admin_users:
-            print("[✓ COMPLIANT] 1.1 관리자 권한(AdministratorAccess)을 가진 사용자가 없습니다.")
-        elif len(admin_users) < 3:
-            print(f"[✓ COMPLIANT] 1.1 관리자 권한 사용자 수가 적절함 ({len(admin_users)}명)")
-            print(f"  └─ 관리자: {', '.join(admin_users)}")
-        else:
-            print(f"[⚠ WARNING] 1.1 관리자 권한(AdministratorAccess)을 가진 사용자가 많습니다. ({len(admin_users)}명)")
-            print(f"  ├─ 관리자 목록: {', '.join(admin_users)}")
-            print("  └─ 🔧 불필요한 관리자 계정의 권한을 축소하세요.")
-            print("  └─ 🔧 명령어: aws iam detach-user-policy --user-name <사용자명> --policy-arn arn:aws:iam::aws:policy/AdministratorAccess")
+                user_policies = iam.list_attached_user_policies(UserName=name)['AttachedPolicies']
+                if any(p['PolicyArn'].endswith('/AdministratorAccess') for p in user_policies):
+                    is_admin = True
+
+                if not is_admin:
+                    groups = iam.list_groups_for_user(UserName=name)['Groups']
+                    for g in groups:
+                        group_policies = iam.list_attached_group_policies(GroupName=g['GroupName'])['AttachedPolicies']
+                        if any(p['PolicyArn'].endswith('/AdministratorAccess') for p in group_policies):
+                            is_admin = True
+                            break
+
+                if is_admin:
+                    admin_users.add(name)
+
+        print(f"\n[RESULT] IAM 관리자: {len(admin_users)}명")
+        print("  └ ", ', '.join(admin_users) if admin_users else "없음")
+
+        print(f"\n[RESULT] 테스트/임시 계정: {len(test_users)}개")
+        print("  └ ", ', '.join(test_users) if test_users else "없음")
+
+        return {
+            "admin_users": list(admin_users),
+            "test_users": list(test_users)
+        }
 
     except ClientError as e:
-        print(f"[ERROR] 사용자 계정 정보를 가져오는 중 오류 발생: {e}")
+        print(f"[ERROR] 오류 발생: {e}")
+        return {
+            "admin_users": [],
+            "test_users": []
+        }
+
+def fix(data):
+    iam = boto3.client('iam')
+    print("\n[FIX] 사용자 조치 안내")
+
+    for user in data['admin_users']:
+        confirm = input(f"→ '{user}'의 관리자 권한 제거할까요? (y/n): ").lower()
+        if confirm == 'y':
+            try:
+                iam.detach_user_policy(UserName=user, PolicyArn='arn:aws:iam::aws:policy/AdministratorAccess')
+                print(f"  ✔ 관리자 권한 제거 완료: {user}")
+            except ClientError as e:
+                print(f"  ✖ 실패: {e}")
+
+    for user in data['test_users']:
+        confirm = input(f"→ '{user}' 테스트 계정의 콘솔 로그인을 비활성화할까요? (y/n): ").lower()
+        if confirm == 'y':
+            try:
+                iam.delete_login_profile(UserName=user)
+                print(f"  ✔ 콘솔 로그인 제거 완료: {user}")
+            except ClientError as e:
+                if e.response['Error']['Code'] == 'NoSuchEntity':
+                    print(f"  ℹ 이미 비활성화됨: {user}")
+                else:
+                    print(f"  ✖ 실패: {e}")
+
+if __name__ == "__main__":
+    results = check()
+    fix(results)
