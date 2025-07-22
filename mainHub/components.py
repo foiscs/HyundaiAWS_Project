@@ -349,7 +349,7 @@ def test_result_table(test_results):
     permissions = test_results['permissions']
     
     # 테이블 제목
-    st.subheader("🔍 권한 확인 결과")
+    st.subheader("📊 서비스별 권한 상태")
     
     # 테이블 행 생성
     table_rows = ""

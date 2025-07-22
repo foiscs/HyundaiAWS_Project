@@ -135,28 +135,40 @@ def render_step2():
             st.subheader("🛡️ IAM Role 설정 가이드")
             
             info_box(
-                "대상 AWS 계정에서 수행할 작업:<br>"
-                "1. IAM 콘솔에서 새 Role 생성 (예: WALB-SecurityAssessment)<br>"
-                "2. 신뢰 관계에 아래 정책 적용<br>"
-                "3. 권한 정책 연결<br>"
-                "4. 생성된 Role ARN 복사",
-                box_type="info",
-                title="설정 순서"
+                "**🎯 간단한 3단계 설정으로 완료!**<br><br>"
+                "**1단계**: IAM 콘솔 → Roles → Create role<br>"
+                "**2단계**: 신뢰할 수 있는 엔터티 설정<br>"
+                "• **AWS 계정** 선택<br>"
+                "• **다른 AWS 계정** 선택<br>"
+                "• **계정 ID**: 292967571836<br>"
+                "• **외부 ID 필요** ✅ 체크<br>"
+                "• **외부 ID**: 아래 표시된 값 입력<br><br>"
+                "**3단계**: 권한 정책 연결<br>"
+                "• **AdministratorAccess** 검색해서 선택<br>"
+                "• **역할 이름**: WALB-CrossAccount-Role<br>"
+                "• **역할 생성** 완료",
+                box_type="success",
+                title="AWS 콘솔 설정 가이드"
             )
             
-            # External ID 생성
+            # External ID 생성 및 표시
             if not st.session_state.account_data['external_id']:
                 st.session_state.account_data['external_id'] = st.session_state.aws_handler.generate_external_id()
             
-            # Trust Policy 표시
-            trust_policy = st.session_state.aws_handler.generate_trust_policy(
-                st.session_state.account_data['external_id']
-            )
-            json_code_block(trust_policy, "1. 신뢰 관계 정책")
+            # External ID를 눈에 띄게 표시
+            st.markdown("### 🔑 외부 ID (External ID)")
+            st.code(st.session_state.account_data['external_id'], language=None)
+            st.info("💡 위 외부 ID를 AWS 콘솔의 **'외부 ID'** 필드에 복사해서 붙여넣으세요.")
             
-            # Permission Policy 표시
-            permission_policy = st.session_state.aws_handler.generate_permission_policy()
-            json_code_block(permission_policy, "2. 권한 정책")
+            # Trust Policy 자동 생성 안내
+            info_box(
+                "✨ **Trust Policy는 AWS 콘솔이 자동으로 생성합니다**<br><br>"
+                "위 단계대로 설정하면 AWS가 올바른 신뢰 관계 정책을 자동으로 만들어줍니다.<br>"
+                "**JSON 코드를 직접 붙여넣을 필요가 없어요!**<br><br>"
+                "🎯 **완료 후**: 생성된 Role의 **ARN**을 복사해서 다음 단계에서 사용하세요.",
+                box_type="info",
+                title="자동 생성되는 Trust Policy"
+            )
             
             # External ID 안내
             info_box(
@@ -174,17 +186,22 @@ def render_step2():
                 "1. **IAM 콘솔 → Users → Create user**<br>"
                 "2. **사용자 이름** 입력 (예: walb-service-user)<br>"
                 "3. **권한 설정 → 직접 정책 연결** 선택<br>"
-                "4. 아래 권한 정책을 **정책 생성**으로 만들어서 연결<br>"
+                "4. **AdministratorAccess** 검색해서 체크박스 선택<br>"
                 "5. 사용자 생성 후 **Security credentials → Create access key**<br>"
                 "6. **Use case: Third-party service** 선택 후 Access Key 다운로드",
                 box_type="warning",
-                title="설정 순서 (최신 AWS 콘솔)"
+                title="설정 순서"
             )
             
-            # Permission Policy 표시
-            permission_policy = st.session_state.aws_handler.generate_permission_policy()
-            json_code_block(permission_policy, "권한 정책")
-
+            # AdministratorAccess 정책 안내 (JSON 불필요)
+            info_box(
+                "**권한 정책**: AWS 관리형 정책 **AdministratorAccess**를 연결하세요.<br>"
+                "• 'AdministratorAccess'를 검색해서 체크박스 선택<br>"
+                "• JSON 복붙 불필요 - 클릭 한 번이면 끝<br>"
+                "• 모든 AWS 서비스에 대한 완전한 관리자 권한",
+                box_type="success",
+                title="권한 설정 (매우 간단함)"
+            )
         
         # 네비게이션 버튼
         prev_clicked, next_clicked = navigation_buttons(
@@ -399,8 +416,16 @@ def render_step4():
                         st.session_state.test_results = simulate_connection_test()
                         st.session_state.connection_status = 'success'
                     else:
-                        # 프로덕션 모드: 실제 AWS API 호출
-                        run_connection_test()
+                        # 실제 AWS API 호출 모드
+                        try:
+                            run_connection_test()
+                        except Exception as e:
+                            st.error(f"연결 테스트 중 오류 발생: {str(e)}")
+                            st.session_state.connection_status = 'failed'
+                            st.session_state.test_results = {
+                                'status': 'failed',
+                                'error_message': str(e)
+                            }
                 st.rerun()
 
         elif st.session_state.connection_status == 'success':

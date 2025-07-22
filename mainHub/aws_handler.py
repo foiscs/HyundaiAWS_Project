@@ -31,10 +31,10 @@ class AWSConnectionHandler:
     def __init__(self):
         """
         핸들러 초기화
-        - WALB 메인 계정 정보 설정
         - 테스트할 서비스 목록 정의
         """
-        self.walb_account_id = "999999999999"  # WALB 메인 계정 ID
+        # WALB 서비스 자체의 가상 계정 ID (Cross-Account Role에서만 사용)
+        self.walb_service_account_id = "292967571836"  # 실제로는 WALB 서비스가 배포된 계정 ID
         self.test_services = [
             'ec2', 's3', 'iam', 'cloudtrail', 
             'cloudwatch', 'rds', 'eks'
@@ -52,86 +52,52 @@ class AWSConnectionHandler:
         timestamp = int(datetime.now().timestamp())
         return f"walb-{timestamp}"
     
-    def generate_trust_policy(self, external_id):
-        """
-        Trust Policy JSON 생성
-        - Cross-Account Role의 신뢰 관계 정책
-        - WALB 계정이 Role을 Assume할 수 있도록 허용
-        
-        Args:
-            external_id (str): 보안을 위한 External ID
+    def generate_trust_policy(self, external_id, walb_account_id=None):
+            """
+            Trust Policy JSON 생성
+            - Cross-Account Role의 신뢰 관계 정책
+            - WALB 서비스가 Role을 Assume할 수 있도록 허용
             
-        Returns:
-            dict: Trust Policy JSON 객체
-        """
-        return {
-            "Version": "2012-10-17",
-            "Statement": [
-                {
-                    "Effect": "Allow",
-                    "Principal": {
-                        "AWS": f"arn:aws:iam::{self.walb_account_id}:root"
-                    },
-                    "Action": "sts:AssumeRole",
-                    "Condition": {
-                        "StringEquals": {
-                            "sts:ExternalId": external_id
+            Args:
+                external_id (str): 보안을 위한 External ID
+                walb_account_id (str, optional): WALB 서비스 계정 ID (실제 환경에서 설정)
+            """
+            # 실제 WALB 서비스가 배포된 계정 ID 또는 기본값 사용
+            account_id = walb_account_id or self.walb_service_account_id
+            
+            return {
+                "Version": "2012-10-17",
+                "Statement": [
+                    {
+                        "Effect": "Allow",
+                        "Principal": {
+                            "AWS": f"arn:aws:iam::{account_id}:root"
+                        },
+                        "Action": "sts:AssumeRole",
+                        "Condition": {
+                            "StringEquals": {
+                                "sts:ExternalId": external_id
+                            }
                         }
                     }
-                }
-            ]
-        }
-    
+                ]
+            }
+
     def generate_permission_policy(self):
         """
         Permission Policy JSON 생성
-        - Role에 부여할 실제 권한 정책
-        - 보안 진단에 필요한 읽기 권한만 부여
-        
-        Returns:
-            dict: Permission Policy JSON 객체
+        - AdministratorAccess 권한으로 SK Shieldus 41개 항목 완전 진단
         """
         return {
             "Version": "2012-10-17",
             "Statement": [
                 {
                     "Effect": "Allow",
-                    "Action": [
-                        # EC2 관련 읽기 권한
-                        "ec2:Describe*",
-                        
-                        # S3 관련 읽기 권한
-                        "s3:GetBucket*",
-                        "s3:ListBucket*",
-                        "s3:GetObject*",
-                        
-                        # IAM 관련 읽기 권한
-                        "iam:List*",
-                        "iam:Get*",
-                        
-                        # CloudTrail 관련 읽기 권한
-                        "cloudtrail:Describe*",
-                        "cloudtrail:Get*",
-                        "cloudtrail:List*",
-                        
-                        # CloudWatch 관련 읽기 권한
-                        "cloudwatch:Get*",
-                        "cloudwatch:List*",
-                        "cloudwatch:Describe*",
-                        "logs:Describe*",
-                        "logs:Get*",
-                        
-                        # RDS 관련 읽기 권한
-                        "rds:Describe*",
-                        
-                        # EKS 관련 읽기 권한
-                        "eks:Describe*",
-                        "eks:List*"
-                    ],
+                    "Action": "*",
                     "Resource": "*"
                 }
             ]
-        }
+        }    
     
     def test_cross_account_connection(self, role_arn, external_id, region='ap-northeast-2'):
         """
@@ -148,33 +114,44 @@ class AWSConnectionHandler:
             dict: 연결 테스트 결과
         """
         try:
-            # STS 클라이언트로 Role Assume 시도
+            # WALB 메인 계정에서 STS 클라이언트 생성
+            # AWS CLI 프로필 또는 환경변수에서 메인 계정 자격증명 사용
             sts_client = boto3.client('sts', region_name=region)
+            
+            # 실제 환경에서는 WALB 서비스의 자격증명을 사용해야 함
+            # 현재는 로컬 환경 테스트를 위해 기본 자격증명 사용
+            sts_client = boto3.client('sts', region_name=region)
+            
+            print(f"Role ARN으로 연결 시도: {role_arn}")
+            print(f"External ID: {external_id}")
             
             response = sts_client.assume_role(
                 RoleArn=role_arn,
                 RoleSessionName='walb-security-assessment',
-                ExternalId=external_id
+                ExternalId=external_id,
+                DurationSeconds=3600  # 1시간 (최대 12시간까지 가능)
             )
             
             # 임시 자격증명 추출
             credentials = response['Credentials']
             
             # 임시 자격증명으로 새 세션 생성
-            session = boto3.Session(
+            assumed_session = boto3.Session(
                 aws_access_key_id=credentials['AccessKeyId'],
                 aws_secret_access_key=credentials['SecretAccessKey'],
                 aws_session_token=credentials['SessionToken'],
                 region_name=region
             )
             
+            print(f"Role Assumed 성공: {response['AssumedRoleUser']['Arn']}")
+            
             # 각 서비스별 권한 테스트
-            test_results = self._test_service_permissions(session)
+            test_results = self._test_service_permissions(assumed_session)
             
             return {
                 'status': 'success',
                 'account_id': response['AssumedRoleUser']['Arn'].split(':')[4],
-                'regions': self._count_available_regions(session),
+                'regions': self._count_available_regions(assumed_session),
                 'services': list(test_results.keys()),
                 'permissions': test_results,
                 'connection_time': datetime.now().isoformat()
@@ -217,7 +194,8 @@ class AWSConnectionHandler:
             # STS로 계정 정보 확인
             sts_client = session.client('sts')
             identity = sts_client.get_caller_identity()
-            
+            print(f"연결된 계정 정보: {identity}")
+                    
             # 각 서비스별 권한 테스트
             test_results = self._test_service_permissions(session)
             
@@ -291,17 +269,19 @@ class AWSConnectionHandler:
         # CloudWatch 권한 테스트
         try:
             cloudwatch = session.client('cloudwatch')
-            cloudwatch.list_metrics(MaxRecords=5)
+            cloudwatch.list_metrics()  # MaxRecords 파라미터 제거
             results['CloudWatch'] = True
-        except:
+        except Exception as e:
+            print(f"CloudWatch 테스트 실패: {str(e)}")
             results['CloudWatch'] = False
         
         # RDS 권한 테스트
         try:
             rds = session.client('rds')
-            rds.describe_db_instances(MaxRecords=5)
+            rds.describe_db_instances(MaxRecords=20)  # 5 → 20으로 변경
             results['RDS'] = True
-        except:
+        except Exception as e:
+            print(f"RDS 테스트 실패: {str(e)}")
             results['RDS'] = False
         
         # EKS 권한 테스트
