@@ -8,11 +8,6 @@ sys.path.append(BASE_DIR)
 
 from aws_client import AWSClientManager
 
-
-# 4.operation/4_13_backup_usage.py
-import boto3
-from botocore.exceptions import ClientError
-
 def check():
     """
     [4.13] 백업 사용 여부

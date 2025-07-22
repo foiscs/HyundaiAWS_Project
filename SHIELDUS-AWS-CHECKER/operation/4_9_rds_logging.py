@@ -8,11 +8,6 @@ sys.path.append(BASE_DIR)
 
 from aws_client import AWSClientManager
 
-
-# 4.operation/4_9_rds_logging.py
-import boto3
-from botocore.exceptions import ClientError
-
 def check():
     """
     [4.9] RDS 로깅 설정

@@ -8,11 +8,6 @@ sys.path.append(BASE_DIR)
 
 from aws_client import AWSClientManager
 
-
-# 3.virtual_resources/3_3_nacl_traffic_policy.py
-import boto3
-from botocore.exceptions import ClientError
-
 def check():
     """
     [3.3] 네트워크 ACL 인/아웃바운드 트래픽 정책 관리

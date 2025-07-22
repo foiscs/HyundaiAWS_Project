@@ -8,11 +8,6 @@ sys.path.append(BASE_DIR)
 
 from aws_client import AWSClientManager
 
-
-# 4.operation/4_11_vpc_flow_logging.py
-import boto3
-from botocore.exceptions import ClientError
-
 def check():
     """
     [4.11] VPC 플로우 로깅 설정

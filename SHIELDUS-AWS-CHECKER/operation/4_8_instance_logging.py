@@ -8,8 +8,6 @@ sys.path.append(BASE_DIR)
 
 from aws_client import AWSClientManager
 
-
-# 4.operation/4_8_instance_logging.py
 def check():
     """
     [4.8] 인스턴스 로깅 설정

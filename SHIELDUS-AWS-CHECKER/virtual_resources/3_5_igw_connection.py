@@ -8,10 +8,6 @@ sys.path.append(BASE_DIR)
 
 from aws_client import AWSClientManager
 
-
-import boto3
-from botocore.exceptions import ClientError
-
 def check():
     """
     [3.5] 인터넷 게이트웨이 연결 관리

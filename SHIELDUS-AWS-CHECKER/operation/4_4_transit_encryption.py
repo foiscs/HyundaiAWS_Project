@@ -8,8 +8,6 @@ sys.path.append(BASE_DIR)
 
 from aws_client import AWSClientManager
 
-
-# 4.operation/4_4_transit_encryption.py
 def check():
     """
     [4.4] 통신구간 암호화 설정

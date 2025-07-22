@@ -8,11 +8,6 @@ sys.path.append(BASE_DIR)
 
 from aws_client import AWSClientManager
 
-
-# 3.virtual_resources/3_6_nat_gateway_connection.py
-import boto3
-from botocore.exceptions import ClientError
-
 def check():
     """
     [3.6] NAT 게이트웨이 연결 관리

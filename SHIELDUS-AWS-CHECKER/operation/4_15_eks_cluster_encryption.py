@@ -8,10 +8,6 @@ sys.path.append(BASE_DIR)
 
 from aws_client import AWSClientManager
 
-
-import boto3
-from botocore.exceptions import ClientError
-
 def check():
     """
     [4.15] EKS Cluster 암호화 설정

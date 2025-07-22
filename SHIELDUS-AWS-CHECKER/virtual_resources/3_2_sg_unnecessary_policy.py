@@ -8,11 +8,6 @@ sys.path.append(BASE_DIR)
 
 from aws_client import AWSClientManager
 
-
-# 3.virtual_resources/3_2_sg_unnecessary_policy.py
-import boto3
-from botocore.exceptions import ClientError
-
 def check():
     """
     [3.2] 보안 그룹 인/아웃바운드 불필요 정책 관리

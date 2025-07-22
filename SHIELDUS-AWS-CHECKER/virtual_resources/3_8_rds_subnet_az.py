@@ -8,11 +8,6 @@ sys.path.append(BASE_DIR)
 
 from aws_client import AWSClientManager
 
-
-# 3.virtual_resources/3_8_rds_subnet_az.py
-import boto3
-from botocore.exceptions import ClientError
-
 def check():
     """
     [3.8] RDS 서브넷 가용 영역 관리

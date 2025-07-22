@@ -8,11 +8,6 @@ sys.path.append(BASE_DIR)
 
 from aws_client import AWSClientManager
 
-
-# 4.operation/4_1_ebs_encryption.py
-import boto3
-from botocore.exceptions import ClientError
-
 def check():
     """
     [4.1] EBS 및 볼륨 암호화 설정

@@ -8,10 +8,6 @@ sys.path.append(BASE_DIR)
 
 from aws_client import AWSClientManager
 
-
-import boto3
-from botocore.exceptions import ClientError
-
 def check():
     """
     [2.1] 인스턴스 서비스 정책 관리 (EC2, ECS, ECR, EKS, EFS, RDS, S3)

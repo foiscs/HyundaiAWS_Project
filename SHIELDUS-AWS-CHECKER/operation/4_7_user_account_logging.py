@@ -8,11 +8,6 @@ sys.path.append(BASE_DIR)
 
 from aws_client import AWSClientManager
 
-
-# 4.operation/4_7_user_account_logging.py
-import boto3
-from botocore.exceptions import ClientError
-
 def check():
     """
     [4.7] AWS 사용자 계정 로깅 설정

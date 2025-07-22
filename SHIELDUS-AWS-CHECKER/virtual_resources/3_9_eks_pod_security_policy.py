@@ -8,8 +8,6 @@ sys.path.append(BASE_DIR)
 
 from aws_client import AWSClientManager
 
-
-# 3.virtual_resources/3_9_eks_pod_security_policy.py
 def check():
     """
     [3.9] EKS Pod 보안 정책 관리

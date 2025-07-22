@@ -8,11 +8,6 @@ sys.path.append(BASE_DIR)
 
 from aws_client import AWSClientManager
 
-
-# 3.virtual_resources/3_10_elb_connection.py
-import boto3
-from botocore.exceptions import ClientError
-
 def check():
     """
     [3.10] ELB(Elastic Load Balancing) 연결 관리

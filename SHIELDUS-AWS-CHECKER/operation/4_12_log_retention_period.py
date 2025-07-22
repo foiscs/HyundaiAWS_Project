@@ -8,11 +8,6 @@ sys.path.append(BASE_DIR)
 
 from aws_client import AWSClientManager
 
-
-# 4.operation/4_12_log_retention_period.py
-import boto3
-from botocore.exceptions import ClientError
-
 def check():
     """
     [4.12] 로그 보관 기간 설정

@@ -9,10 +9,6 @@ sys.path.append(BASE_DIR)
 from aws_client import AWSClientManager
 
 
-# 4.operation/4_2_rds_encryption.py
-import boto3
-from botocore.exceptions import ClientError
-
 def check():
     """
     [4.2] RDS 암호화 설정

@@ -8,11 +8,6 @@ sys.path.append(BASE_DIR)
 
 from aws_client import AWSClientManager
 
-
-# 3.virtual_resources/3_4_route_table_policy.py
-import boto3
-from botocore.exceptions import ClientError
-
 def check():
     """
     [3.4] 라우팅 테이블 정책 관리

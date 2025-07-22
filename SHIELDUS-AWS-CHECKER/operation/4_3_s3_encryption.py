@@ -8,11 +8,6 @@ sys.path.append(BASE_DIR)
 
 from aws_client import AWSClientManager
 
-
-# 4.operation/4_3_s3_encryption.py
-import boto3
-from botocore.exceptions import ClientError
-
 def check():
     """
     [4.3] S3 암호화 설정

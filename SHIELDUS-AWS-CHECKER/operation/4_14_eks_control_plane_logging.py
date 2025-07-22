@@ -8,11 +8,6 @@ sys.path.append(BASE_DIR)
 
 from aws_client import AWSClientManager
 
-
-# 4.operation/4_14_eks_control_plane_logging.py
-import boto3
-from botocore.exceptions import ClientError
-
 def check():
     """
     [4.14] EKS Cluster 제어 플레인 로깅 설정
