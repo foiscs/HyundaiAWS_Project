@@ -1,3 +1,4 @@
+# 코드 수정 필요
 import boto3
 from botocore.exceptions import ClientError
 from datetime import datetime, timedelta, timezone
@@ -5,50 +6,59 @@ import json
 
 def check():
     """
-    [1.7] Admin Console(Root) 관리자 정책 관리
-    - 최근 루트 계정으로 AWS Console 로그인 이벤트가 있었는지 확인하여,
-      루트 계정을 일상적인 작업에 사용하는지 자동 점검
+    [1.7] Admin Console 관리자 정책 관리
+    - 최근 90일 간 루트 계정으로 수행된 서비스 이벤트들을 출력하고,
+      수동 점검 참고자료로 제공
     """
-    print("[INFO] 1.7 Admin Console(Root) 관리자 정책 관리 체크 중...")
+    print("[INFO] 1.7 Admin Console 관리자 정책 관리 체크 중...")
+    print("[ⓘ MANUAL] 이 항목은 루트 계정이 서비스 용도로 사용되는지 여부를 수동으로 판별해야 합니다.")
 
     cloudtrail = boto3.client('cloudtrail')
-    lookback_days = 90  # 최근 90일 기준
+    lookback_days = 90
     now = datetime.now(timezone.utc)
     start_time = now - timedelta(days=lookback_days)
 
     try:
-        print(f"[INFO] 최근 {lookback_days}일 간 Root 로그인 이벤트를 조회합니다...")
+        print(f"[INFO] 최근 {lookback_days}일 간 Root 계정 활동 내역을 조회합니다...")
 
-        events = cloudtrail.lookup_events(
+        # Root 계정이 수행한 이벤트 목록 수집
+        root_events = set()  # 중복 제거를 위해 set 사용
+        paginator = cloudtrail.get_paginator('lookup_events')
+        pages = paginator.paginate(
             LookupAttributes=[
-                {'AttributeKey': 'EventName', 'AttributeValue': 'ConsoleLogin'}
+                {'AttributeKey': 'Username', 'AttributeValue': 'Root'}
             ],
             StartTime=start_time,
-            EndTime=now,
-            MaxResults=50
+            EndTime=now
         )
 
-        root_login_detected = False
+        for page in pages:
+            for event in page['Events']:
+                try:
+                    cloudtrail_event = json.loads(event['CloudTrailEvent'])  
+                    user_type = cloudtrail_event.get('userIdentity', {}).get('type', '')
+                    if user_type == 'Root':
+                        event_name = cloudtrail_event.get('eventName')
+                        if event_name:
+                            root_events.add(event_name)
+                except Exception:
+                    continue 
 
-        for event in events['Events']:
-            cloudtrail_event = json.loads(event['CloudTrailEvent'])
-            print(cloudtrail_event)
-            user_type = cloudtrail_event.get('userIdentity', {}).get('type', '')
-            if user_type == 'Root':
-                root_login_detected = True
-                login_time = event['EventTime']
-                print(f"[⚠ WARNING] 루트 계정으로 AWS 콘솔 로그인이 감지되었습니다. (시간: {login_time})")
-                break
-
-        if not root_login_detected:
-            print("[✓ COMPLIANT] 최근 루트 계정으로의 콘솔 로그인 이력이 없습니다.")
+        if not root_events:
+            print("[✓ COMPLIANT] 최근 루트 계정으로 수행된 서비스 관련 이벤트가 없습니다.")
         else:
-            print("  └─ 루트 계정은 긴급 상황 외에 사용하지 말고, 반드시 MFA를 활성화한 상태로 제한하세요.")
+            print(f"[⚠ 참고] 최근 루트 계정으로 수행된 서비스 이벤트 {len(root_events)}건:")
+            for e in sorted(root_events):
+                print(f"  ├─ {e}")
 
-        return not root_login_detected
+            print("\n[수동 판정 필요]")
+            print("  └─ 위 이벤트 중 운영성 또는 서비스성 작업(예: RunInstances, PutObject 등)이 있다면 '서비스 용도 사용'으로 판단하세요.")
+
+        return True
 
     except ClientError as e:
         print(f"[ERROR] CloudTrail 이벤트 조회 중 오류 발생: {e}")
         return False
+
 if __name__ == "__main__":
     check()

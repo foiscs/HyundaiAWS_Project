@@ -1,4 +1,3 @@
-# 1.account_management/1_8_access_key_lifecycle.py
 import boto3
 from botocore.exceptions import ClientError
 from datetime import datetime, timezone
