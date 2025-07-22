@@ -1,0 +1,36 @@
+# Python cache
+__pycache__/
+*.py[cod]
+
+# VSCode settings (개발자 환경용)
+.vscode/
+
+# 로그 파일 및 로그 디렉토리
+logs/
+*.log
+
+# 가상환경 (이 폴더 안에 만든 경우)
+venv/
+.env
+
+# 테스트나 툴 관련 캐시
+.pytest_cache/
+.mypy_cache/
+.cache/
+.tox/
+
+# AWS 자격 증명 또는 보안 관련 파일
+*.pem
+*.key
+*.aws
+
+# 임시 파일
+*.tmp
+*.swp
+*.bak
+
+# 데이터베이스나 스키마 백업
+*.db
+*.sqlite3
+
+# 기타: 본인 환경에서만 생성되는 파일이 있다면 여기에 추가
