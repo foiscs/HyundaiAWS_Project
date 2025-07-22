@@ -41,10 +41,8 @@ def fix(instances_without_keypair):
         
     print("[FIX] 1.5 Key Pair가 없는 인스턴스에 대한 조치는 자동화할 수 없습니다.")
     print("  └─ 실행 중인 인스턴스에 Key Pair를 추가하는 것은 직접적인 방법이 없으므로 아래의 수동 절차를 따르세요.")
-    print("  └─ 1. 해당 인스턴스의 AMI(Amazon Machine Image)를 생성합니다.")
-    print("  └─ 2. 생성한 AMI를 사용하여 새 인스턴스를 시작할 때, 새로운 Key Pair를 지정합니다.")
-    print("  └─ 3. 데이터 및 설정을 마이그레이션한 후, 기존 인스턴스를 종료합니다.")
-    print("  └─ 또는, Systems Manager Session Manager를 사용하여 Key Pair 없이 안전하게 접근하는 방법을 고려하세요.")
+    print("  └─ 방법_1. [Authorize_keys 직접 수정]: 실행 중인 인스턴스에 SSH로 접속하여 ~/.ssh/authorized_keys 파일에 새 key pair의 public key를 수동으로 추가")
+    print("  └─ 방법_2. [AMI로 새 인스턴스 생성]: 기존 인스턴스에서 AMI 이미지를 만들어 새로운 인스턴스를 생성할 때 새 key pair를 지정")
 
 if __name__ == "__main__":
     instance_list = check()
