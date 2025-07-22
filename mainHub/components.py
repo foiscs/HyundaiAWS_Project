@@ -12,12 +12,15 @@ Streamlit과 HTML/CSS를 조합하여 리액트 스타일 컴포넌트 구현
 - input_field_with_toggle: 비밀번호 보기/숨기기 토글 입력 필드
 - navigation_buttons: 이전/다음 단계 네비게이션 버튼
 - sidebar_panel: 고정 사이드바 패널 (디버그 정보, 빠른 액션, 세션 관리)
+- reset_session_state: 세션 상태 초기화 함수
+- render_step4: 4단계 연결 테스트 화면 렌더링 함수
 """
 
 import streamlit as st
 import streamlit.components.v1 as components
 import json
 import time
+from aws_handler import AWSConnectionHandler
 
 def step_indicator(current_step):
     """
@@ -335,9 +338,6 @@ def json_code_block(json_data, title, show_copy_button=True):
     
     # Components로 렌더링 (동적 높이)
     components.html(json_html, height=dynamic_height)
-    
-    # 추가 안내
-    st.caption("📋 위 코드 영역을 클릭하면 전체 선택됩니다. **Ctrl+C**로 복사하세요.")
 
 def test_result_table(test_results):
     """
@@ -553,6 +553,7 @@ def input_field_with_toggle(label, input_type="text", is_password=False, help=No
     비밀번호 토글 가능한 입력 필드 컴포넌트
     - 일반 텍스트와 비밀번호 입력 간 전환 가능
     - 눈 아이콘 버튼으로 표시/숨김 제어
+    - 보안: 민감 정보는 세션에 저장하지 않음
     
     Args:
         label (str): 입력 필드 라벨
@@ -561,7 +562,7 @@ def input_field_with_toggle(label, input_type="text", is_password=False, help=No
         help (str, optional): 도움말 텍스트
     
     Returns:
-        tuple: (입력값, 표시상태)
+        tuple: (입력값, 표시상태, 보안경고)
     """
     if is_password:
         # 표시/숨김 상태 관리
@@ -572,11 +573,12 @@ def input_field_with_toggle(label, input_type="text", is_password=False, help=No
         col1, col2 = st.columns([4, 1])
         
         with col1:
-            # 비밀번호 필드
+            # 비밀번호 필드 - key 파라미터로 고유성 보장
+            field_key = f"secure_{label.replace(' ', '_').lower()}"
             if st.session_state[show_key]:
-                value = st.text_input(label, type="default", help=help)
+                value = st.text_input(label, type="default", help=help, key=field_key)
             else:
-                value = st.text_input(label, type="password", help=help)
+                value = st.text_input(label, type="password", help=help, key=field_key)
         
         with col2:
             # 토글 버튼
@@ -586,11 +588,17 @@ def input_field_with_toggle(label, input_type="text", is_password=False, help=No
                 st.session_state[show_key] = not st.session_state[show_key]
                 st.rerun()
         
-        return value, st.session_state[show_key]
+        # 보안 경고 표시
+        security_warning = False
+        if value and len(value) > 0:
+            st.info("🔒 **보안 알림**: 민감한 정보는 연결 테스트 완료 후 자동으로 삭제됩니다.")
+            security_warning = True
+        
+        return value, st.session_state[show_key], security_warning
     else:
         # 일반 텍스트 입력
         value = st.text_input(label, help=help)
-        return value, False
+        return value, False, False
 
 def sidebar_panel():
     """
@@ -729,3 +737,61 @@ def navigation_buttons(show_prev=True, show_next=True, prev_label="이전", next
                 next_callback()
     
     return prev_clicked, next_clicked
+
+def reset_session_state(keep_aws_handler=True):
+    """
+    세션 상태 초기화 공통 함수
+    
+    Args:
+        keep_aws_handler (bool): AWS 핸들러 유지 여부
+    """
+    keys_to_delete = []
+    for key in st.session_state.keys():
+        if key.startswith(('current_step', 'connection_type', 'account_data', 
+                          'connection_status', 'test_results')):
+            keys_to_delete.append(key)
+    
+    for key in keys_to_delete:
+        del st.session_state[key]
+    
+    # 기본값으로 재초기화
+    st.session_state.current_step = 1
+    st.session_state.connection_type = 'cross-account-role'
+    st.session_state.account_data = {
+        'cloud_name': '',
+        'account_id': '',
+        'role_arn': '',
+        'external_id': '',
+        'access_key_id': '',
+        'secret_access_key': '',
+        'primary_region': 'ap-northeast-2',
+        'contact_email': ''
+    }
+    st.session_state.connection_status = 'idle'
+    st.session_state.test_results = None
+    
+    if keep_aws_handler and 'aws_handler' not in st.session_state:
+        st.session_state.aws_handler = AWSConnectionHandler()
+
+def validate_and_show_error(field_name, value, validator_func):
+    """
+    입력값 검증 후 에러 메시지 자동 표시
+    
+    Args:
+        field_name (str): 필드명 (에러 키로 사용)
+        value (str): 검증할 값
+        validator_func (callable): 검증 함수
+    
+    Returns:
+        bool: 검증 성공 여부
+    """
+    if not value:
+        return True  # 빈 값은 별도 처리하지 않음
+    
+    is_valid, error_msg = validator_func(value)
+    
+    if not is_valid:
+        st.error(f"❌ {error_msg}")
+        return False
+    
+    return True

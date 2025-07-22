@@ -230,10 +230,7 @@ def render_step3():
             st.session_state.account_data['account_id'] = account_id
                 
         # 계정 ID 검증
-        if account_id:
-            is_valid, error_msg = InputValidator.validate_account_id(account_id)
-            if not is_valid:
-                st.error(error_msg)
+        validate_and_show_error("account_id", account_id, InputValidator.validate_account_id)
         
         # 연결 방식별 입력 필드
         if st.session_state.connection_type == 'cross-account-role':
@@ -246,10 +243,7 @@ def render_step3():
             st.session_state.account_data['role_arn'] = role_arn
             
             # Role ARN 검증
-            if role_arn:
-                is_valid, error_msg = InputValidator.validate_role_arn(role_arn)
-                if not is_valid:
-                    st.error(error_msg)
+            validate_and_show_error("role_arn", role_arn, InputValidator.validate_role_arn)
         
         else:  # access-key
             col3, col4 = st.columns(2)
@@ -264,25 +258,19 @@ def render_step3():
                 st.session_state.account_data['access_key_id'] = access_key_id
                 
                 # Access Key 검증
-                if access_key_id:
-                    is_valid, error_msg = InputValidator.validate_access_key(access_key_id)
-                    if not is_valid:
-                        st.error(error_msg)
+                validate_and_show_error("access_key", access_key_id, InputValidator.validate_access_key)
             
             with col4:
-                secret_access_key, show_secret = input_field_with_toggle(
+                secret_access_key, show_secret, has_security_warning = input_field_with_toggle(
                     "Secret Access Key *",
                     is_password=True,
                     help="AWS Secret Access Key를 입력하세요."
                 )
-                if secret_access_key != st.session_state.account_data['secret_access_key']:
-                    st.session_state.account_data['secret_access_key'] = secret_access_key
+                # 보안: Secret Key는 세션에 저장하지 않고 임시 변수로만 사용
+                st.session_state.account_data['secret_access_key'] = secret_access_key if secret_access_key else ''
                 
                 # Secret Key 검증
-                if secret_access_key:
-                    is_valid, error_msg = InputValidator.validate_secret_key(secret_access_key)
-                    if not is_valid:
-                        st.error(error_msg)
+                validate_and_show_error("secret_key", secret_access_key, InputValidator.validate_secret_key)
         
         # 추가 설정
         col5, col6 = st.columns(2)
@@ -321,27 +309,22 @@ def render_step3():
             st.session_state.account_data['contact_email'] = contact_email
             
             # 이메일 검증
-            if contact_email:
-                is_valid, error_msg = InputValidator.validate_email(contact_email)
-                if not is_valid:
-                    st.error(error_msg)
+            validate_and_show_error("email", contact_email, InputValidator.validate_email)
 
         
+        # 수정 (new) - 위 블록을 아래로 교체
+        def check_required_fields():
+            """필수 입력 필드 완료 여부 확인"""
+            account = st.session_state.account_data
+            basic_filled = bool(account['cloud_name'] and account['account_id'])
+            
+            if st.session_state.connection_type == 'cross-account-role':
+                return basic_filled and bool(account['role_arn'])
+            else:
+                return basic_filled and bool(account['access_key_id'] and account['secret_access_key'])
+
         # 입력 완료 여부 확인
-        required_fields_filled = bool(
-            st.session_state.account_data['cloud_name'] and
-            st.session_state.account_data['account_id']
-        )
-        
-        if st.session_state.connection_type == 'cross-account-role':
-            required_fields_filled = required_fields_filled and bool(
-                st.session_state.account_data['role_arn']
-            )
-        else:
-            required_fields_filled = required_fields_filled and bool(
-                st.session_state.account_data['access_key_id'] and
-                st.session_state.account_data['secret_access_key']
-            )
+        required_fields_filled = check_required_fields()
         
         # 네비게이션 버튼
         prev_clicked, next_clicked = navigation_buttons(
@@ -409,11 +392,15 @@ def render_step4():
 
             if test_clicked:
                 with st.spinner("연결 테스트를 수행하고 있습니다..."):
-                    # 실제 테스트
-                    # run_connection_test()
-                    time.sleep(3)
-                    st.session_state.test_results = simulate_connection_test()
-                    st.session_state.connection_status = 'success'
+                    # 개발/프로덕션 모드 분기
+                    if st.secrets.get("DEVELOPMENT_MODE", True):
+                        # 개발 모드: 시뮬레이션
+                        time.sleep(3)
+                        st.session_state.test_results = simulate_connection_test()
+                        st.session_state.connection_status = 'success'
+                    else:
+                        # 프로덕션 모드: 실제 AWS API 호출
+                        run_connection_test()
                 st.rerun()
 
         elif st.session_state.connection_status == 'success':
@@ -429,6 +416,11 @@ def render_step4():
             with col2:
                 if st.button("✅ 계정 등록 완료", type="primary", use_container_width=True):
                     account = st.session_state.account_data.copy()
+                    
+                    # 보안: 민감 정보는 파일에 저장하지 않음
+                    if 'secret_access_key' in account:
+                        account['secret_access_key'] = '[REDACTED_FOR_SECURITY]'
+                    
                     try:
                         with open("registered_accounts.json", "a", encoding="utf-8") as f:
                             f.write(json.dumps(account, ensure_ascii=False) + "\n")
@@ -471,24 +463,16 @@ def render_step4():
                         """, height=100)
 
                         # 리다이렉트 직전 상태 초기화 (단, JS에서 3초 뒤 리다이렉션 되므로 여기서 st.rerun() 제거)
-                        for key in list(st.session_state.keys()):
-                            if key.startswith(('current_step', 'connection_type', 'account_data', 'connection_status', 'test_results')):
-                                del st.session_state[key]
+                        reset_session_state()
 
                         st.stop()  # rerun 방지. toast 이후에 reload는 JS가 담당
 
                     except Exception as e:
                         st.error(f"파일 저장 중 오류 발생: {str(e)}")
 
-
                     # 상태 초기화 후 1단계로 이동
-                    for key in list(st.session_state.keys()):
-                        if key.startswith(('current_step', 'connection_type', 'account_data', 'connection_status', 'test_results')):
-                            del st.session_state[key]
-                    st.session_state.current_step = 1
+                    reset_session_state()
                     st.rerun()
-
-
 
         elif st.session_state.connection_status == 'failed':
             prev_clicked, next_clicked = navigation_buttons(
@@ -500,8 +484,7 @@ def render_step4():
                     setattr(st.session_state, 'test_results', None)
                 ]
             )
-
-
+        
 def main():
     """
     메인 애플리케이션 함수
@@ -543,8 +526,7 @@ def main():
         st.error(f"애플리케이션 오류가 발생했습니다: {str(e)}")
         st.write("페이지를 새로고침하거나 아래 버튼을 클릭하여 다시 시도해주세요.")
         if st.button("🔄 다시 시작"):
-            for key in list(st.session_state.keys()):
-                del st.session_state[key]
+            reset_session_state(keep_aws_handler=False)
             st.rerun()
 
 if __name__ == "__main__":
