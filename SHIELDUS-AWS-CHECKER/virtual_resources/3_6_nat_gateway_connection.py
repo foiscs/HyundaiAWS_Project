@@ -1,45 +1,64 @@
 import boto3
 from botocore.exceptions import ClientError
-import os, sys
-
-# 상위 디렉토리 경로 추가
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.append(BASE_DIR)
-
-from aws_client import AWSClientManager
 
 def check():
     """
     [3.6] NAT 게이트웨이 연결 관리
-    - 생성되었지만 어떤 라우팅 테이블에서도 사용되지 않는 NAT 게이트웨이가 있는지 점검
+    - 생성되었지만 어떤 라우팅 테이블에서도 사용되지 않는 NAT 게이트웨이를 점검하고, 해당 ID 목록 반환
     """
     print("[INFO] 3.6 NAT 게이트웨이 연결 관리 체크 중...")
     ec2 = boto3.client('ec2')
-    unused_nat_gateways = []
     
     try:
-        all_nat_ids = set()
-        # 'available' 상태의 NAT GW만 점검
-        nat_response = ec2.describe_nat_gateways(Filter=[{'Name': 'state', 'Values': ['available']}])
-        for nat in nat_response['NatGateways']:
-            all_nat_ids.add(nat['NatGatewayId'])
-
+        # 'available' 또는 'pending' 상태의 모든 NAT GW ID 수집
+        all_nat_ids = {
+            nat['NatGatewayId'] for nat in ec2.describe_nat_gateways(
+                Filter=[{'Name': 'state', 'Values': ['pending', 'available']}]
+            )['NatGateways']
+        }
+        
+        # 라우팅 테이블에서 사용 중인 NAT GW ID 수집
         used_nat_ids = set()
-        rt_response = ec2.describe_route_tables()
-        for rt in rt_response['RouteTables']:
+        for rt in ec2.describe_route_tables()['RouteTables']:
             for route in rt['Routes']:
                 if route.get('NatGatewayId'):
                     used_nat_ids.add(route['NatGatewayId'])
         
-        unused_nat_ids = all_nat_ids - used_nat_ids
+        unused_nat_ids = list(all_nat_ids - used_nat_ids)
 
         if not unused_nat_ids:
             print("[✓ COMPLIANT] 3.6 모든 NAT 게이트웨이가 라우팅 테이블에서 사용 중입니다.")
         else:
             print(f"[⚠ WARNING] 3.6 라우팅 테이블에서 사용되지 않는 NAT 게이트웨이가 존재합니다 ({len(unused_nat_ids)}개).")
             print(f"  ├─ 해당 NAT GW: {', '.join(unused_nat_ids)}")
-            print("  └─ 🔧 불필요한 NAT 게이트웨이는 비용을 발생시키므로 삭제하세요.")
-            print("  └─ 🔧 명령어: aws ec2 delete-nat-gateway --nat-gateway-id <NAT_GW_ID>")
-
+        
+        return unused_nat_ids
+        
     except ClientError as e:
         print(f"[ERROR] NAT 게이트웨이 또는 라우팅 테이블 정보를 가져오는 중 오류 발생: {e}")
+        return []
+
+def fix(unused_nat_ids):
+    """
+    [3.6] NAT 게이트웨이 연결 관리 조치
+    - 미사용 NAT GW를 사용자 확인 후 삭제
+    """
+    if not unused_nat_ids:
+        return
+
+    ec2 = boto3.client('ec2')
+    print("[FIX] 3.6 사용되지 않는 NAT 게이트웨이에 대한 조치를 시작합니다.")
+    for nat_id in unused_nat_ids:
+        choice = input(f"  -> 미사용 NAT 게이트웨이 '{nat_id}'를 삭제하시겠습니까? (삭제 전까지 비용 발생) (y/n): ").lower()
+        if choice == 'y':
+            try:
+                ec2.delete_nat_gateway(NatGatewayId=nat_id)
+                print(f"     [SUCCESS] NAT 게이트웨이 '{nat_id}'에 대한 삭제 요청을 보냈습니다. (상태가 'deleted'로 변경되기까지 시간이 걸릴 수 있습니다)")
+            except ClientError as e:
+                print(f"     [ERROR] NAT 게이트웨이 '{nat_id}' 삭제 실패: {e}")
+        else:
+            print(f"     [INFO] NAT 게이트웨이 '{nat_id}' 삭제를 건너뜁니다.")
+
+if __name__ == "__main__":
+    nat_list = check()
+    fix(nat_list)

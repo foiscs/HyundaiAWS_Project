@@ -1,38 +1,63 @@
 import boto3
 from botocore.exceptions import ClientError
-import os, sys
-
-# 상위 디렉토리 경로 추가
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.append(BASE_DIR)
-
-from aws_client import AWSClientManager
 
 def check():
     """
     [4.9] RDS 로깅 설정
-    - RDS DB 인스턴스에 주요 로그(audit, error, general, slowquery 등)가 활성화되어 CloudWatch Logs로 내보내지는지 점검
+    - RDS DB 인스턴스에 주요 로그(audit, error, general, slowquery)가 활성화되어 있는지 점검
     """
     print("[INFO] 4.9 RDS 로깅 설정 체크 중...")
     rds = boto3.client('rds')
-    instances_with_insufficient_logging = []
+    insufficient_logging_instances = {}
 
     try:
-        paginator = rds.get_paginator('describe_db_instances')
-        for page in paginator.paginate():
-            for instance in page['DBInstances']:
-                enabled_logs = instance.get('EnabledCloudwatchLogsExports', [])
-                # 최소한 error 로그와 audit(지원 시) 로그는 있어야 함
-                if 'error' not in enabled_logs and 'audit' not in enabled_logs:
-                    instances_with_insufficient_logging.append(f"{instance['DBInstanceIdentifier']} (활성 로그: {enabled_logs or '없음'})")
+        for inst in rds.describe_db_instances()['DBInstances']:
+            enabled_logs = inst.get('EnabledCloudwatchLogsExports', [])
+            # 최소한 error 로그와 audit(지원 시) 로그는 있어야 함
+            if 'error' not in enabled_logs or 'audit' not in enabled_logs:
+                 # Aurora-mysql/postgresql은 audit 지원
+                if 'aurora' in inst['Engine'] and 'audit' not in enabled_logs:
+                    insufficient_logging_instances[inst['DBInstanceIdentifier']] = ['audit', 'error']
+                elif 'error' not in enabled_logs:
+                    insufficient_logging_instances[inst['DBInstanceIdentifier']] = ['error']
         
-        if not instances_with_insufficient_logging:
+        if not insufficient_logging_instances:
             print("[✓ COMPLIANT] 4.9 모든 RDS DB 인스턴스에 주요 로그가 활성화되어 있습니다.")
         else:
-            print(f"[⚠ WARNING] 4.9 주요 로그(Error/Audit)가 활성화되지 않은 RDS DB 인스턴스가 존재합니다 ({len(instances_with_insufficient_logging)}개).")
-            for finding in instances_with_insufficient_logging:
-                print(f"  ├─ {finding}")
-            print("  └─ 🔧 RDS 인스턴스 수정 페이지의 [로그 내보내기] 섹션에서 Error, Audit, General, Slow-query 등 필요한 로그를 선택하여 활성화하세요.")
+            print(f"[⚠ WARNING] 4.9 주요 로그(Error/Audit)가 활성화되지 않은 RDS DB 인스턴스가 존재합니다 ({len(insufficient_logging_instances)}개).")
+            for name, logs in insufficient_logging_instances.items(): print(f"  ├─ {name} (필요 로그: {logs})")
+        
+        return insufficient_logging_instances
 
     except ClientError as e:
-        print(f"[ERROR] RDS DB 인스턴스 정보를 가져오는 중 오류 발생: {e}")
+        print(f"[ERROR] RDS 정보를 가져오는 중 오류 발생: {e}")
+        return {}
+
+def fix(insufficient_logging_instances):
+    """
+    [4.9] RDS 로깅 설정 조치
+    - 미활성화된 로그를 활성화하도록 인스턴스를 수정
+    """
+    if not insufficient_logging_instances: return
+
+    rds = boto3.client('rds')
+    print("[FIX] 4.9 RDS 로그 내보내기 설정 조치를 시작합니다.")
+    for name, logs_to_enable in insufficient_logging_instances.items():
+        if input(f"  -> 인스턴스 '{name}'에 로그({', '.join(logs_to_enable)}) 내보내기를 활성화하시겠습니까? (수정 사항 즉시 적용 시 재부팅될 수 있음) (y/n): ").lower() == 'y':
+            try:
+                # 기존 활성화된 로그도 함께 전달해야 함
+                current_logs = rds.describe_db_instances(DBInstanceIdentifier=name)['DBInstances'][0].get('EnabledCloudwatchLogsExports', [])
+                all_logs_to_enable = list(set(current_logs + logs_to_enable))
+                
+                rds.modify_db_instance(
+                    DBInstanceIdentifier=name,
+                    CloudwatchLogsExportConfiguration={'EnableLogTypes': all_logs_to_enable},
+                    ApplyImmediately=False # 안전을 위해 즉시 적용 안함
+                )
+                print(f"     [SUCCESS] '{name}'에 대한 수정 요청을 보냈습니다. 다음 유지관리 기간에 적용됩니다.")
+            except ClientError as e:
+                print(f"     [ERROR] 인스턴스 수정 실패: {e}")
+
+if __name__ == "__main__":
+    instances = check()
+    fix(instances)

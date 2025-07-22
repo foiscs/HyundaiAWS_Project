@@ -1,60 +1,62 @@
+# 1.account_management/1_9_mfa_setup.py
 import boto3
 from botocore.exceptions import ClientError
-import os, sys
-
-# 상위 디렉토리 경로 추가
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.append(BASE_DIR)
-
-from aws_client import AWSClientManager
-
 
 def check():
     """
-    [1.9] MFA (Multi-Factor Authentication) 설정
-    - Root 계정 및 콘솔 접속이 가능한 IAM 사용자에 대해 MFA가 활성화되어 있는지 점검
+    [1.9] MFA 설정
+    - Root 계정 및 콘솔 사용자에 대해 MFA 활성화 여부를 점검하고 미설정 사용자 목록을 반환
     """
     print("[INFO] 1.9 MFA 설정 체크 중...")
     iam = boto3.client('iam')
-    users_without_mfa = []
-    is_root_mfa_ok = False
-
-    # 1. Root 계정 MFA 점검
+    findings = {'root_mfa_disabled': False, 'users_without_mfa': []}
+    
     try:
-        summary = iam.get_account_summary()
-        if summary['SummaryMap']['AccountMFAEnabled'] == 1:
-            print("[✓ COMPLIANT] 1.9 Root 계정에 MFA가 활성화되어 있습니다.")
-            is_root_mfa_ok = True
-        else:
+        if iam.get_account_summary()['SummaryMap']['AccountMFAEnabled'] == 0:
+            findings['root_mfa_disabled'] = True
             print("[⚠ WARNING] 1.9 Root 계정에 MFA가 활성화되어 있지 않습니다.")
-            print("  └─ 🔧 Root 계정의 보안을 위해 즉시 MFA를 설정하세요.")
+        else:
+            print("[✓ COMPLIANT] 1.9 Root 계정에 MFA가 활성화되어 있습니다.")
     except ClientError as e:
-        print(f"[-] [ERROR] 계정 요약 정보를 가져오는 중 오류 발생: {e}")
+        print(f"[ERROR] 계정 요약 정보를 가져오는 중 오류 발생: {e}")
 
-    # 2. IAM 사용자 MFA 점검
     try:
-        paginator = iam.get_paginator('list_users')
-        for page in paginator.paginate():
-            for user in page['Users']:
-                user_name = user['UserName']
-                # 콘솔 로그인이 가능한 사용자인지 확인 (패스워드 설정 여부)
-                try:
-                    iam.get_login_profile(UserName=user_name)
-                    mfa_devices = iam.list_mfa_devices(UserName=user_name)
-                    if not mfa_devices.get('MFADevices'):
-                        users_without_mfa.append(user_name)
-                except ClientError as e:
-                    if e.response['Error']['Code'] == 'NoSuchEntity':
-                        continue # 콘솔 프로필 없는 사용자
-                    else:
-                        raise e
+        for user in iam.list_users()['Users']:
+            user_name = user['UserName']
+            try:
+                iam.get_login_profile(UserName=user_name)
+                if not iam.list_mfa_devices(UserName=user_name).get('MFADevices'):
+                    findings['users_without_mfa'].append(user_name)
+            except ClientError as e:
+                if e.response['Error']['Code'] == 'NoSuchEntity': continue
+                else: raise e
         
-        if not users_without_mfa:
+        if not findings['users_without_mfa']:
             print("[✓ COMPLIANT] 1.9 모든 콘솔 접근 가능 IAM 사용자에게 MFA가 활성화되어 있습니다.")
         else:
-            print(f"[⚠ WARNING] 1.9 MFA가 비활성화된 콘솔 접근 사용자 존재 ({len(users_without_mfa)}명)")
-            print(f"  ├─ MFA 비활성 사용자: {', '.join(users_without_mfa)}")
-            print("  └─ 🔧 해당 사용자들에게 MFA 설정을 강제하세요.")
-
+            print(f"[⚠ WARNING] 1.9 MFA가 비활성화된 콘솔 접근 사용자 존재 ({len(findings['users_without_mfa'])}명)")
+            print(f"  ├─ MFA 비활성 사용자: {', '.join(findings['users_without_mfa'])}")
+            
+        return findings
     except ClientError as e:
-        print(f"[-] [ERROR] IAM 사용자 MFA 정보를 가져오는 중 오류 발생: {e}")
+        print(f"[ERROR] IAM 사용자 MFA 정보를 가져오는 중 오류 발생: {e}")
+        return findings
+
+def fix(findings):
+    """
+    [1.9] MFA 설정 조치
+    - MFA 설정은 사용자의 물리적 디바이스가 필요하므로 자동 조치가 불가능함. 수동 조치 안내
+    """
+    if not findings['root_mfa_disabled'] and not findings['users_without_mfa']:
+        return
+
+    print("[FIX] 1.9 MFA 설정은 사용자의 물리적/가상 디바이스 등록이 필요하므로 자동화할 수 없습니다.")
+    if findings['root_mfa_disabled']:
+        print("  └─ [Root 계정] AWS Management Console에 Root로 로그인하여 [내 보안 자격 증명]에서 MFA 디바이스를 할당하세요.")
+    if findings['users_without_mfa']:
+        print(f"  └─ [IAM 사용자] 다음 사용자들에게 각자 로그인하여 [내 보안 자격 증명]에서 MFA를 설정하도록 안내하세요: {', '.join(findings['users_without_mfa'])}")
+        print("  └─ 또는, MFA를 강제하는 IAM 정책을 생성하여 해당 사용자/그룹에 연결할 수 있습니다.")
+
+if __name__ == "__main__":
+    findings_dict = check()
+    fix(findings_dict)
