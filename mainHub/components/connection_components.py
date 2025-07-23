@@ -1,26 +1,29 @@
 """
-AWS 계정 연결 인터페이스용 재사용 가능한 UI 컴포넌트들
-Streamlit과 HTML/CSS를 조합하여 리액트 스타일 컴포넌트 구현
+컴포넌트 목록:
+- step_indicator: WALB 4단계 진행 표시기 (완료/진행중/대기 상태)
+- connection_type_card: 보안 연결방식 선택 카드 (Role/AccessKey 비교)
+- info_box: 보안 등급별 정보박스 (info/warning/error/success 타입)
+- json_code_block: AWS IAM 정책 JSON 표시 + 구문강조 + 복사 기능
+- test_result_table: AWS 서비스별 권한 테스트 결과 테이블 (7개 서비스)
+- loading_spinner: AWS API 호출 중 로딩 스피너 + 진행 메시지
+- connection_test_result: boto3 연결 테스트 종합 결과 화면
+- input_field_with_toggle: 비밀번호 토글 입력 필드 (보안 강화)
+- navigation_buttons: 4단계 네비게이션 버튼 (조건부 활성화)
+- sidebar_panel: 멀티클라우드 모니터링 사이드바 (상태/디버그/세션관리)
 
-- step_indicator: 4단계 진행 표시기 (완료/진행중/대기 상태)
-- connection_type_card: 연결 방식 선택 카드 (Role/AccessKey)
-- info_box: 정보/경고/에러 박스 (타입별 색상과 아이콘)
-- json_code_block: JSON 정책 표시 + 복사/다운로드 기능
-- test_result_table: 서비스별 권한 테스트 결과 테이블
-- loading_spinner: 로딩 중 스피너 + 진행 메시지
-- connection_test_result: 연결 테스트 종합 결과 화면
-- input_field_with_toggle: 비밀번호 보기/숨기기 토글 입력 필드
-- navigation_buttons: 이전/다음 단계 네비게이션 버튼
-- sidebar_panel: 고정 사이드바 패널 (디버그 정보, 빠른 액션, 세션 관리)
-- reset_session_state: 세션 상태 초기화 함수
-- render_step4: 4단계 연결 테스트 화면 렌더링 함수
+🔧 유틸리티 함수:
+- reset_session_state: 안전한 세션 초기화 (민감정보 정리)
+- validate_and_show_error: AWS 입력값 실시간 검증 + 에러 표시
+- safe_session_update: 중복 방지 세션 상태 업데이트
+- get_actual_secret_key: 마스킹된 Secret Key 실제값 반환
+- cleanup_sensitive_data: 보안을 위한 민감정보 자동 정리
 """
 
 import streamlit as st
 import streamlit.components.v1 as components
 import json
 import time
-from aws_handler import AWSConnectionHandler
+from components.aws_handler import AWSConnectionHandler
 
 def step_indicator(current_step):
     """
@@ -665,8 +668,9 @@ def sidebar_panel():
         st.markdown("#### 🔧 세션 관리")
         
         if st.button("🔄 전체 초기화", type="secondary", use_container_width=True):
-            for key in list(st.session_state.keys()):
-                del st.session_state[key]
+            # 안전한 초기화
+            reset_session_state(keep_aws_handler=False)
+            st.session_state.clear()  # 완전 초기화
             st.rerun()
         
         # 데이터 내보내기
@@ -684,12 +688,26 @@ def sidebar_panel():
         
         # 디버그 정보 (접을 수 있게)
         with st.expander("🐛 디버그 정보", expanded=False):
-            st.json({
+            # 실제 Secret Key 길이 계산
+            actual_secret = st.session_state.get('temp_secret_key', '') 
+            if not actual_secret:
+                stored_secret = st.session_state.account_data.get('secret_access_key', '')
+                actual_secret = stored_secret if stored_secret != '[MASKED]' else ''
+
+            debug_info = {
                 "current_step": st.session_state.current_step,
                 "connection_type": st.session_state.connection_type,
                 "connection_status": st.session_state.connection_status,
-                "account_data": st.session_state.account_data
-            })
+                "account_data": {
+                    "cloud_name": st.session_state.account_data.get('cloud_name', ''),
+                    "account_id": st.session_state.account_data.get('account_id', ''),
+                    "access_key_length": len(st.session_state.account_data.get('access_key_id', '')),
+                    "secret_key_length": len(actual_secret),
+                    "secret_key_status": "temp_stored" if st.session_state.get('temp_secret_key') else ("masked" if st.session_state.account_data.get('secret_access_key') == '[MASKED]' else "direct"),
+                    "region": st.session_state.account_data.get('primary_region', '')
+                }
+            }
+            st.json(debug_info)
             
 def navigation_buttons(show_prev=True, show_next=True, prev_label="이전", next_label="다음", 
                       next_disabled=False, prev_callback=None, next_callback=None):
@@ -740,36 +758,45 @@ def navigation_buttons(show_prev=True, show_next=True, prev_label="이전", next
 
 def reset_session_state(keep_aws_handler=True):
     """
-    세션 상태 초기화 공통 함수
+    세션 상태 초기화 공통 함수 - 중복 방지 개선
     
     Args:
         keep_aws_handler (bool): AWS 핸들러 유지 여부
     """
+    # 현재 세션에서 삭제할 키들 수집
     keys_to_delete = []
-    for key in st.session_state.keys():
+    for key in list(st.session_state.keys()):
         if key.startswith(('current_step', 'connection_type', 'account_data', 
-                          'connection_status', 'test_results')):
+                          'connection_status', 'test_results', 'show_')):
             keys_to_delete.append(key)
     
+    # 안전하게 삭제
     for key in keys_to_delete:
-        del st.session_state[key]
+        if key in st.session_state:
+            del st.session_state[key]
     
-    # 기본값으로 재초기화
-    st.session_state.current_step = 1
-    st.session_state.connection_type = 'cross-account-role'
-    st.session_state.account_data = {
-        'cloud_name': '',
-        'account_id': '',
-        'role_arn': '',
-        'external_id': '',
-        'access_key_id': '',
-        'secret_access_key': '',
-        'primary_region': 'ap-northeast-2',
-        'contact_email': ''
+    # 기본값으로 재초기화 (한 번에 설정)
+    default_state = {
+        'current_step': 1,
+        'connection_type': 'cross-account-role',
+        'account_data': {
+            'cloud_name': '',
+            'account_id': '',
+            'role_arn': '',
+            'external_id': '',
+            'access_key_id': '',
+            'secret_access_key': '',
+            'primary_region': 'ap-northeast-2',
+            'contact_email': ''
+        },
+        'connection_status': 'idle',
+        'test_results': None
     }
-    st.session_state.connection_status = 'idle'
-    st.session_state.test_results = None
     
+    # 한 번에 업데이트
+    st.session_state.update(default_state)
+    
+    # AWS 핸들러 설정
     if keep_aws_handler and 'aws_handler' not in st.session_state:
         st.session_state.aws_handler = AWSConnectionHandler()
 
@@ -795,3 +822,51 @@ def validate_and_show_error(field_name, value, validator_func):
         return False
     
     return True
+
+def safe_session_update(updates):
+    """
+    세션 상태 안전 업데이트
+    - 중복 업데이트 방지
+    
+    Args:
+        updates (dict): 업데이트할 세션 상태들
+    """
+    for key, value in updates.items():
+        if key not in st.session_state or st.session_state[key] != value:
+            st.session_state[key] = value
+
+def get_session_state_summary():
+    """
+    현재 세션 상태 요약 반환
+    - 디버깅용
+    """
+    return {
+        'step': st.session_state.get('current_step', 'unknown'),
+        'connection_type': st.session_state.get('connection_type', 'unknown'),
+        'connection_status': st.session_state.get('connection_status', 'unknown'),
+        'has_account_data': bool(st.session_state.get('account_data', {})),
+        'has_test_results': bool(st.session_state.get('test_results')),
+        'total_session_keys': len(st.session_state.keys())
+    }
+
+def get_actual_secret_key():
+    """실제 Secret Key 반환 (마스킹되지 않은)"""
+    temp_key = st.session_state.get('temp_secret_key', '')
+    stored_key = st.session_state.account_data.get('secret_access_key', '')
+    
+    if temp_key:
+        return temp_key
+    elif stored_key and stored_key != '[MASKED]':
+        return stored_key
+    else:
+        return ''
+
+def cleanup_sensitive_data():
+    """민감 정보 정리"""
+    if 'temp_secret_key' in st.session_state:
+        del st.session_state.temp_secret_key
+    
+    if 'account_data' in st.session_state:
+        if st.session_state.account_data.get('secret_access_key') != '[MASKED]':
+            st.session_state.account_data['secret_access_key'] = '[MASKED]'
+            

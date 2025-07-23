@@ -184,6 +184,21 @@ class AWSConnectionHandler:
             dict: 연결 테스트 결과
         """
         try:
+            # 입력값 정리 (공백, 줄바꿈 제거)
+            access_key_id = access_key_id.strip()
+            secret_access_key = secret_access_key.strip()
+            
+            # 입력값 검증
+            if not access_key_id or not secret_access_key:
+                return {
+                    'status': 'failed',
+                    'error_message': 'Access Key ID 또는 Secret Access Key가 비어있습니다.'
+                }
+            
+            print(f"Access Key ID: {access_key_id}")
+            print(f"Secret Key 길이: {len(secret_access_key)}")
+            print(f"Secret Key 시작: {secret_access_key[:4]}...")
+            
             # 세션 생성
             session = boto3.Session(
                 aws_access_key_id=access_key_id,
@@ -209,10 +224,35 @@ class AWSConnectionHandler:
                 'connection_time': datetime.now().isoformat()
             }
             
-        except (ClientError, NoCredentialsError) as e:
+        except ClientError as e:
+            error_code = e.response['Error']['Code']
+            error_message = e.response['Error']['Message']
+            
+            if error_code == 'SignatureDoesNotMatch':
+                return {
+                    'status': 'failed',
+                    'error_code': error_code,
+                    'error_message': '🔑 AWS 자격증명 오류: Secret Access Key를 다시 확인해주세요.\n'
+                                '• 복사 시 공백이나 줄바꿈이 포함되지 않았는지 확인\n'
+                                '• 키가 올바른지 AWS 콘솔에서 재확인\n'
+                                '• 새로운 Access Key를 생성해보세요'
+                }
+            elif error_code == 'InvalidUserID.NotFound':
+                return {
+                    'status': 'failed',
+                    'error_code': error_code,
+                    'error_message': '🔍 Access Key ID가 존재하지 않습니다. AWS 콘솔에서 확인해주세요.'
+                }
+            else:
+                return {
+                    'status': 'failed',
+                    'error_code': error_code,
+                    'error_message': f'AWS API 오류: {error_message}'
+                }
+        except NoCredentialsError:
             return {
                 'status': 'failed',
-                'error_message': str(e)
+                'error_message': '🔐 AWS 자격증명이 제공되지 않았습니다.'
             }
         except Exception as e:
             return {
