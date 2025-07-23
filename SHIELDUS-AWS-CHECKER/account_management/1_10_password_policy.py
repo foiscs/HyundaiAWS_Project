@@ -1,4 +1,3 @@
-# 1.account_management/1_10_password_policy.py
 import boto3
 from botocore.exceptions import ClientError
 
@@ -8,6 +7,7 @@ def check():
     - 계정의 패스워드 정책이 권장 기준을 충족하는지 점검하고, 미흡한 경우 True를 반환
     """
     print("[INFO] 1.10 AWS 계정 패스워드 정책 관리 체크 중...")
+    print("[ⓘ INFO] Admin Console의 패스워드 복잡성 정책은 AWS 내부 정책에 의해 관리되며, IAM 정책만 점검할 수 있습니다.")
     iam = boto3.client('iam')
     is_non_compliant = False
 
@@ -50,7 +50,7 @@ def fix(is_non_compliant):
         return
 
     iam = boto3.client('iam')
-    choice = input("[FIX] 1.10 권장 기준에 따라 계정 암호 정책을 업데이트하시겠습니까? (y/n): ").lower()
+    choice = input("[FIX] 1.10 권장 기준에 따라 IAM 계정 암호 정책을 업데이트하시겠습니까? (y/n): ").lower()
     if choice == 'y':
         try:
             iam.update_account_password_policy(
@@ -61,7 +61,7 @@ def fix(is_non_compliant):
                 RequireLowercaseCharacters=True,
                 AllowUsersToChangePassword=True,
                 MaxPasswordAge=90,
-                PasswordReusePrevention=5, # 가이드라인보다 강화된 5회
+                PasswordReusePrevention=5,
                 HardExpiry=False
             )
             print("     [SUCCESS] 계정 암호 정책을 성공적으로 업데이트했습니다.")
