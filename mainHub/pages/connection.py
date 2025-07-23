@@ -106,51 +106,58 @@ def render_step2():
     """
     with st.container():
         if st.session_state.connection_type == 'cross-account-role':
-            st.subheader("🛡️ IAM Role 설정 가이드")
-            
+            st.subheader("🛡️ Cross-Account Role 설정 가이드")
+            st.markdown("""
+            다음은 **WALB가 Role을 Assume하기 위해 필요한 최소 설정**입니다. 아래 **3단계**를 정확히 따라 수행해주세요.
+            """)
             info_box(
-                "**🎯 간단한 3단계 설정으로 완료!**<br><br>"
-                "**1단계**: IAM 콘솔 → Roles → Create role<br>"
-                "**2단계**: 신뢰할 수 있는 엔터티 설정<br>"
-                "• **AWS 계정** 선택<br>"
-                "• **다른 AWS 계정** 선택<br>"
-                "• **계정 ID**: 292967571836<br>"
-                "• **외부 ID 필요** ✅ 체크<br>"
-                "• **외부 ID**: 아래 표시된 값 입력<br><br>"
-                "**3단계**: 권한 정책 연결<br>"
-                "• **AdministratorAccess** 검색해서 선택<br>"
-                "• **역할 이름**: WALB-CrossAccount-Role<br>"
-                "• **역할 생성** 완료",
-                box_type="success",
-                title="AWS 콘솔 설정 가이드"
-            )
-            
-            # External ID 생성 및 표시
-            if not st.session_state.account_data['external_id']:
-                st.session_state.account_data['external_id'] = st.session_state.aws_handler.generate_external_id()
-            
-            # External ID를 눈에 띄게 표시
-            st.markdown("### 🔑 외부 ID (External ID)")
-            st.code(st.session_state.account_data['external_id'], language=None)
-            st.info("💡 위 외부 ID를 AWS 콘솔의 **'외부 ID'** 필드에 복사해서 붙여넣으세요.")
-            
-            # Trust Policy 자동 생성 안내
-            info_box(
-                "✨ **Trust Policy는 AWS 콘솔이 자동으로 생성합니다**<br><br>"
-                "위 단계대로 설정하면 AWS가 올바른 신뢰 관계 정책을 자동으로 만들어줍니다.<br>"
-                "**JSON 코드를 직접 붙여넣을 필요가 없어요!**<br><br>"
-                "🎯 **완료 후**: 생성된 Role의 **ARN**을 복사해서 다음 단계에서 사용하세요.",
-                box_type="info",
-                title="자동 생성되는 Trust Policy"
-            )
-            
-            # External ID 안내
-            info_box(
-                f"External ID: <code>{st.session_state.account_data['external_id']}</code><br>"
-                "이 값을 Role 설정 시 사용하세요.",
+                """
+                <ol style="margin-bottom: 0;">
+                <li><strong>IAM 콘솔 → Roles → Create role</strong></li>
+                <li><strong>신뢰할 수 있는 엔터티 유형</strong>: AWS 계정 ✅</li>
+                <li><strong>계정 ID</strong>: <code>292967571836</code></li>
+                <li><strong>외부 ID</strong>: 아래 External ID를 입력</li>
+                </ol>
+                """,
                 box_type="warning",
-                title="중요한 정보"
+                title="Step 1 - Role 생성 시 신뢰 관계 입력"
             )
+
+            # External ID 표시
+            external_id = st.session_state.account_data['external_id']
+            if not external_id:
+                external_id = st.session_state.aws_handler.generate_external_id()
+                st.session_state.account_data['external_id'] = external_id
+
+            st.markdown(f"""
+            <div style="
+                background: linear-gradient(135deg, #1e3a8a, #2563eb);
+                color: white;
+                padding: 0.75rem 1rem;
+                border-radius: 8px;
+                font-family: 'Courier New', monospace;
+                font-size: 0.85rem;
+                margin-top: 0.5rem;
+                margin-bottom: 0.5rem;
+            ">
+            🔑 우측 코드를 AWS 콘솔의 ‘외부 ID’ 입력란에 붙여넣으세요: <strong>{external_id}</strong>
+            </div>
+            """, unsafe_allow_html=True)
+            st.markdown("---")
+            # 실제 JSON Trust Policy 출력
+            trust_policy = st.session_state.aws_handler.generate_trust_policy(external_id)
+            json_code_block(trust_policy, "신뢰 관계 정책 (Trust Policy)")
+
+            info_box(
+                """
+                <strong>3.</strong> 권한 정책 부여: <code>AdministratorAccess</code> 검색 → 선택<br>
+                <strong>4.</strong> 역할 이름 예시: <code>WALB-CrossAccount-Role</code><br>
+                <strong>5.</strong> 생성 완료 후, <strong>Role ARN</strong>을 복사하여 다음 단계에서 입력하세요.
+                """,
+                box_type="success",
+                title="Step 2 - 권한 정책 부여 및 Role 생성 완료"
+            )
+            st.markdown("---")
             
         else:  # access-key
             st.subheader("🔑 IAM 사용자 설정 가이드")

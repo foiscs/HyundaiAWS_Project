@@ -71,7 +71,7 @@ class AWSConnectionHandler:
                     {
                         "Effect": "Allow",
                         "Principal": {
-                            "AWS": f"arn:aws:iam::{account_id}:root"
+                            "AWS": f"arn:aws:iam::{account_id}:user/walb-user"
                         },
                         "Action": "sts:AssumeRole",
                         "Condition": {
