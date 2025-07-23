@@ -350,9 +350,7 @@ def render_step3():
             if st.session_state.connection_type == 'cross-account-role':
                 return basic_filled and bool(account['role_arn'])
             else:
-                # temp_secret_key 또는 실제 secret_access_key 확인
-                has_secret = bool(st.session_state.get('temp_secret_key')) or bool(account.get('secret_access_key') and account['secret_access_key'] != '[MASKED]')
-                return basic_filled and bool(account['access_key_id'] and has_secret)
+                return basic_filled and bool(account['access_key_id'] and account['secret_access_key'])
 
         # 입력 완료 여부 확인
         required_fields_filled = check_required_fields()
@@ -466,14 +464,12 @@ def render_step4():
                     # 계정 등록 처리
                     account = st.session_state.account_data.copy()
                     
-                    # 보안: 민감 정보 마스킹
-                    if 'secret_access_key' in account and account['secret_access_key']:
-                        account['secret_access_key'] = '[REDACTED_FOR_SECURITY]'
-                    
                     try:
-                        # 파일에 저장
+                        # 파일에 저장 (Secret Key 포함)
                         with open("registered_accounts.json", "a", encoding="utf-8") as f:
                             f.write(json.dumps(account, ensure_ascii=False) + "\n")
+                        
+                        st.info("🔒 **보안 알림**: Secret Access Key가 로컬 파일에 저장됩니다.")
                         
                         # 성공 애니메이션
                         st.balloons()

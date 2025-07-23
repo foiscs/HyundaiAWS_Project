@@ -46,10 +46,12 @@ def render_account_card(account, index):
             st.success("🟢 연결됨")
             
         with col3:
-            if st.button("🔧 관리", key=f"manage_{index}"):
-                st.info("계정 관리 기능 (준비중)")
-            if st.button("🗑️ 제거", key=f"remove_{index}"):
-                st.warning("계정 제거 기능 (준비중)")
+            if st.button("📡 모니터링", key=f"monitor_{index}"):
+                st.info("모니터링 기능 (준비중)")
+            if st.button("🛡️ 항목진단", key=f"diagnosis_{index}"):
+                # 선택된 계정 정보를 세션에 저장
+                st.session_state.selected_account = account
+                st.switch_page("pages/diagnosis.py")
 
 def main():
     """메인 대시보드"""
@@ -92,37 +94,17 @@ def main():
     # 구분선
     st.markdown("---")
     
-    # 3대 핵심 기능 프리뷰
-    st.subheader("🛠️ WALB 핵심 기능")
+    # 안전한 클라우드 구축 (별도 기능)
+    st.subheader("🏗️ 안전한 클라우드 구축")
+    st.markdown("""
+    **Shift-Left Security 적용** - 사전 보안이 내장된 새로운 AWS 환경을 자동 구축합니다.
+    - 🛡️ 사전 보안 내장 인프라
+    - 📋 IaC 기반 Terraform 템플릿  
+    - ✅ ISMS-P 컴플라이언스 자동 적용
+    """)
     
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        st.markdown("""
-        ### 📡 기존 클라우드 모니터링
-        - CloudWatch, CloudTrail 수집
-        - GuardDuty 위협 탐지
-        - 실시간 보안 이벤트 알림
-        """)
-        st.button("🔍 모니터링 시작", disabled=len(accounts)==0)
-        
-    with col2:
-        st.markdown("""
-        ### ⚡ SK Shieldus 41개 항목 진단
-        - boto3 실시간 보안 점검
-        - Terraform 자동 수정
-        - ISMS-P 컴플라이언스
-        """)
-        st.button("🛡️ 보안 진단", disabled=len(accounts)==0)
-        
-    with col3:
-        st.markdown("""
-        ### 🏗️ 안전한 클라우드 구축
-        - Shift-Left Security 적용
-        - 사전 보안 내장 인프라
-        - IaC 기반 템플릿
-        """)
-        st.button("🚀 새 환경 구축", disabled=len(accounts)==0)
+    if st.button("🚀 새 환경 구축 시작", type="primary", use_container_width=True):
+        st.info("안전한 클라우드 구축 기능 (준비중)")
         
 if __name__ == "__main__":
     main()

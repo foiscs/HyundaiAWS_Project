@@ -554,18 +554,6 @@ def connection_test_result(test_results, test_status):
 def input_field_with_toggle(label, input_type="text", is_password=False, help=None):
     """
     비밀번호 토글 가능한 입력 필드 컴포넌트
-    - 일반 텍스트와 비밀번호 입력 간 전환 가능
-    - 눈 아이콘 버튼으로 표시/숨김 제어
-    - 보안: 민감 정보는 세션에 저장하지 않음
-    
-    Args:
-        label (str): 입력 필드 라벨
-        input_type (str): 입력 타입 ("text", "password")
-        is_password (bool): 비밀번호 필드 여부
-        help (str, optional): 도움말 텍스트
-    
-    Returns:
-        tuple: (입력값, 표시상태, 보안경고)
     """
     if is_password:
         # 표시/숨김 상태 관리
@@ -576,28 +564,20 @@ def input_field_with_toggle(label, input_type="text", is_password=False, help=No
         col1, col2 = st.columns([4, 1])
         
         with col1:
-            # 비밀번호 필드 - key 파라미터로 고유성 보장
-            field_key = f"secure_{label.replace(' ', '_').lower()}"
+            field_key = f"input_{label.replace(' ', '_').lower()}"
             if st.session_state[show_key]:
                 value = st.text_input(label, type="default", help=help, key=field_key)
             else:
                 value = st.text_input(label, type="password", help=help, key=field_key)
         
         with col2:
-            # 토글 버튼
             st.write("")  # 라벨 높이 맞추기
             icon = "🙈" if st.session_state[show_key] else "👁️"
             if st.button(icon, key=f"toggle_{show_key}"):
                 st.session_state[show_key] = not st.session_state[show_key]
                 st.rerun()
         
-        # 보안 경고 표시
-        security_warning = False
-        if value and len(value) > 0:
-            st.info("🔒 **보안 알림**: 민감한 정보는 연결 테스트 완료 후 자동으로 삭제됩니다.")
-            security_warning = True
-        
-        return value, st.session_state[show_key], security_warning
+        return value, st.session_state[show_key], False
     else:
         # 일반 텍스트 입력
         value = st.text_input(label, help=help)

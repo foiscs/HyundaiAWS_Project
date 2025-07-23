@@ -351,6 +351,38 @@ class AWSConnectionHandler:
             return len(regions['Regions'])
         except:
             return 0
+        
+    def create_session_from_role(self, role_arn, external_id, region='ap-northeast-2'):
+        """Cross-Account Role로 세션 생성"""
+        try:
+            sts_client = boto3.client('sts', region_name=region)
+            response = sts_client.assume_role(
+                RoleArn=role_arn,
+                RoleSessionName='walb-diagnosis-session',
+                ExternalId=external_id,
+                DurationSeconds=3600
+            )
+            
+            credentials = response['Credentials']
+            return boto3.Session(
+                aws_access_key_id=credentials['AccessKeyId'],
+                aws_secret_access_key=credentials['SecretAccessKey'],
+                aws_session_token=credentials['SessionToken'],
+                region_name=region
+            )
+        except Exception as e:
+            raise Exception(f"Role 세션 생성 실패: {str(e)}")
+
+    def create_session_from_keys(self, access_key_id, secret_access_key, region='ap-northeast-2'):
+        """Access Key로 세션 생성"""
+        try:
+            return boto3.Session(
+                aws_access_key_id=access_key_id,
+                aws_secret_access_key=secret_access_key,
+                region_name=region
+            )
+        except Exception as e:
+            raise Exception(f"Key 세션 생성 실패: {str(e)}")
 
 class InputValidator:
     """입력값 검증을 담당하는 클래스"""
