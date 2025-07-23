@@ -1,4 +1,3 @@
-# 1.account_management/1_11_eks_user_management.py
 def check():
     """
     [1.11] EKS 사용자 관리 (수동 점검 안내)
