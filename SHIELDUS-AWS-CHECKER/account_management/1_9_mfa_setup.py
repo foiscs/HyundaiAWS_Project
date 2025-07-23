@@ -1,4 +1,3 @@
-# 1.account_management/1_9_mfa_setup.py
 import boto3
 from botocore.exceptions import ClientError
 
@@ -24,7 +23,7 @@ def check():
         for user in iam.list_users()['Users']:
             user_name = user['UserName']
             try:
-                iam.get_login_profile(UserName=user_name)
+                iam.get_login_profile(UserName=user_name)  # 해당 사용자에게 콘솔 로그인 권한이 있는지 확인 (없으면 예외 발생)
                 if not iam.list_mfa_devices(UserName=user_name).get('MFADevices'):
                     findings['users_without_mfa'].append(user_name)
             except ClientError as e:
@@ -55,7 +54,6 @@ def fix(findings):
         print("  └─ [Root 계정] AWS Management Console에 Root로 로그인하여 [내 보안 자격 증명]에서 MFA 디바이스를 할당하세요.")
     if findings['users_without_mfa']:
         print(f"  └─ [IAM 사용자] 다음 사용자들에게 각자 로그인하여 [내 보안 자격 증명]에서 MFA를 설정하도록 안내하세요: {', '.join(findings['users_without_mfa'])}")
-        print("  └─ 또는, MFA를 강제하는 IAM 정책을 생성하여 해당 사용자/그룹에 연결할 수 있습니다.")
 
 if __name__ == "__main__":
     findings_dict = check()
