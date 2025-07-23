@@ -1,75 +1,102 @@
 import boto3
 from botocore.exceptions import ClientError
-import os, sys
+import json
 
-# 상위 디렉토리 경로 추가
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.append(BASE_DIR)
-
-from aws_client import AWSClientManager
+def is_bucket_public(s3_client, bucket_name):
+    try:
+        pab = s3_client.get_public_access_block(Bucket=bucket_name)['PublicAccessBlockConfiguration']
+        if all([pab.get('BlockPublicAcls'), pab.get('IgnorePublicAcls'), pab.get('BlockPublicPolicy'), pab.get('RestrictPublicBuckets')]):
+            return False
+    except ClientError as e:
+        if e.response['Error']['Code'] != 'NoSuchPublicAccessBlockConfiguration':
+            raise e
+    try:
+        policy_status = s3_client.get_bucket_policy_status(Bucket=bucket_name)
+        if policy_status['PolicyStatus']['IsPublic']:
+            return True
+    except ClientError: pass
+    try:
+        acl = s3_client.get_bucket_acl(Bucket=bucket_name)
+        for grant in acl['Grants']:
+            if grant.get('Grantee', {}).get('URI') == 'http://acs.amazonaws.com/groups/global/AllUsers':
+                return True
+    except ClientError: pass
+    return False
 
 def check():
     """
     [1.6] Key Pair 보관 관리
-    - 공개적으로 접근 가능한 S3 버킷에 Key Pair(.pem) 파일이 저장되어 있는지 점검
+    - 공개 가능한 S3 버킷에 Key Pair(.pem) 파일이 저장되어 있는지 점검하고, 해당 파일 목록 반환
     """
     print("[INFO] 1.6 Key Pair 보관 관리 체크 중...")
     s3 = boto3.client('s3')
-    found_vulnerable_keys = False
+    vulnerable_keys = {}
 
     try:
-        response = s3.list_buckets()
-        for bucket in response['Buckets']:
+        for bucket in s3.list_buckets()['Buckets']:
             bucket_name = bucket['Name']
-            is_public = False
-            
-            # 1. Public Access Block 설정 확인
-            try:
-                pab_response = s3.get_public_access_block(Bucket=bucket_name)
-                pab_config = pab_response['PublicAccessBlockConfiguration']
-                if not (pab_config.get('BlockPublicAcls', False) and
-                        pab_config.get('IgnorePublicAcls', False) and
-                        pab_config.get('BlockPublicPolicy', False) and
-                        pab_config.get('RestrictPublicBuckets', False)):
-                    is_public = True # 하나라도 False이면 공개 가능성이 있음
-            except ClientError as e:
-                if e.response['Error']['Code'] == 'NoSuchPublicAccessBlockConfiguration':
-                    is_public = True # 설정이 없으면 기본적으로 공개 가능
-                else:
-                    print(f"[-] [ERROR] {bucket_name}의 Public Access Block 확인 중 오류: {e}")
-                    continue
-
-            # 2. 버킷 정책(Policy) 확인
-            if not is_public:
-                try:
-                    policy_status = s3.get_bucket_policy_status(Bucket=bucket_name)
-                    if policy_status['PolicyStatus']['IsPublic']:
-                        is_public = True
-                except ClientError as e:
-                    if e.response['Error']['Code'] != 'NoSuchBucketPolicy':
-                         is_public = True
-
-            if is_public:
+            if is_bucket_public(s3, bucket_name):
                 try:
                     paginator = s3.get_paginator('list_objects_v2')
                     for page in paginator.paginate(Bucket=bucket_name):
                         for obj in page.get('Contents', []):
                             if obj['Key'].lower().endswith('.pem'):
-                                if not found_vulnerable_keys:
-                                    print(f"[⚠ WARNING] 1.6 공개 가능한 S3 버킷에 Key Pair 파일(.pem)이 존재합니다.")
-                                    found_vulnerable_keys = True
-                                print(f"  ├─ 버킷: {bucket_name}, 키: {obj['Key']}")
-                except ClientError as e:
-                    # 일부 버킷은 권한 부족으로 리스팅이 안될 수 있음
-                    if e.response['Error']['Code'] == 'AccessDenied':
-                        print(f"[-] [INFO] 버킷 '{bucket_name}'의 객체 목록을 확인할 권한이 없습니다.")
-                    else:
-                        print(f"[-] [ERROR] {bucket_name}의 객체 목록 확인 중 오류: {e}")
+                                if bucket_name not in vulnerable_keys:
+                                    vulnerable_keys[bucket_name] = []
+                                vulnerable_keys[bucket_name].append(obj['Key'])
+                except ClientError: pass
 
-        if not found_vulnerable_keys:
+        if not vulnerable_keys:
             print("[✓ COMPLIANT] 1.6 공개 가능한 S3 버킷에서 Key Pair 파일이 발견되지 않았습니다.")
         else:
-             print("  └─ 🔧 해당 Key Pair 파일을 즉시 삭제하거나 비공개 버킷으로 이동하고, 버킷의 공개 설정을 비활성화하세요.")
+            print(f"[⚠ WARNING] 1.6 공개 가능한 S3 버킷에 Key Pair 파일(.pem)이 존재합니다 ({sum(len(v) for v in vulnerable_keys.values())}개).")
+            for bucket, keys in vulnerable_keys.items():
+                print(f"  ├─ 버킷 '{bucket}': {', '.join(keys)}")
+        
+        return vulnerable_keys
 
     except ClientError as e:
-        print(f"[-] [ERROR] S3 버킷 정보를 가져오는 중 오류 발생: {e}")
+        print(f"[ERROR] S3 버킷 정보를 가져오는 중 오류 발생: {e}")
+        return {}
+
+def fix(vulnerable_keys):
+    """
+    [1.6] Key Pair 보관 관리 조치
+    - 공개된 버킷의 .pem 파일을 삭제하거나 버킷 자체를 비공개로 전환
+    """
+    if not vulnerable_keys:
+        return
+        
+    s3 = boto3.client('s3')
+    print("[FIX] 1.6 공개된 S3 버킷의 Key Pair 파일에 대한 조치를 시작합니다.")
+    for bucket_name, keys in vulnerable_keys.items():
+        choice = input(f"  -> 버킷 '{bucket_name}'에 대한 조치를 선택하세요 ([D]elete keys, [P]rivatize bucket, [i]gnore): ").lower()
+        if choice == 'd':
+            objects_to_delete = [{'Key': key} for key in keys]
+            confirm = input(f"     정말로 버킷 '{bucket_name}'에서 {len(keys)}개의 .pem 파일을 삭제하시겠습니까? (yes/no): ").lower()
+            if confirm == 'yes':
+                try:
+                    s3.delete_objects(Bucket=bucket_name, Delete={'Objects': objects_to_delete})
+                    print(f"     [SUCCESS] {len(keys)}개의 키 파일을 삭제했습니다.")
+                except ClientError as e:
+                    print(f"     [ERROR] 키 파일 삭제 실패: {e}")
+        elif choice == 'p':
+            confirm = input(f"     정말로 버킷 '{bucket_name}'의 모든 퍼블릭 액세스를 차단하시겠습니까? (yes/no): ").lower()
+            if confirm == 'yes':
+                try:
+                    s3.put_public_access_block(
+                        Bucket=bucket_name,
+                        PublicAccessBlockConfiguration={
+                            'BlockPublicAcls': True, 'IgnorePublicAcls': True,
+                            'BlockPublicPolicy': True, 'RestrictPublicBuckets': True
+                        }
+                    )
+                    print(f"     [SUCCESS] 버킷 '{bucket_name}'의 퍼블릭 액세스를 차단했습니다.")
+                except ClientError as e:
+                    print(f"     [ERROR] 퍼블릭 액세스 차단 실패: {e}")
+        else:
+            print(f"     [INFO] 버킷 '{bucket_name}'에 대한 조치를 건너뜁니다.")
+
+if __name__ == "__main__":
+    key_list = check()
+    fix(key_list)

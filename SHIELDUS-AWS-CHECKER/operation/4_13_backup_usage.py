@@ -1,52 +1,57 @@
 import boto3
 from botocore.exceptions import ClientError
-import os, sys
-
-# 상위 디렉토리 경로 추가
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.append(BASE_DIR)
-
-from aws_client import AWSClientManager
 
 def check():
     """
     [4.13] 백업 사용 여부
-    - AWS Backup 플랜이 존재하는지, RDS 자동 백업이 활성화되었는지 점검
+    - AWS Backup 플랜 존재 여부와 RDS 자동 백업 활성화 여부를 점검
     """
     print("[INFO] 4.13 백업 사용 여부 체크 중...")
+    findings = {'no_backup_plan': True, 'rds_no_backup': []}
     
-    # 1. AWS Backup 플랜 점검
-    backup = boto3.client('backup')
-    is_backup_plan_ok = False
     try:
-        backup_plans = backup.list_backup_plans().get('BackupPlansList', [])
-        if backup_plans:
-            print(f"[✓ COMPLIANT] 4.13 AWS Backup 플랜이 존재합니다 ({len(backup_plans)}개).")
-            is_backup_plan_ok = True
+        if boto3.client('backup').list_backup_plans()['BackupPlansList']:
+            findings['no_backup_plan'] = False
+            print("[✓ COMPLIANT] 4.13 AWS Backup 플랜이 존재합니다.")
         else:
-            print("[⚠ WARNING] 4.13 AWS Backup 플랜이 존재하지 않습니다.")
-    except ClientError as e:
-        print(f"[ERROR] AWS Backup 정보를 가져오는 중 오류 발생: {e}")
-
-    # 2. RDS 자동 백업 점검
-    rds = boto3.client('rds')
-    rds_no_backup = []
-    is_rds_ok = True
+            print("[⚠ WARNING] 4.13 AWS Backup 플랜이 존재하지 않습니다. (EBS, EFS 등 점검 필요)")
+    except ClientError as e: print(f"[ERROR] AWS Backup 점검 중 오류: {e}")
+    
     try:
-        paginator = rds.get_paginator('describe_db_instances')
-        for page in paginator.paginate():
-            for instance in page['DBInstances']:
-                if instance.get('BackupRetentionPeriod', 0) == 0:
-                    rds_no_backup.append(instance['DBInstanceIdentifier'])
-        
-        if rds_no_backup:
-            is_rds_ok = False
-            print(f"[⚠ WARNING] 4.13 자동 백업이 비활성화된 RDS DB 인스턴스가 존재합니다 ({len(rds_no_backup)}개).")
-            print(f"  ├─ 해당 인스턴스: {', '.join(rds_no_backup)}")
-    except ClientError as e:
-        print(f"[ERROR] RDS 정보를 가져오는 중 오류 발생: {e}")
+        for inst in boto3.client('rds').describe_db_instances()['DBInstances']:
+            if inst.get('BackupRetentionPeriod', 0) == 0:
+                findings['rds_no_backup'].append(inst['DBInstanceIdentifier'])
+        if findings['rds_no_backup']:
+            print(f"[⚠ WARNING] 4.13 자동 백업이 비활성화된 RDS DB 인스턴스가 존재합니다: {findings['rds_no_backup']}")
+        else:
+            print("[✓ COMPLIANT] 4.13 모든 RDS 인스턴스에 자동 백업이 활성화되어 있습니다.")
 
-    if is_backup_plan_ok and is_rds_ok:
-         print("[✓ COMPLIANT] 4.13 전반적인 백업 정책이 설정되어 있습니다. (세부 내용은 수동 확인 필요)")
-    else:
-         print("  └─ 🔧 AWS Backup, RDS 자동 백업, EBS 스냅샷 정책 등을 활용하여 중요 데이터의 백업 및 복구 절차를 수립하세요.")
+    except ClientError as e: print(f"[ERROR] RDS 점검 중 오류: {e}")
+        
+    return findings
+
+def fix(findings):
+    """
+    [4.13] 백업 사용 여부 조치
+    - RDS 자동 백업 활성화, AWS Backup은 수동 안내
+    """
+    if not findings['no_backup_plan'] and not findings['rds_no_backup']: return
+
+    if findings['no_backup_plan']:
+        print("[FIX] 4.13 AWS Backup 플랜 생성은 백업 주기, 보관 정책 등 상세 설정이 필요하여 수동 조치를 권장합니다.")
+        print("  └─ AWS Backup 콘솔에서 [백업 플랜 생성]을 통해 EBS, EFS, DynamoDB 등 중요 리소스에 대한 백업을 구성하세요.")
+
+    if findings['rds_no_backup']:
+        rds = boto3.client('rds')
+        print("[FIX] 4.13 RDS 자동 백업 설정 조치를 시작합니다.")
+        retention_period = int(input("  -> 설정할 백업 보존 기간(일)을 입력하세요 (권장: 7 이상): ") or "7")
+        for name in findings['rds_no_backup']:
+            if input(f"  -> 인스턴스 '{name}'에 자동 백업(보존 기간: {retention_period}일)을 활성화하시겠습니까? (y/n): ").lower() == 'y':
+                try:
+                    rds.modify_db_instance(DBInstanceIdentifier=name, BackupRetentionPeriod=retention_period, ApplyImmediately=False)
+                    print(f"     [SUCCESS] '{name}'에 대한 수정 요청을 보냈습니다. 다음 유지관리 기간에 적용됩니다.")
+                except ClientError as e: print(f"     [ERROR] 수정 실패: {e}")
+
+if __name__ == "__main__":
+    findings_dict = check()
+    fix(findings_dict)

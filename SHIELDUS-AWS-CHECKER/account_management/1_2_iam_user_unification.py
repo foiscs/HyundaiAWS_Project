@@ -1,20 +1,20 @@
 import boto3
 from botocore.exceptions import ClientError
 from datetime import datetime, timezone
-import os, sys
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.append(BASE_DIR)
 
 
 def check():
     """
     [1.2] IAM 사용자 계정 단일화 관리
-    - 90일 이상 사용되지 않은 IAM 사용자를 비활성 계정으로 간주하여 점검
-    - 이는 '1인 1계정' 원칙 위반이나 불필요한 테스트/퇴사자 계정 존재 가능성을 시사
+    - 참고: 콘솔 로그인 및 Access Key 사용 이력을 기준으로
+            90일 이상 미사용된 IAM 사용자를 안내합니다.
+    - 단, 1명의 담당자가 다수의 계정을 사용하는지 여부는 수동 점검 필요
     """
     print("[INFO] 1.2 IAM 사용자 계정 단일화 관리 체크 중...")
+    print("[ⓘ MANUAL] 1명의 담당자가 여러 개의 IAM 계정을 사용하는지에 대해서는 수동 점검이 필요합니다.")
+
     iam = boto3.client('iam')
-    inactive_users = []
+    inactive_user_details = {}
     now = datetime.now(timezone.utc)
 
     try:
@@ -22,49 +22,57 @@ def check():
         for page in paginator.paginate():
             for user in page['Users']:
                 user_name = user['UserName']
-                
-                # 사용자의 마지막 활동 정보 확인
-                if 'PasswordLastUsed' in user:
-                    last_activity = user['PasswordLastUsed']
-                    if (now - last_activity).days > 90:
-                        inactive_users.append(f"{user_name} (콘솔 비활성: {(now - last_activity).days}일)")
-                        continue # 다음 사용자로
+                is_inactive = True
 
-                # Access Key 마지막 사용 정보 확인
-                keys_response = iam.list_access_keys(UserName=user_name)
-                if not keys_response['AccessKeyMetadata']: # 키가 없는 사용자
-                    if 'PasswordLastUsed' not in user: # 콘솔 사용 기록도 없으면
-                        inactive_users.append(f"{user_name} (활동 기록 없음)")
-                    continue
+                # 콘솔 로그인 사용 이력 확인
+                last_password_use = user.get('PasswordLastUsed')
+                if last_password_use and (now - last_password_use).days <= 90:
+                    is_inactive = False
 
-                is_active_key_found = False
-                for key in keys_response['AccessKeyMetadata']:
-                    if key['Status'] == 'Active':
-                        last_used_info = iam.get_access_key_last_used(AccessKeyId=key['AccessKeyId'])
-                        if 'LastUsedDate' in last_used_info['AccessKeyLastUsed']:
-                            last_used_date = last_used_info['AccessKeyLastUsed']['LastUsedDate']
-                            if (now - last_used_date).days <= 90:
-                                is_active_key_found = True
-                                break # 활성 키를 찾았으므로 이 사용자는 활성 상태
-                        # LastUsedDate가 없는 경우, 생성일 기준 90일 경과 시 비활성으로 간주
-                        elif (now - key['CreateDate']).days > 90:
-                           pass # 비활성 후보로 남음
-                        else:
-                           is_active_key_found = True
-                           break
-                
-                if not is_active_key_found:
-                    inactive_users.append(f"{user_name} (액세스 키 비활성: 90+일)")
+                # Access Key 사용 이력 또는 생성일 확인
+                if is_inactive:
+                    keys_response = iam.list_access_keys(UserName=user_name)
+                    has_active_key = False
 
-        if not inactive_users:
-            print("[✓ COMPLIANT] 1.2 장기 미사용 또는 불필요한 사용자 계정이 발견되지 않았습니다.")
+                    for key in keys_response['AccessKeyMetadata']:
+                        if key['Status'] == 'Active':
+                            has_active_key = True
+                            last_used_info = iam.get_access_key_last_used(AccessKeyId=key['AccessKeyId'])
+                            last_used_date = last_used_info.get('AccessKeyLastUsed', {}).get('LastUsedDate')
+                            create_date = key['CreateDate']
+
+                            if last_used_date:
+                                if (now - last_used_date).days <= 90:
+                                    is_inactive = False
+                                    break
+                            else:
+                                # 사용 이력은 없지만 생성된 지 90일 미만이면 활성으로 간주
+                                if (now - create_date).days <= 90:
+                                    is_inactive = False
+                                    break
+
+                    # 판단 결과에 따라 사용자 분류
+                    if has_active_key and is_inactive:
+                        inactive_user_details[user_name] = "액세스 키 90일 이상 미사용"
+                    elif not has_active_key and not last_password_use:
+                        inactive_user_details[user_name] = "활동 기록 없음"
+                    elif is_inactive and last_password_use:
+                        inactive_user_details[user_name] = f"콘솔 비활성: {(now - last_password_use).days}일"
+
+        # 결과 출력
+        if not inactive_user_details:
+            print("[참고] 1.2 장기 미사용 또는 불필요한 사용자 계정이 발견되지 않았습니다.")
         else:
-            print(f"[⚠ WARNING] 1.2 장기 미사용(90일 이상) 사용자 계정이 존재합니다 ({len(inactive_users)}개).")
-            for user_info in inactive_users:
-                print(f"  ├─ 비활성 의심 사용자: {user_info}")
-            print("  └─ 🔧 퇴사자, 테스트, 불필요한 계정은 삭제하거나 비활성화하세요.")
-            print("  └─ 🔧 명령어 (비활성화): aws iam deactivate-login-profile --user-name <사용자명>")
-            print("  └─ 🔧 명령어 (삭제): aws iam delete-user --user-name <사용자명>")
+            print(f"[참고] 1.2 미사용 사용자 계정이 존재합니다 ({len(inactive_user_details)}개).")
+            for user, reason in inactive_user_details.items():
+                print(f"  ├─ 비활성 의심 사용자: {user} ({reason})")
+
+        return True
 
     except ClientError as e:
-        print(f"[-] [ERROR] IAM 사용자 활동 정보를 가져오는 중 오류 발생: {e}")
+        print(f"[ERROR] IAM 사용자 활동 정보를 가져오는 중 오류 발생: {e}")
+        return False
+
+
+if __name__ == "__main__":
+    check()
