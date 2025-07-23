@@ -64,6 +64,12 @@ class AWSConnectionHandler:
             """
             # 실제 WALB 서비스가 배포된 계정 ID 또는 기본값 사용
             account_id = walb_account_id or self.walb_service_account_id
+            print(f"Account ID: '{account_id}' (length: {len(account_id)})")
+            print(f"Trust Policy - Account ID: '{account_id}' (type: {type(account_id)}, length: {len(str(account_id))})")
+            
+            # ARN 문자열을 직접 구성해서 확인
+            arn_string = f"arn:aws:iam::{account_id}:user/walb-service-user"
+            print(f"Trust Policy - ARN: '{arn_string}'")
             
             return {
                 "Version": "2012-10-17",
@@ -71,7 +77,7 @@ class AWSConnectionHandler:
                     {
                         "Effect": "Allow",
                         "Principal": {
-                            "AWS": f"arn:aws:iam::{account_id}:user/walb-user"
+                            "AWS": arn_string
                         },
                         "Action": "sts:AssumeRole",
                         "Condition": {
@@ -114,17 +120,31 @@ class AWSConnectionHandler:
             dict: 연결 테스트 결과
         """
         try:
-            # WALB 메인 계정에서 STS 클라이언트 생성
-            # AWS CLI 프로필 또는 환경변수에서 메인 계정 자격증명 사용
-            sts_client = boto3.client('sts', region_name=region)
-            
-            # 실제 환경에서는 WALB 서비스의 자격증명을 사용해야 함
-            # 현재는 로컬 환경 테스트를 위해 기본 자격증명 사용
-            sts_client = boto3.client('sts', region_name=region)
+            # Streamlit secrets에서 WALB 서비스 자격증명 가져오기
+            try:
+                walb_access_key = st.secrets["access_key_id"]
+                walb_secret_key = st.secrets["secret_access_key"]  
+                walb_region = st.secrets.get("region", region)
+                
+                # WALB 서비스 자격증명으로 STS 클라이언트 생성
+                sts_client = boto3.client(
+                    'sts',
+                    aws_access_key_id=walb_access_key,
+                    aws_secret_access_key=walb_secret_key,
+                    region_name=walb_region
+                )
+                
+                print(f"WALB 서비스 자격증명으로 STS 클라이언트 생성 성공")
+                
+            except KeyError as e:
+                return {
+                    'status': 'failed',
+                    'error_message': f'WALB 서비스 자격증명이 설정되지 않았습니다: {str(e)}'
+                }
             
             print(f"Role ARN으로 연결 시도: {role_arn}")
             print(f"External ID: {external_id}")
-            
+                        
             response = sts_client.assume_role(
                 RoleArn=role_arn,
                 RoleSessionName='walb-security-assessment',
@@ -384,6 +404,17 @@ class AWSConnectionHandler:
         except Exception as e:
             raise Exception(f"Key 세션 생성 실패: {str(e)}")
 
+    def extract_account_id_from_role_arn(self, role_arn):
+        """Role ARN에서 계정 ID 추출"""
+        try:
+            # arn:aws:iam::123456789012:role/RoleName 형식에서 계정 ID 추출
+            parts = role_arn.split(':')
+            if len(parts) >= 5 and parts[0] == 'arn' and parts[1] == 'aws' and parts[2] == 'iam':
+                return parts[4]
+            return None
+        except:
+            return None
+    
 class InputValidator:
     """입력값 검증을 담당하는 클래스"""
     

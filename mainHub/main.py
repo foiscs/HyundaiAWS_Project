@@ -82,6 +82,7 @@ def main():
                 
         with col2:
             if st.button("➕ 계정 추가", type="primary"):
+                SessionManager.reset_connection_data()
                 st.switch_page("pages/connection.py")
                 
     else:
@@ -90,6 +91,7 @@ def main():
         st.write("WALB 보안 관리를 시작하려면 AWS 계정을 먼저 연결해주세요.")
         
         if st.button("➕ 첫 번째 계정 연결", type="primary", use_container_width=True):
+            SessionManager.reset_connection_data()
             st.switch_page("pages/connection.py")
     
     # 구분선

@@ -114,13 +114,12 @@ def render_step2():
                 """
                 <ol style="margin-bottom: 0;">
                 <li><strong>IAM 콘솔 → Roles → Create role</strong></li>
-                <li><strong>신뢰할 수 있는 엔터티 유형</strong>: AWS 계정 ✅</li>
-                <li><strong>계정 ID</strong>: <code>292967571836</code></li>
-                <li><strong>외부 ID</strong>: 아래 External ID를 입력</li>
+                <li><strong>신뢰할 수 있는 엔터티 유형</strong>: 사용자 지정 신뢰 정책 ✅</li>
+                <li><strong>아래 JSON을 복사하여 신뢰 정책란에 붙여넣기</strong></li>
                 </ol>
                 """,
-                box_type="warning",
-                title="Step 1 - Role 생성 시 신뢰 관계 입력"
+                box_type="warning", 
+                title="Step 1 - 사용자 지정 신뢰 정책으로 Role 생성"
             )
 
             # External ID 표시
@@ -129,30 +128,15 @@ def render_step2():
                 external_id = st.session_state.aws_handler.generate_external_id()
                 st.session_state.account_data['external_id'] = external_id
 
-            st.markdown(f"""
-            <div style="
-                background: linear-gradient(135deg, #1e3a8a, #2563eb);
-                color: white;
-                padding: 0.75rem 1rem;
-                border-radius: 8px;
-                font-family: 'Courier New', monospace;
-                font-size: 0.85rem;
-                margin-top: 0.5rem;
-                margin-bottom: 0.5rem;
-            ">
-            🔑 우측 코드를 AWS 콘솔의 ‘외부 ID’ 입력란에 붙여넣으세요: <strong>{external_id}</strong>
-            </div>
-            """, unsafe_allow_html=True)
-            st.markdown("---")
             # 실제 JSON Trust Policy 출력
             trust_policy = st.session_state.aws_handler.generate_trust_policy(external_id)
             json_code_block(trust_policy, "신뢰 관계 정책 (Trust Policy)")
 
             info_box(
                 """
-                <strong>3.</strong> 권한 정책 부여: <code>AdministratorAccess</code> 검색 → 선택<br>
-                <strong>4.</strong> 역할 이름 예시: <code>WALB-CrossAccount-Role</code><br>
-                <strong>5.</strong> 생성 완료 후, <strong>Role ARN</strong>을 복사하여 다음 단계에서 입력하세요.
+                <strong>1.</strong> 권한 정책 부여: <code>AdministratorAccess</code> 검색 → 선택<br>
+                <strong>2.</strong> 역할 이름 예시: <code>WALB-CrossAccount-Role</code><br>
+                <strong>3.</strong> 생성 완료 후, <strong>Role ARN</strong>을 복사하여 다음 단계에서 입력하세요.
                 """,
                 box_type="success",
                 title="Step 2 - 권한 정책 부여 및 Role 생성 완료"
@@ -160,29 +144,33 @@ def render_step2():
             st.markdown("---")
             
         else:  # access-key
-            st.subheader("🔑 IAM 사용자 설정 가이드")
+            st.subheader("🔑 Access Key & Secret Key 설정 가이드")
+            st.markdown("AWS 콘솔에서 **WALB용 IAM 사용자를 생성**하고 **Access Key를 발급**받으세요.")
             
             info_box(
-                "대상 AWS 계정에서 수행할 작업:<br>"
-                "1. **IAM 콘솔 → Users → Create user**<br>"
-                "2. **사용자 이름** 입력 (예: walb-service-user)<br>"
-                "3. **권한 설정 → 직접 정책 연결** 선택<br>"
-                "4. **AdministratorAccess** 검색해서 체크박스 선택<br>"
-                "5. 사용자 생성 후 **Security credentials → Create access key**<br>"
-                "6. **Use case: Third-party service** 선택 후 Access Key 다운로드",
-                box_type="warning",
-                title="설정 순서"
+                """
+                <strong>1.</strong> IAM 콘솔 → Users → Create user<br>
+                <strong>2.</strong> 사용자 이름 예시: <code>walb-diagnosis-service</code><br> 
+                <strong>3.</strong> 권한 설정 → 직접 정책 연결 → <strong>AdministratorAccess</strong> 검색 후 선택<br>
+                <strong>4.</strong> 사용자 생성 완료<br>
+                <strong>5.</strong> Security credentials → Create access key → <strong>Third-party service</strong> 선택<br>
+                <strong>6.</strong> <strong>Access Key CSV 다운로드</strong> 후 다음 단계에서 입력
+                """,
+                box_type="info",
+                title="설정 단계"
             )
             
-            # AdministratorAccess 정책 안내 (JSON 불필요)
             info_box(
-                "**권한 정책**: AWS 관리형 정책 **AdministratorAccess**를 연결하세요.<br>"
-                "• 'AdministratorAccess'를 검색해서 체크박스 선택<br>"
-                "• JSON 복붙 불필요 - 클릭 한 번이면 끝<br>"
-                "• 모든 AWS 서비스에 대한 완전한 관리자 권한",
+                """
+                💡 <strong>AdministratorAccess 정책</strong>은 AWS 관리형 정책입니다.<br>
+                • JSON 복사-붙여넣기 불필요<br>
+                • 검색해서 체크박스만 선택하면 완료<br>
+                • 모든 AWS 서비스에 대한 완전한 관리자 권한 제공
+                """,
                 box_type="success",
-                title="권한 설정 (매우 간단함)"
+                title="권한 정책 안내"
             )
+            st.markdown("---")
         
         # 네비게이션 버튼
         prev_clicked, next_clicked = navigation_buttons(
@@ -205,30 +193,21 @@ def render_step3():
     with st.container():
         st.subheader("📝 연결 정보를 입력하세요")
         
-        # 기본 정보 입력
-        col1, col2 = st.columns(2)
+        # 기본 정보 입력 (연결 방식 무관하게 동일)
+        cloud_name = st.text_input(
+            "클라우드 환경 이름 *",
+            value=st.session_state.account_data['cloud_name'],
+            placeholder="예: 김청소 개인계정, 개발용 환경",
+            help="WALB에서 이 AWS 계정을 구분할 수 있는 별명을 입력하세요."
+        )
+        st.session_state.account_data['cloud_name'] = cloud_name
         
-        with col1:
-            cloud_name = st.text_input(
-                "클라우드 환경 이름 *",
-                value=st.session_state.account_data['cloud_name'],
-                placeholder="예: 김청소 개인계정, 개발용 환경",
-                help="WALB에서 이 AWS 계정을 구분할 수 있는 별명을 입력하세요."
-            )
-            st.session_state.account_data['cloud_name'] = cloud_name
-        
-        with col2:
-            account_id = st.text_input(
-                "AWS 계정 ID *",
-                value=st.session_state.account_data['account_id'],
-                placeholder="123456789012",
-                help="12자리 숫자 계정 ID입니다. AWS 콘솔 우상단 → 계정명 클릭 → Account ID에서 확인하세요."
-            )
-            st.session_state.account_data['account_id'] = account_id
-                
-        # 계정 ID 검증
-        validate_and_show_error("account_id", account_id, InputValidator.validate_account_id)
-        
+        # 계정 ID는 자동으로 감지됨을 안내
+        if st.session_state.connection_type == 'cross-account-role':
+            st.info("💡 **계정 ID 자동 감지**: Role ARN에서 AWS 계정 ID를 자동으로 추출합니다.")
+        else:
+            st.info("💡 **계정 ID 자동 감지**: Access Key 연결 시 AWS 계정 ID는 자동으로 확인됩니다.")
+                    
         # 연결 방식별 입력 필드
         if st.session_state.connection_type == 'cross-account-role':
             role_arn = st.text_input(
@@ -238,6 +217,12 @@ def render_step3():
                 help="2단계에서 생성한 IAM Role의 ARN을 입력하세요."
             )
             st.session_state.account_data['role_arn'] = role_arn
+            
+            # Role ARN에서 계정 ID 자동 추출
+            if role_arn and st.session_state.aws_handler:
+                extracted_account_id = st.session_state.aws_handler.extract_account_id_from_role_arn(role_arn)
+                if extracted_account_id:
+                    st.session_state.account_data['account_id'] = extracted_account_id
             
             # Role ARN 검증
             validate_and_show_error("role_arn", role_arn, InputValidator.validate_role_arn)
@@ -269,7 +254,6 @@ def render_step3():
                 if secret_access_key:
                     st.session_state.temp_secret_key = secret_access_key
                     st.session_state.account_data['secret_access_key'] = '[MASKED]'
-                    st.info("🔒 Secret Key는 보안을 위해 임시 저장됩니다.")
                 
                 # 실제 입력된 Secret Key로 검증 (마스킹 전)
                 if secret_access_key:
@@ -319,12 +303,12 @@ def render_step3():
         def check_required_fields():
             """필수 입력 필드 완료 여부 확인"""
             account = st.session_state.account_data
-            basic_filled = bool(account['cloud_name'] and account['account_id'])
+            cloud_name_filled = bool(account['cloud_name'])
             
             if st.session_state.connection_type == 'cross-account-role':
-                return basic_filled and bool(account['role_arn'])
+                return cloud_name_filled and bool(account['role_arn'])
             else:
-                return basic_filled and bool(account['access_key_id'] and account['secret_access_key'])
+                return cloud_name_filled and bool(account['access_key_id'] and account['secret_access_key'])
 
         # 입력 완료 여부 확인
         required_fields_filled = check_required_fields()
@@ -388,6 +372,8 @@ def render_step4():
             )
 
             if prev_clicked:
+                st.session_state.connection_status = 'idle'
+                st.session_state.test_results = None
                 st.session_state.current_step = 3
                 st.rerun()
 
@@ -398,10 +384,61 @@ def render_step4():
                     st.rerun()
 
         elif st.session_state.connection_status == 'testing':
-            # 테스트 진행 중
-            with st.spinner("🔄 연결 테스트를 수행하고 있습니다..."):
+            # 기본 스피너 숨기기 CSS
+            st.markdown('''
+                <style>
+                /* Streamlit 기본 스피너 완전히 숨기기 */
+                .stSpinner {
+                    display: none !important;
+                }
+                div[data-testid="stSpinner"] {
+                    display: none !important;
+                }
+                .streamlit-spinner {
+                    display: none !important;
+                }
+                </style>
+                ''', unsafe_allow_html=True)
+            
+            # 테스트 진행 중 - 중앙 정렬된 커스텀 스피너
+            st.markdown('''
+                <div style="
+                    display: flex;
+                    flex-direction: column;
+                    align-items: center;
+                    justify-content: center;
+                    padding: 3rem 1rem;
+                    text-align: center;
+                ">
+                    <div style="
+                        font-size: 3rem;
+                        animation: spin 2s linear infinite;
+                        margin-bottom: 1.5rem;
+                    ">🔄</div>
+                    <div style="
+                        font-size: 1.25rem;
+                        font-weight: 600;
+                        color: #3B82F6;
+                        margin-bottom: 0.5rem;
+                    ">연결 테스트를 수행하고 있습니다</div>
+                    <div style="
+                        font-size: 0.875rem;
+                        color: #6B7280;
+                    ">AWS API 호출 및 권한 검증 중...</div>
+                </div>
+                
+                <style>
+                @keyframes spin {
+                    from { transform: rotate(0deg); }
+                    to { transform: rotate(360deg); }
+                }
+                </style>
+                ''', unsafe_allow_html=True)
+            
+            with st.spinner(""):  # 빈 스피너로 실제 처리 (이제 안 보임)
                 # 개발 모드 확인
-                is_development = st.secrets.get("DEVELOPMENT_MODE", True)
+                is_development = st.secrets.get("DEVELOPMENT_MODE", False)
+                print(f"Development mode: {is_development}")
                 
                 if is_development:
                     # 개발 모드: 시뮬레이션
@@ -431,6 +468,8 @@ def render_step4():
             col1, col2 = st.columns([1, 2])
             with col1:
                 if st.button("🔧 설정 수정", type="secondary", use_container_width=True):
+                    st.session_state.connection_status = 'idle'
+                    st.session_state.test_results = None
                     st.session_state.current_step = 3
                     st.rerun()
             with col2:
@@ -442,8 +481,6 @@ def render_step4():
                         # 파일에 저장 (Secret Key 포함)
                         with open("registered_accounts.json", "a", encoding="utf-8") as f:
                             f.write(json.dumps(account, ensure_ascii=False) + "\n")
-                        
-                        st.info("🔒 **보안 알림**: Secret Access Key가 로컬 파일에 저장됩니다.")
                         
                         # 성공 애니메이션
                         st.balloons()
@@ -484,7 +521,6 @@ def render_step4():
 
                         # 세션 초기화 후 3초 대기
                         time.sleep(3)
-                        from components.session_manager import SessionManager
                         SessionManager.reset_connection_data()
                         st.switch_page("main.py")
 
@@ -503,6 +539,8 @@ def render_step4():
             col1, col2 = st.columns(2)
             with col1:
                 if st.button("🔧 설정 수정", type="secondary", use_container_width=True):
+                    st.session_state.connection_status = 'idle'
+                    st.session_state.test_results = None
                     st.session_state.current_step = 3
                     st.rerun()
             with col2:

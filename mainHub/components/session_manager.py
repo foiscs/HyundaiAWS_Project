@@ -67,18 +67,16 @@ class SessionManager:
         Args:
             keep_aws_handler (bool): AWS 핸들러 유지 여부
         """
-        # 연결 관련 데이터만 초기화
-        reset_keys = ['connection_status', 'test_results', 'security_warnings']
+        # 연결 관련 데이터 초기화 (단계, 상태, 결과 포함)
+        reset_keys = ['current_step', 'connection_type', 'connection_status', 'test_results', 'security_warnings']
         
         for key in reset_keys:
             if key in SessionManager.DEFAULT_SESSION_STATE:
                 st.session_state[key] = SessionManager.DEFAULT_SESSION_STATE[key]
         
-        # account_data 일부 초기화 (민감정보 제거)
+        # account_data 완전 초기화
         if 'account_data' in st.session_state:
-            st.session_state.account_data['secret_access_key'] = ''
-            if 'external_id' in st.session_state.account_data:
-                st.session_state.account_data['external_id'] = ''
+            st.session_state.account_data = SessionManager.DEFAULT_SESSION_STATE['account_data'].copy()
         
         # 임시 Secret Key 제거
         if 'temp_secret_key' in st.session_state:

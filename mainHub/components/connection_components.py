@@ -23,6 +23,7 @@ import streamlit.components.v1 as components
 import json
 import time
 from components.aws_handler import AWSConnectionHandler
+from components.session_manager import SessionManager
 
 def step_indicator(current_step):
     """
@@ -81,7 +82,7 @@ def step_indicator(current_step):
         }}
         .step-container {{
             background: white;
-            border: 1px solid #E5E7EB;
+            border: 1px solid #F9FAFB;
             border-radius: 12px;
             padding: 1.5rem 2rem;
             box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
@@ -224,7 +225,7 @@ def info_box(message, box_type="info", title=None):
         <div style="font-size: 1.25rem;">{icon}</div>
         <div class="info-box-content">
             {title_html}
-            <div class="info-box-text">{message}</div>
+            <div class="info-box-text" style="font-size: 1rem;">{message}</div>
         </div>
     </div>
     '''
@@ -236,7 +237,7 @@ def json_code_block(json_data, title, show_copy_button=True):
     JSON 정책 표시 - Streamlit Components로 완전 커스터마이징
     """
     # JSON을 예쁘게 포맷팅
-    formatted_json = json.dumps(json_data, indent=2, ensure_ascii=False)
+    formatted_json = json.dumps(json_data, indent=2, ensure_ascii=False, separators=(',', ':'))
     
     # 제목 표시
     st.subheader(f"📄 {title}")
@@ -309,7 +310,7 @@ def json_code_block(json_data, title, show_copy_button=True):
             code = code.replace(/(<span class="json-string">"[^"]*"<\\/span>)(\s*:)/g, '<span class="json-key">$1</span>$2');
             
             // 숫자 (하늘색)
-            code = code.replace(/:\s*(-?\d+\.?\d*)/g, ': <span class="json-number">$1</span>');
+            code = code.replace(/:\s*(-?\d+\.?\d*)/g, ':<span class="json-number">$1</span>');
             
             // 불린값 (보라색)
             code = code.replace(/:\s*(true|false)/g, ': <span class="json-boolean">$1</span>');
@@ -336,7 +337,7 @@ def json_code_block(json_data, title, show_copy_button=True):
     # JSON 길이에 따른 동적 높이 계산
     json_lines = len(formatted_json.split('\n'))
     # 기본 패딩 + 줄 수 * 줄 높이 + 여유 공간
-    dynamic_height = min(max(json_lines * 24 + 60, 150), 600)
+    dynamic_height = min(max(json_lines * 24 + 60, 80), 400)
     
     # Components로 렌더링 (동적 높이)
     components.html(json_html, height=dynamic_height)
@@ -513,21 +514,25 @@ def connection_test_result(test_results, test_status):
         connection_type_label = "Cross-Account Role" if st.session_state.connection_type == "cross-account-role" else "Access Key"
 
         # 상단 요약 정보 박스
-        st.markdown(f"""
-        <div class="info-box info">
-            <div style="font-size: 1.25rem;">☁️</div>
-            <div class="info-box-content">
-                <div class="info-box-title">연결 정보 요약</div>
-                <div class="info-box-text">
-                    • 환경 이름: <strong>{account['cloud_name']}</strong><br>
-                    • 연결 방식: <strong>{connection_type_label}</strong><br>
-                    • 계정 ID: <code>{account['account_id']}</code><br>
-                    • 리전: <code>{account['primary_region']}</code><br>
-                    {'• Role ARN: <code>' + account['role_arn'] + '</code><br>' if st.session_state.connection_type == 'cross-account-role' else ''}
-                </div>
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
+        summary_info = f"""
+        • 환경 이름: <strong>{account['cloud_name']}</strong><br>
+        • 연결 방식: <strong>{connection_type_label}</strong><br>
+        • 리전: <code>{account['primary_region']}</code><br>
+        """
+        
+        # 계정 ID는 연결 방식에 따라 표시
+        if st.session_state.connection_type == 'cross-account-role':
+            summary_info += f"• 계정 ID: <code>{account['account_id']}</code><br>"
+            summary_info += f"• Role ARN: <code>{account['role_arn']}</code><br>"
+        else:
+            # Access Key 방식에서는 계정 ID를 자동 감지 예정임을 표시
+            summary_info += "• 계정 ID: <em>연결 후 자동 감지</em><br>"
+        
+        info_box(
+            summary_info,
+            box_type="info",
+            title="연결 정보 요약"
+        )
 
         # 버튼 정렬
         col1, col2 = st.columns([1, 3])
@@ -626,7 +631,7 @@ def sidebar_panel():
         col1, col2 = st.columns(2)
         with col1:
             if st.button("⏮️ 처음으로", use_container_width=True):
-                st.session_state.current_step = 1
+                SessionManager.reset_connection_data()
                 st.rerun()
         
         with col2:
@@ -648,7 +653,6 @@ def sidebar_panel():
         
         if st.button("🔄 전체 초기화", type="secondary", use_container_width=True):
             # 안전한 초기화
-            from components.session_manager import SessionManager
             SessionManager.reset_all(keep_aws_handler=False)
             st.rerun()
         
