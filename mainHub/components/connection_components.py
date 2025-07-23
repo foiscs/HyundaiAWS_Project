@@ -12,7 +12,6 @@
 - sidebar_panel: 멀티클라우드 모니터링 사이드바 (상태/디버그/세션관리)
 
 🔧 유틸리티 함수:
-- reset_session_state: 안전한 세션 초기화 (민감정보 정리)
 - validate_and_show_error: AWS 입력값 실시간 검증 + 에러 표시
 - safe_session_update: 중복 방지 세션 상태 업데이트
 - get_actual_secret_key: 마스킹된 Secret Key 실제값 반환
@@ -649,8 +648,8 @@ def sidebar_panel():
         
         if st.button("🔄 전체 초기화", type="secondary", use_container_width=True):
             # 안전한 초기화
-            reset_session_state(keep_aws_handler=False)
-            st.session_state.clear()  # 완전 초기화
+            from components.session_manager import SessionManager
+            SessionManager.reset_all(keep_aws_handler=False)
             st.rerun()
         
         # 데이터 내보내기
@@ -736,50 +735,6 @@ def navigation_buttons(show_prev=True, show_next=True, prev_label="이전", next
     
     return prev_clicked, next_clicked
 
-def reset_session_state(keep_aws_handler=True):
-    """
-    세션 상태 초기화 공통 함수 - 중복 방지 개선
-    
-    Args:
-        keep_aws_handler (bool): AWS 핸들러 유지 여부
-    """
-    # 현재 세션에서 삭제할 키들 수집
-    keys_to_delete = []
-    for key in list(st.session_state.keys()):
-        if key.startswith(('current_step', 'connection_type', 'account_data', 
-                          'connection_status', 'test_results', 'show_')):
-            keys_to_delete.append(key)
-    
-    # 안전하게 삭제
-    for key in keys_to_delete:
-        if key in st.session_state:
-            del st.session_state[key]
-    
-    # 기본값으로 재초기화 (한 번에 설정)
-    default_state = {
-        'current_step': 1,
-        'connection_type': 'cross-account-role',
-        'account_data': {
-            'cloud_name': '',
-            'account_id': '',
-            'role_arn': '',
-            'external_id': '',
-            'access_key_id': '',
-            'secret_access_key': '',
-            'primary_region': 'ap-northeast-2',
-            'contact_email': ''
-        },
-        'connection_status': 'idle',
-        'test_results': None
-    }
-    
-    # 한 번에 업데이트
-    st.session_state.update(default_state)
-    
-    # AWS 핸들러 설정
-    if keep_aws_handler and 'aws_handler' not in st.session_state:
-        st.session_state.aws_handler = AWSConnectionHandler()
-
 def validate_and_show_error(field_name, value, validator_func):
     """
     입력값 검증 후 에러 메시지 자동 표시
@@ -803,32 +758,6 @@ def validate_and_show_error(field_name, value, validator_func):
     
     return True
 
-def safe_session_update(updates):
-    """
-    세션 상태 안전 업데이트
-    - 중복 업데이트 방지
-    
-    Args:
-        updates (dict): 업데이트할 세션 상태들
-    """
-    for key, value in updates.items():
-        if key not in st.session_state or st.session_state[key] != value:
-            st.session_state[key] = value
-
-def get_session_state_summary():
-    """
-    현재 세션 상태 요약 반환
-    - 디버깅용
-    """
-    return {
-        'step': st.session_state.get('current_step', 'unknown'),
-        'connection_type': st.session_state.get('connection_type', 'unknown'),
-        'connection_status': st.session_state.get('connection_status', 'unknown'),
-        'has_account_data': bool(st.session_state.get('account_data', {})),
-        'has_test_results': bool(st.session_state.get('test_results')),
-        'total_session_keys': len(st.session_state.keys())
-    }
-
 def get_actual_secret_key():
     """실제 Secret Key 반환 (마스킹되지 않은)"""
     temp_key = st.session_state.get('temp_secret_key', '')
@@ -849,4 +778,3 @@ def cleanup_sensitive_data():
     if 'account_data' in st.session_state:
         if st.session_state.account_data.get('secret_access_key') != '[MASKED]':
             st.session_state.account_data['secret_access_key'] = '[MASKED]'
-            

@@ -2,6 +2,7 @@ import json
 import os
 from datetime import datetime
 import streamlit as st
+from components.session_manager import SessionManager
 
 def load_connected_accounts():
     """연결된 AWS 계정 목록 로드 (JSON 파일에서)"""

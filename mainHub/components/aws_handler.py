@@ -18,7 +18,7 @@ boto3를 이용한 실제 AWS API 호출 및 권한 테스트
   - validate_email: 이메일 주소 형식 검증
 - simulate_connection_test: 개발/데모용 연결 테스트 시뮬레이션
 """
-
+import streamlit as st
 import boto3
 import json
 import time
@@ -34,7 +34,7 @@ class AWSConnectionHandler:
         - 테스트할 서비스 목록 정의
         """
         # WALB 서비스 자체의 가상 계정 ID (Cross-Account Role에서만 사용)
-        self.walb_service_account_id = "292967571836"  # 실제로는 WALB 서비스가 배포된 계정 ID
+        self.walb_service_account_id = st.secrets.get("WALB_SERVICE_ACCOUNT_ID", "292967571836")
         self.test_services = [
             'ec2', 's3', 'iam', 'cloudtrail', 
             'cloudwatch', 'rds', 'eks'

@@ -17,6 +17,7 @@ import time
 from components.connection_components import *
 from components.aws_handler import AWSConnectionHandler, InputValidator, simulate_connection_test
 from components.connection_styles import get_all_styles
+from components.session_manager import SessionManager
 
 # 페이지 설정
 st.set_page_config(
@@ -25,40 +26,6 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
-
-def initialize_session_state():
-    """
-    세션 상태 초기화 - 중복 방지 개선
-    - 사용자의 진행 상태와 입력 데이터 관리
-    """
-    # 세션 상태 체크 및 초기화 (중복 방지)
-    if 'initialized' not in st.session_state:
-        st.session_state.initialized = True
-        
-        # 기본 상태 한 번에 설정
-        default_state = {
-            'current_step': 1,
-            'connection_type': 'cross-account-role',
-            'account_data': {
-                'cloud_name': '',
-                'account_id': '',
-                'role_arn': '',
-                'external_id': '',
-                'access_key_id': '',
-                'secret_access_key': '',  # 임시 저장용
-                'primary_region': 'ap-northeast-2',
-                'contact_email': ''
-            },
-            'connection_status': 'idle',
-            'test_results': None,
-            'aws_handler': AWSConnectionHandler(),
-            'security_warnings': []
-        }
-        
-        # 누락된 키만 추가 (기존 값 보존)
-        for key, value in default_state.items():
-            if key not in st.session_state:
-                st.session_state[key] = value
 
 def safe_step_change(new_step):
     """안전한 단계 변경"""
@@ -510,7 +477,8 @@ def render_step4():
 
                         # 세션 초기화 후 3초 대기
                         time.sleep(3)
-                        reset_session_state()
+                        from components.session_manager import SessionManager
+                        SessionManager.reset_connection_data()
                         st.switch_page("main.py")
 
                     except Exception as e:
@@ -546,7 +514,7 @@ def main():
         st.markdown(get_all_styles(), unsafe_allow_html=True)
         
         # 세션 상태 초기화
-        initialize_session_state()
+        SessionManager.initialize_session()
         
         # 헤더 렌더링
         render_header()
@@ -577,7 +545,7 @@ def main():
         st.error(f"애플리케이션 오류가 발생했습니다: {str(e)}")
         st.write("페이지를 새로고침하거나 아래 버튼을 클릭하여 다시 시도해주세요.")
         if st.button("🔄 다시 시작"):
-            reset_session_state(keep_aws_handler=False)
+            SessionManager.reset_all(keep_aws_handler=False)
             st.rerun()
 
 if __name__ == "__main__":

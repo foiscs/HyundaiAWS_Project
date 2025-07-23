@@ -10,6 +10,7 @@ import os
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from components.sk_diagnosis import get_checker
 from components.aws_handler import AWSConnectionHandler
+from components.session_manager import SessionManager
 
 # 페이지 설정
 st.set_page_config(
@@ -482,7 +483,8 @@ def main():
         
         # 진단 세션 초기화
         if st.button("🗑️ 진단 상태 초기화", type="secondary", use_container_width=True):
-            clear_diagnosis_states()
+            from components.session_manager import SessionManager
+            SessionManager.clear_diagnosis_states()
             st.success("진단 상태가 초기화되었습니다.")
             st.rerun()
     
