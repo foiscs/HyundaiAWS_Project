@@ -13,6 +13,7 @@ from components.aws_handler import AWSConnectionHandler
 from components.session_manager import SessionManager
 import streamlit.components.v1 as components
 from components.diagnosis_ui_handler import DiagnosisUIHandler
+from components.connection_styles import get_all_styles 
 
 # 페이지 설정
 st.set_page_config(
@@ -331,6 +332,9 @@ def clear_diagnosis_states():
         del st.session_state[key]
         
 def main():
+    # CSS 스타일 주입
+    st.markdown(get_all_styles(), unsafe_allow_html=True)
+        
     """진단 페이지 메인"""
     # 세련된 헤더 렌더링
     header_html = f"""
