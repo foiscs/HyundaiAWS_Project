@@ -157,121 +157,33 @@ class KeyPairAccessChecker(BaseChecker):
     
     def render_fix_form(self, result, item_key, ui_handler):
         """조치 폼 UI 렌더링"""
-        st.subheader("🔧 Key Pair 조치 안내")
+        st.subheader("🔧 Key Pair 수동 조치 안내")
         
         if not result.get('instances_without_keypair'):
             st.info("조치할 인스턴스가 없습니다.")
             return
         
-        st.warning("""
-        ⚠️ **중요**: Key Pair는 실행 중인 인스턴스에 직접 할당할 수 없습니다.
-        아래의 수동 절차를 따라 조치해주세요.
+        st.warning("⚠️ **Key Pair는 실행 중인 인스턴스에 자동 할당할 수 없습니다. (자동 조치 불가능)**")
+        
+        st.markdown("""
+        ### 📋 수동 조치 방법
+        
+        **방법 1: 기존 인스턴스에 Key 추가**
+        ```bash
+        # 1. 인스턴스에 접속 (EC2 Instance Connect 등 이용)
+        # 2. authorized_keys에 새 public key 추가
+        echo "ssh-rsa AAAAB3... your-key" >> ~/.ssh/authorized_keys
+        chmod 600 ~/.ssh/authorized_keys
+        ```
+        
+        **방법 2: AMI로 새 인스턴스 생성**
+        1. EC2 콘솔에서 기존 인스턴스의 AMI 생성
+        2. 새 인스턴스 시작 시 Key Pair 선택
+        3. 기존 인스턴스 교체
+        
+        ---
+        **조치 완료 후 재진단을 실행하여 결과를 확인하세요.**
         """)
-        
-        # 조치 방법 안내
-        tab1, tab2 = st.tabs(["🔑 방법 1: authorized_keys 수정", "🖼️ 방법 2: AMI 재배포"])
-        
-        with tab1:
-            st.markdown("""
-            ### 실행 중인 인스턴스에 Key Pair 추가하기
-            
-            **준비사항:**
-            - 새로운 Key Pair 생성 또는 기존 Key Pair의 public key
-            - 인스턴스에 접근할 수 있는 방법 (다른 Key Pair, EC2 Instance Connect 등)
-            
-            **단계:**
-            1. **Key Pair 생성 (필요시)**
-               ```bash
-               # AWS CLI로 새 Key Pair 생성
-               aws ec2 create-key-pair --key-name my-new-keypair --query 'KeyMaterial' --output text > my-new-keypair.pem
-               chmod 400 my-new-keypair.pem
-               ```
-            
-            2. **인스턴스에 SSH 접속**
-               ```bash
-               # 기존 방법으로 접속 (예: EC2 Instance Connect)
-               ssh -i existing-key.pem ec2-user@<instance-ip>
-               ```
-            
-            3. **authorized_keys 파일 수정**
-               ```bash
-               # public key를 authorized_keys에 추가
-               echo "ssh-rsa AAAAB3NzaC1yc2E... your-new-public-key" >> ~/.ssh/authorized_keys
-               chmod 600 ~/.ssh/authorized_keys
-               ```
-            
-            4. **연결 테스트**
-               ```bash
-               # 새 Key Pair로 접속 테스트
-               ssh -i my-new-keypair.pem ec2-user@<instance-ip>
-               ```
-            """)
-        
-        with tab2:
-            st.markdown("""
-            ### AMI 이미지로 새 인스턴스 생성하기
-            
-            **단계:**
-            1. **현재 인스턴스의 AMI 이미지 생성**
-               - EC2 콘솔에서 인스턴스 선택
-               - Actions → Image and templates → Create image
-            
-            2. **새 인스턴스 시작**
-               - 생성된 AMI로 새 인스턴스 시작
-               - Key Pair 선택 단계에서 원하는 Key Pair 지정
-            
-            3. **기존 인스턴스 대체**
-               - 새 인스턴스 정상 동작 확인
-               - Elastic IP 재할당 (필요시)
-               - 기존 인스턴스 종료
-            
-            **장점:**
-            - Key Pair가 확실히 할당됨
-            - 깨끗한 새 환경
-            
-            **단점:**
-            - 서비스 중단 시간 발생
-            - IP 주소 변경 가능성
-            """)
-        
-        # 대상 인스턴스 선택
-        st.subheader("📋 조치 대상 인스턴스")
-        
-        selected_instances = []
-        for instance in result['instances_without_keypair']:
-            if st.checkbox(
-                f"{instance['instance_id']} ({instance['instance_type']})",
-                key=f"chk_select_instance_{instance['instance_id']}_{item_key}"
-            ):
-                selected_instances.append(instance)
-        
-        # 조치 실행 버튼 (실제로는 안내만 제공)
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            if st.button("📝 수동 조치 체크리스트 생성", key=f"btn_generate_checklist_{item_key}"):
-                if selected_instances:
-                    st.subheader("📋 조치 체크리스트")
-                    for instance in selected_instances:
-                        st.markdown(f"""
-                        **인스턴스: {instance['instance_id']}**
-                        - [ ] Key Pair 생성 또는 준비
-                        - [ ] 인스턴스 접속 확인
-                        - [ ] ~/.ssh/authorized_keys 파일 백업
-                        - [ ] 새 public key 추가
-                        - [ ] 연결 테스트 완료
-                        - [ ] 기존 접속 방법 제거 (보안상 권장)
-                        """)
-                else:
-                    st.warning("조치할 인스턴스를 선택해주세요.")
-        
-        with col2:
-            if st.button("✅ 수동 조치 완료 확인", key=f"btn_mark_complete_{item_key}"):
-                # 조치 완료로 표시
-                st.session_state[f'show_fix_{item_key}'] = False
-                st.session_state[f'fix_completed_{item_key}'] = True
-                st.success("✅ 수동 조치가 완료로 표시되었습니다. 재진단을 통해 확인해보세요.")
-                st.rerun()
         
         # 돌아가기 버튼
         if st.button("↩️ 돌아가기", key=f"btn_back_from_fix_{item_key}"):
