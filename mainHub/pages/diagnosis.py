@@ -234,6 +234,12 @@ def render_diagnosis_item(item, category, index):
         if diagnosis_status == 'completed' and diagnosis_result:
             if diagnosis_result.get('status') == 'success':
                 ui_handler.show_diagnosis_result(diagnosis_result, item_key, item['code'])
+                
+                # 조치 폼 표시 (show_fix_{item_key} 상태가 True일 때)
+                if st.session_state.get(f'show_fix_{item_key}', False):
+                    st.markdown("---")
+                    ui_handler.show_fix_form(diagnosis_result, item_key, item['code'])
+                    
             elif diagnosis_result.get('status') == 'not_implemented':
                 st.info(diagnosis_result.get('message', '구현되지 않음'))
             else:
