@@ -15,9 +15,9 @@ def check():
             # Attachments 배열이 비어 있으면 detached 상태
             if not igw.get('Attachments'):
                 igw_id = igw['InternetGatewayId']
-                # Name 태그 추출 (없으면 '(이름 없음)' 표시)
+                # Name 태그 추출 (없으면 '( - )' 표시)
                 tags = igw.get('Tags', [])
-                name = next((tag['Value'] for tag in tags if tag['Key'] == 'Name'), "(이름 없음)")
+                name = next((tag['Value'] for tag in tags if tag['Key'] == 'Name'), "( - )")
 
                 # IGW ID와 이름을 함께 저장
                 detached_igws.append({
