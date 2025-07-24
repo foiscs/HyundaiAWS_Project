@@ -121,13 +121,3 @@ provider "helm" {
     }
   }
 }
-
-terraform {
-  backend "s3" {
-    bucket         = "walb-terraform-state-backend-unique-suffix"
-    key            = "infrastructure/terraform.tfstate"
-    region         = "ap-northeast-2"
-    encrypt        = true
-    dynamodb_table = "walb-terraform-locks"
-  }
-}

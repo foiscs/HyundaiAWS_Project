@@ -8,14 +8,15 @@ variable "project_name" {
 }
 
 variable "environment" {
-  description = "환경 구분 (dev, staging, prod)"
+  description = "환경 (dev, staging, prod, walb)"
   type        = string
-  default     = "dev"
+  default     = "walb"
   validation {
-    condition     = contains(["dev", "staging", "prod"], var.environment)
-    error_message = "환경은 dev, staging, prod 중 하나여야 합니다."
+    condition     = contains(["dev", "staging", "prod", "walb"], var.environment)
+    error_message = "Environment must be dev, staging, or prod."
   }
 }
+
 
 # 버킷 생성 옵션
 variable "create_artifacts_bucket" {
@@ -279,7 +280,7 @@ variable "common_tags" {
   default = {
     Terraform   = "true"
     Project     = "security-monitoring"
-    Environment = "dev"
+    Environment = "walb"
   }
 }
 
