@@ -4,6 +4,7 @@
 import streamlit as st
 from .sk_diagnosis import get_checker
 from .aws_handler import AWSConnectionHandler
+from botocore.exceptions import ClientError
 
 class DiagnosisUIHandler:
     """진단 UI 처리 중앙화 클래스"""
@@ -104,7 +105,52 @@ class DiagnosisUIHandler:
                 
         except Exception as e:
             st.error(f"❌ 조치 실행 중 오류: {str(e)}")
-    
+    def _execute_group_assignment(self, user_group_assignments):
+        """사용자 그룹 할당 실행"""
+        try:
+            account = st.session_state.selected_account
+            
+            if account.get('role_arn'):
+                session = self.aws_handler.create_session_from_role(
+                    role_arn=account['role_arn'],
+                    external_id=account.get('external_id'),
+                    region=account['primary_region']
+                )
+            else:
+                session = self.aws_handler.create_session_from_keys(
+                    access_key_id=account['access_key_id'],
+                    secret_access_key=account['secret_access_key'],
+                    region=account['primary_region']
+                )
+            
+            iam = session.client('iam')
+            results = []
+            
+            for user_name, group_name in user_group_assignments.items():
+                try:
+                    iam.add_user_to_group(UserName=user_name, GroupName=group_name)
+                    results.append({
+                        "user": user_name,
+                        "action": f"그룹 '{group_name}'에 추가",
+                        "status": "success"
+                    })
+                except ClientError as e:
+                    results.append({
+                        "user": user_name,
+                        "action": f"그룹 '{group_name}'에 추가",
+                        "status": "error",
+                        "error": str(e)
+                    })
+            
+            return results
+            
+        except Exception as e:
+            return [{
+                "user": "전체",
+                "action": "그룹 할당",
+                "status": "error",
+                "error": str(e)
+            }]
     def _show_fix_results(self, results):
         """조치 결과 표시"""
         st.subheader("📊 조치 결과")
