@@ -13,6 +13,8 @@ from .account_management.password_policy_1_10 import PasswordPolicyChecker
 from .authorization.instance_service_policy_2_1 import InstanceServicePolicyChecker
 from .authorization.network_service_policy_2_2 import NetworkServicePolicyChecker
 from .authorization.other_service_policy_2_3 import OtherServicePolicyChecker
+from .virtual_resources.security_group_any_3_1 import SecurityGroupAnyChecker
+from .virtual_resources.security_group_unnecessary_3_2 import SecurityGroupUnnecessaryChecker
 
 # 진단 항목 레지스트리
 DIAGNOSIS_REGISTRY = {
@@ -28,6 +30,8 @@ DIAGNOSIS_REGISTRY = {
     "2.1": InstanceServicePolicyChecker,
     "2.2": NetworkServicePolicyChecker,
     "2.3": OtherServicePolicyChecker,
+    "3.1": SecurityGroupAnyChecker,
+    "3.2": SecurityGroupUnnecessaryChecker,
     # ... 다른 항목들
 }
 
