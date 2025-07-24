@@ -1,4 +1,3 @@
-# 1.account_management/1_13_eks_anonymous_access.py
 def check():
     """
     [1.13] EKS 불필요한 익명 접근 관리 (수동 점검 안내)

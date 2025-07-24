@@ -9,13 +9,27 @@ def check():
     print("[INFO] 2.3 기타 서비스 정책 관리 체크 중...")
     iam = boto3.client('iam')
     overly_permissive_policies = {
+        "arn:aws:iam::aws:policy/AWSOrganizationsFullAccess": "Organizations",
         "arn:aws:iam::aws:policy/CloudWatchFullAccess": "CloudWatch",
+        "arn:aws:iam::aws:policy/AutoScalingFullAccess": "Auto Scaling",
+        "arn:aws:iam::aws:policy/AWSCloudFormationFullAccess": "CloudFormation",
         "arn:aws:iam::aws:policy/AWSCloudTrail_FullAccess": "CloudTrail",
-        "arn:aws:iam::aws:policy/AWSKeyManagementServicePowerUser": "KMS",
-        "arn:aws:iam::aws:policy/IAMFullAccess": "IAM",
+        "arn:aws:iam::aws:policy/AWSConfigUserAccess": "Config",
+        "arn:aws:iam::aws:policy/AmazonSSMFullAccess": "Systems Manager",
         "arn:aws:iam::aws:policy/AmazonGuardDutyFullAccess": "GuardDuty",
-        "arn:aws:iam::aws:policy/AWSSecurityHubFullAccess": "Security Hub"
+        "arn:aws:iam::aws:policy/AmazonInspectorFullAccess": "Inspector",
+        "arn:aws:iam::aws:policy/AWSSSOFullAccess": "Single Sign-On",
+        "arn:aws:iam::aws:policy/AWSCertificateManagerFullAccess": "Certificate Manager",
+        "arn:aws:iam::aws:policy/AWSKeyManagementServicePowerUser": "KMS",
+        "arn:aws:iam::aws:policy/AWSWAF_FullAccess": "WAF",
+        "arn:aws:iam::aws:policy/AWSShieldAdvancedFullAccess": "Shield",
+        "arn:aws:iam::aws:policy/AWSSecurityHubFullAccess": "Security Hub",
+        "arn:aws:iam::aws:policy/AWSDataPipeline_FullAccess": "Data Pipeline",
+        "arn:aws:iam::aws:policy/AWSGlueConsoleFullAccess": "Glue",
+        "arn:aws:iam::aws:policy/AmazonMSKFullAccess": "MSK",
+        "arn:aws:iam::aws:policy/AWSBackupFullAccess": "Backup",
     }
+
     findings = []
 
     try:

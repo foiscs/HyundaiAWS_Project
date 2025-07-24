@@ -9,11 +9,15 @@ def check():
     print("[INFO] 2.2 네트워크 서비스 정책 관리 체크 중...")
     iam = boto3.client('iam')
     overly_permissive_policies = {
-        "arn:aws:iam::aws:policy/AmazonVPCFullAccess": "VPC",
-        "arn:aws:iam::aws:policy/AmazonRoute53FullAccess": "Route 53",
-        "arn:aws:iam::aws:policy/AWSDirectConnect_FullAccess": "Direct Connect",
-        "arn:aws:iam::aws:policy/CloudFrontFullAccess": "CloudFront"
-    }
+    "arn:aws:iam::aws:policy/AmazonVPCFullAccess": "VPC",
+    "arn:aws:iam::aws:policy/AmazonRoute53FullAccess": "Route 53",
+    "arn:aws:iam::aws:policy/AWSDirectConnect_FullAccess": "Direct Connect",
+    "arn:aws:iam::aws:policy/CloudFrontFullAccess": "CloudFront",
+    "arn:aws:iam::aws:policy/AmazonAPIGatewayAdministrator": "API Gateway",
+    "arn:aws:iam::aws:policy/AWSAppMeshFullAccess": "App Mesh",
+    "arn:aws:iam::aws:policy/AWSCloudMapFullAccess": "Cloud Map"
+}
+
     findings = []
 
     try:

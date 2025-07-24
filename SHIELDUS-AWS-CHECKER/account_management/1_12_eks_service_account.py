@@ -1,4 +1,3 @@
-# 1.account_management/1_12_eks_service_account.py
 def check():
     """
     [1.12] EKS 서비스 어카운트 관리 (수동 점검 안내)
