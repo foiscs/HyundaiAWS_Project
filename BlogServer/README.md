@@ -10,3 +10,6 @@
 | `ECR_REPOSITORY`        | Docker 이미지를 업로드할 AWS ECR 리포지토리 이름           |
 
 
+## ToDo List   
+- Error Fix : logout.php
+- Error Fix : dashboard.php(최근에 내가 작성한 게시글 목록)
