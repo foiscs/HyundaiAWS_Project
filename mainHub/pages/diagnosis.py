@@ -12,6 +12,7 @@ from components.sk_diagnosis import get_checker
 from components.aws_handler import AWSConnectionHandler
 from components.session_manager import SessionManager
 import streamlit.components.v1 as components
+from components.diagnosis_ui_handler import DiagnosisUIHandler
 
 # 페이지 설정
 st.set_page_config(
@@ -179,130 +180,65 @@ def render_diagnosis_item(item, category, index):
             else:
                 st.error(f"❌ 진단 실패: {diagnosis_result.get('error_message', '알 수 없는 오류')}")
 
-def show_diagnosis_result(result, item_key, item_code):
-    """진단 결과 표시"""
-    if item_code == '1.1':
-        # 1.1 사용자 계정 관리 결과 표시
-        col1, col2 = st.columns(2)
+# 글로벌 UI 핸들러 인스턴스
+ui_handler = DiagnosisUIHandler()
+
+def render_diagnosis_item(item, category, index):
+    """진단 항목 카드 렌더링 - 대폭 간소화"""
+    importance_color = importance_colors.get(item["importance"], "⚪")
+    item_key = f"{category}_{index}"
+    
+    with st.container():
+        diagnosis_status = st.session_state.get(f'diagnosis_status_{item_key}', 'idle')
+        diagnosis_result = st.session_state.get(f'diagnosis_result_{item_key}', None)
+        
+        col1, col2, col3 = st.columns([4, 2, 1])
         
         with col1:
-            st.write(f"👑 **관리자:** {result['admin_count']}명")
-            if result['admin_users']:
-                with st.expander("관리자 목록 보기"):
-                    for user in result['admin_users']:
-                        st.write(f"• `{user}`")
-        
+            st.markdown(f"**{item['code']}** {item['name']}")
+            st.write(f"📝 {item['description']}")
+            
         with col2:
-            st.write(f"🧪 **테스트계정:** {result['test_count']}개")
-            if result['test_users']:
-                with st.expander("테스트계정 목록 보기"):
-                    for user in result['test_users']:
-                        st.write(f"• `{user}` ⚠️")
-        
-        # 조치 버튼 (문제가 있는 경우만)
-        if result.get('has_issues', False):
-            if st.button("🔧 즉시 조치", key=f"fix_{item_key}"):
-                st.session_state[f'show_fix_{item_key}'] = True
-                st.rerun()
+            st.write(f"**중요도:** {importance_color} {item['importance']}")
             
-            # 조치 폼 표시
-            if st.session_state.get(f'show_fix_{item_key}', False):
-                show_fix_form_1_1(result, item_key)
-    else:
-        # 다른 항목들의 기본 결과 표시
-        st.write("📊 진단 결과가 표시됩니다.")
-
-def show_fix_form_1_1(result, item_key):
-    """1.1 조치 폼 표시"""
-    with st.form(f"fix_form_{item_key}"):
-        st.markdown("**🔧 조치할 항목을 선택하세요:**")
-        
-        selected_admin_users = []
-        selected_test_users = []
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            if result['admin_users']:
-                st.markdown("**관리자 권한 제거:**")
-                for user in result['admin_users']:
-                    if st.checkbox(f"`{user}`", key=f"admin_{item_key}_{user}"):
-                        selected_admin_users.append(user)
-        
-        with col2:
-            if result['test_users']:
-                st.markdown("**콘솔 로그인 비활성화:**")
-                for user in result['test_users']:
-                    if st.checkbox(f"`{user}`", key=f"test_{item_key}_{user}"):
-                        selected_test_users.append(user)
-        
-        col_submit1, col_submit2 = st.columns(2)
-        with col_submit1:
-            if st.form_submit_button("🚀 조치 실행", type="primary"):
-                if selected_admin_users or selected_test_users:
-                    execute_fix_1_1(selected_admin_users, selected_test_users, item_key)
+            # 상태 표시
+            if diagnosis_status == 'idle':
+                st.write("**상태:** ⏳ 대기중")
+            elif diagnosis_status == 'running':
+                st.write("**상태:** 🔄 진단중...")
+            elif diagnosis_status == 'completed':
+                if diagnosis_result and diagnosis_result.get('status') == 'success':
+                    risk_level = diagnosis_result.get('risk_level', 'unknown')
+                    risk_colors = {"high": "🔴", "medium": "🟡", "low": "🟢"}
+                    risk_icon = risk_colors.get(risk_level, "⚪")
+                    st.write(f"**상태:** ✅ 완료 {risk_icon}")
                 else:
-                    st.warning("조치할 항목을 선택해주세요.")
-        
-        with col_submit2:
-            if st.form_submit_button("❌ 취소"):
-                st.session_state[f'show_fix_{item_key}'] = False
-                st.rerun()
-
-def execute_fix_1_1(selected_admin_users, selected_test_users, item_key):
-    """1.1 조치 실행"""
-    
-    # AWS 세션 다시 생성
-    aws_handler = st.session_state.get('aws_handler')
-    if not aws_handler:
-        aws_handler = AWSConnectionHandler()
-        st.session_state.aws_handler = aws_handler  # 세션에 저장
-    
-    # 연결된 계정 정보로 세션 생성
-    account = st.session_state.selected_account
-    if account.get('role_arn'):
-        # Cross-Account Role 방식
-        session = aws_handler.create_session_from_role(
-            role_arn=account['role_arn'],
-            external_id=account.get('external_id'),
-            region=account['primary_region']
-        )
-    else:
-        # Access Key 방식
-        session = aws_handler.create_session_from_keys(
-            access_key_id=account['access_key_id'],
-            secret_access_key=account['secret_access_key'],
-            region=account['primary_region']
-        )
-    
-    checker = get_checker('1.1')
-    if checker:
-        # 세션을 체커에 전달
-        checker.session = session
-        selected_items = {
-            'admin_users': selected_admin_users,
-            'test_users': selected_test_users
-        }
-        
-        with st.spinner("조치를 실행하고 있습니다..."):
-            results = checker.execute_fix(selected_items)
+                    st.write("**상태:** ❌ 실패")
             
-            # 결과 표시
-            st.subheader("📊 조치 결과")
-            for result in results:
-                if result["status"] == "success":
-                    st.success(f"✅ {result['user']}: {result['action']} 완료")
-                elif result["status"] == "already_done":
-                    st.info(f"ℹ️ {result['user']}: 이미 처리됨")
-                else:
-                    st.error(f"❌ {result['user']}: {result['action']} 실패 - {result.get('error', '알 수 없는 오류')}")
-            
-            # 재진단 버튼
-            if st.button("🔄 재진단", key=f"rediagnose_{item_key}"):
-                st.session_state[f'diagnosis_status_{item_key}'] = 'running'
-                st.session_state[f'show_fix_{item_key}'] = False
-                st.rerun()
-
+        with col3:
+            if diagnosis_status != 'running':
+                if st.button("🔍 진단", key=f"diagnose_{item_key}"):
+                    st.session_state[f'diagnosis_status_{item_key}'] = 'running'
+                    st.rerun()
+            else:
+                st.write("🔄 진행중")
+        
+        # 진단 실행
+        if diagnosis_status == 'running':
+            result = ui_handler.run_diagnosis(item['code'], item['name'])
+            st.session_state[f'diagnosis_result_{item_key}'] = result
+            st.session_state[f'diagnosis_status_{item_key}'] = 'completed'
+            st.rerun()
+        
+        # 진단 결과 표시
+        if diagnosis_status == 'completed' and diagnosis_result:
+            if diagnosis_result.get('status') == 'success':
+                ui_handler.show_diagnosis_result(diagnosis_result, item_key, item['code'])
+            elif diagnosis_result.get('status') == 'not_implemented':
+                st.info(diagnosis_result.get('message', '구현되지 않음'))
+            else:
+                st.error(f"❌ 진단 실패: {diagnosis_result.get('error_message', '알 수 없는 오류')}")
+                
 def test_session_connection(account):
     """AWS 세션 연결 테스트"""
     try:

@@ -2,9 +2,10 @@
 1.1 사용자 계정 관리 진단
 """
 import boto3
+from ..base_checker import BaseChecker
+import streamlit as st
 from botocore.exceptions import ClientError
 import re
-from ..base_checker import BaseChecker
 
 class UserAccountChecker(BaseChecker):
     """1.1 사용자 계정 관리 진단"""
@@ -80,6 +81,77 @@ class UserAccountChecker(BaseChecker):
                 "error_message": str(e)
             }
     
+    def render_result_ui(self, result, item_key, ui_handler):
+        """1.1 진단 결과 UI 렌더링"""
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.write(f"👑 **관리자:** {result['admin_count']}명")
+            if result['admin_users']:
+                with st.expander("관리자 목록 보기"):
+                    for user in result['admin_users']:
+                        st.write(f"• `{user}`")
+        
+        with col2:
+            st.write(f"🧪 **테스트계정:** {result['test_count']}개")
+            if result['test_users']:
+                with st.expander("테스트계정 목록 보기"):
+                    for user in result['test_users']:
+                        st.write(f"• `{user}` ⚠️")
+        
+        # 조치 버튼
+        if result.get('has_issues', False):
+            if st.button("🔧 즉시 조치", key=f"fix_{item_key}"):
+                st.session_state[f'show_fix_{item_key}'] = True
+                st.rerun()
+            
+            if st.session_state.get(f'show_fix_{item_key}', False):
+                ui_handler.show_fix_form(result, item_key, self.item_code)
+        
+        # 재진단 버튼
+        ui_handler.show_rediagnose_button(item_key)
+    
+    def render_fix_form(self, result, item_key, ui_handler):
+        """1.1 조치 폼 UI 렌더링"""
+        with st.form(f"fix_form_{item_key}"):
+            st.markdown("**🔧 조치할 항목을 선택하세요:**")
+            
+            selected_admin_users = []
+            selected_test_users = []
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                if result['admin_users']:
+                    st.markdown("**관리자 권한 제거:**")
+                    for user in result['admin_users']:
+                        if st.checkbox(f"`{user}`", key=f"admin_{item_key}_{user}"):
+                            selected_admin_users.append(user)
+            
+            with col2:
+                if result['test_users']:
+                    st.markdown("**콘솔 로그인 비활성화:**")
+                    for user in result['test_users']:
+                        if st.checkbox(f"`{user}`", key=f"test_{item_key}_{user}"):
+                            selected_test_users.append(user)
+            
+            col_submit1, col_submit2 = st.columns(2)
+            with col_submit1:
+                if st.form_submit_button("🚀 조치 실행", type="primary"):
+                    if selected_admin_users or selected_test_users:
+                        selected_items = {
+                            'admin_users': selected_admin_users,
+                            'test_users': selected_test_users
+                        }
+                        ui_handler.execute_fix(selected_items, item_key, self.item_code)
+                    else:
+                        st.warning("조치할 항목을 선택해주세요.")
+            
+            with col_submit2:
+                if st.form_submit_button("❌ 취소"):
+                    st.session_state[f'show_fix_{item_key}'] = False
+                    st.rerun()
+                    
     def execute_fix(self, selected_items):
         """조치 실행"""
         try:

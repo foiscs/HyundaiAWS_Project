@@ -2,6 +2,7 @@
 SK Shieldus 진단 항목 공통 베이스 클래스
 """
 from abc import ABC, abstractmethod
+import streamlit as st
 
 class BaseChecker(ABC):
     """진단 항목 베이스 클래스"""
@@ -39,3 +40,13 @@ class BaseChecker(ABC):
             return "high"
         else:
             return "medium"
+    
+    def render_result_ui(self, result, item_key, ui_handler):
+        """진단 결과 UI 렌더링 (선택적 구현)"""
+        # 기본 구현 - 하위 클래스에서 오버라이드 가능
+        ui_handler._show_default_result(result, item_key, self.item_code)
+    
+    def render_fix_form(self, result, item_key, ui_handler):
+        """조치 폼 UI 렌더링 (선택적 구현)"""
+        # 기본 구현 - 하위 클래스에서 오버라이드 가능
+        st.info("조치 기능이 구현되지 않았습니다.")

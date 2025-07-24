@@ -2,11 +2,12 @@
 SK Shieldus 진단 모듈 - 진단 항목 팩토리
 """
 from .account_management.user_account_1_1 import UserAccountChecker
+from .account_management.iam_single_account_1_2 import IAMSingleAccountChecker
 
 # 진단 항목 레지스트리
 DIAGNOSIS_REGISTRY = {
     "1.1": UserAccountChecker,
-    # "1.2": IAMSingleAccountChecker,  # 향후 추가
+    "1.2": IAMSingleAccountChecker,
     # "1.3": IAMIdentificationChecker,  # 향후 추가
     # ... 다른 항목들
 }
