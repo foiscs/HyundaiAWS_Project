@@ -1,26 +1,29 @@
 """
-AWS 계정 연결 인터페이스용 재사용 가능한 UI 컴포넌트들
-Streamlit과 HTML/CSS를 조합하여 리액트 스타일 컴포넌트 구현
+컴포넌트 목록:
+- step_indicator: WALB 4단계 진행 표시기 (완료/진행중/대기 상태)
+- connection_type_card: 보안 연결방식 선택 카드 (Role/AccessKey 비교)
+- info_box: 보안 등급별 정보박스 (info/warning/error/success 타입)
+- json_code_block: AWS IAM 정책 JSON 표시 + 구문강조 + 복사 기능
+- test_result_table: AWS 서비스별 권한 테스트 결과 테이블 (7개 서비스)
+- loading_spinner: AWS API 호출 중 로딩 스피너 + 진행 메시지
+- connection_test_result: boto3 연결 테스트 종합 결과 화면
+- input_field_with_toggle: 비밀번호 토글 입력 필드 (보안 강화)
+- navigation_buttons: 4단계 네비게이션 버튼 (조건부 활성화)
+- sidebar_panel: 멀티클라우드 모니터링 사이드바 (상태/디버그/세션관리)
 
-- step_indicator: 4단계 진행 표시기 (완료/진행중/대기 상태)
-- connection_type_card: 연결 방식 선택 카드 (Role/AccessKey)
-- info_box: 정보/경고/에러 박스 (타입별 색상과 아이콘)
-- json_code_block: JSON 정책 표시 + 복사/다운로드 기능
-- test_result_table: 서비스별 권한 테스트 결과 테이블
-- loading_spinner: 로딩 중 스피너 + 진행 메시지
-- connection_test_result: 연결 테스트 종합 결과 화면
-- input_field_with_toggle: 비밀번호 보기/숨기기 토글 입력 필드
-- navigation_buttons: 이전/다음 단계 네비게이션 버튼
-- sidebar_panel: 고정 사이드바 패널 (디버그 정보, 빠른 액션, 세션 관리)
-- reset_session_state: 세션 상태 초기화 함수
-- render_step4: 4단계 연결 테스트 화면 렌더링 함수
+🔧 유틸리티 함수:
+- validate_and_show_error: AWS 입력값 실시간 검증 + 에러 표시
+- safe_session_update: 중복 방지 세션 상태 업데이트
+- get_actual_secret_key: 마스킹된 Secret Key 실제값 반환
+- cleanup_sensitive_data: 보안을 위한 민감정보 자동 정리
 """
 
 import streamlit as st
 import streamlit.components.v1 as components
 import json
 import time
-from aws_handler import AWSConnectionHandler
+from components.aws_handler import AWSConnectionHandler
+from components.session_manager import SessionManager
 
 def step_indicator(current_step):
     """
@@ -79,7 +82,7 @@ def step_indicator(current_step):
         }}
         .step-container {{
             background: white;
-            border: 1px solid #E5E7EB;
+            border: 1px solid #F9FAFB;
             border-radius: 12px;
             padding: 1.5rem 2rem;
             box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
@@ -222,7 +225,7 @@ def info_box(message, box_type="info", title=None):
         <div style="font-size: 1.25rem;">{icon}</div>
         <div class="info-box-content">
             {title_html}
-            <div class="info-box-text">{message}</div>
+            <div class="info-box-text" style="font-size: 1rem;">{message}</div>
         </div>
     </div>
     '''
@@ -234,7 +237,7 @@ def json_code_block(json_data, title, show_copy_button=True):
     JSON 정책 표시 - Streamlit Components로 완전 커스터마이징
     """
     # JSON을 예쁘게 포맷팅
-    formatted_json = json.dumps(json_data, indent=2, ensure_ascii=False)
+    formatted_json = json.dumps(json_data, indent=2, ensure_ascii=False, separators=(',', ':'))
     
     # 제목 표시
     st.subheader(f"📄 {title}")
@@ -307,7 +310,7 @@ def json_code_block(json_data, title, show_copy_button=True):
             code = code.replace(/(<span class="json-string">"[^"]*"<\\/span>)(\s*:)/g, '<span class="json-key">$1</span>$2');
             
             // 숫자 (하늘색)
-            code = code.replace(/:\s*(-?\d+\.?\d*)/g, ': <span class="json-number">$1</span>');
+            code = code.replace(/:\s*(-?\d+\.?\d*)/g, ':<span class="json-number">$1</span>');
             
             // 불린값 (보라색)
             code = code.replace(/:\s*(true|false)/g, ': <span class="json-boolean">$1</span>');
@@ -334,7 +337,7 @@ def json_code_block(json_data, title, show_copy_button=True):
     # JSON 길이에 따른 동적 높이 계산
     json_lines = len(formatted_json.split('\n'))
     # 기본 패딩 + 줄 수 * 줄 높이 + 여유 공간
-    dynamic_height = min(max(json_lines * 24 + 60, 150), 600)
+    dynamic_height = min(max(json_lines * 24 + 60, 80), 400)
     
     # Components로 렌더링 (동적 높이)
     components.html(json_html, height=dynamic_height)
@@ -511,21 +514,25 @@ def connection_test_result(test_results, test_status):
         connection_type_label = "Cross-Account Role" if st.session_state.connection_type == "cross-account-role" else "Access Key"
 
         # 상단 요약 정보 박스
-        st.markdown(f"""
-        <div class="info-box info">
-            <div style="font-size: 1.25rem;">☁️</div>
-            <div class="info-box-content">
-                <div class="info-box-title">연결 정보 요약</div>
-                <div class="info-box-text">
-                    • 환경 이름: <strong>{account['cloud_name']}</strong><br>
-                    • 연결 방식: <strong>{connection_type_label}</strong><br>
-                    • 계정 ID: <code>{account['account_id']}</code><br>
-                    • 리전: <code>{account['primary_region']}</code><br>
-                    {'• Role ARN: <code>' + account['role_arn'] + '</code><br>' if st.session_state.connection_type == 'cross-account-role' else ''}
-                </div>
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
+        summary_info = f"""
+        • 환경 이름: <strong>{account['cloud_name']}</strong><br>
+        • 연결 방식: <strong>{connection_type_label}</strong><br>
+        • 리전: <code>{account['primary_region']}</code><br>
+        """
+        
+        # 계정 ID는 연결 방식에 따라 표시
+        if st.session_state.connection_type == 'cross-account-role':
+            summary_info += f"• 계정 ID: <code>{account['account_id']}</code><br>"
+            summary_info += f"• Role ARN: <code>{account['role_arn']}</code><br>"
+        else:
+            # Access Key 방식에서는 계정 ID를 자동 감지 예정임을 표시
+            summary_info += "• 계정 ID: <em>연결 후 자동 감지</em><br>"
+        
+        info_box(
+            summary_info,
+            box_type="info",
+            title="연결 정보 요약"
+        )
 
         # 버튼 정렬
         col1, col2 = st.columns([1, 3])
@@ -551,18 +558,6 @@ def connection_test_result(test_results, test_status):
 def input_field_with_toggle(label, input_type="text", is_password=False, help=None):
     """
     비밀번호 토글 가능한 입력 필드 컴포넌트
-    - 일반 텍스트와 비밀번호 입력 간 전환 가능
-    - 눈 아이콘 버튼으로 표시/숨김 제어
-    - 보안: 민감 정보는 세션에 저장하지 않음
-    
-    Args:
-        label (str): 입력 필드 라벨
-        input_type (str): 입력 타입 ("text", "password")
-        is_password (bool): 비밀번호 필드 여부
-        help (str, optional): 도움말 텍스트
-    
-    Returns:
-        tuple: (입력값, 표시상태, 보안경고)
     """
     if is_password:
         # 표시/숨김 상태 관리
@@ -573,28 +568,20 @@ def input_field_with_toggle(label, input_type="text", is_password=False, help=No
         col1, col2 = st.columns([4, 1])
         
         with col1:
-            # 비밀번호 필드 - key 파라미터로 고유성 보장
-            field_key = f"secure_{label.replace(' ', '_').lower()}"
+            field_key = f"input_{label.replace(' ', '_').lower()}"
             if st.session_state[show_key]:
                 value = st.text_input(label, type="default", help=help, key=field_key)
             else:
                 value = st.text_input(label, type="password", help=help, key=field_key)
         
         with col2:
-            # 토글 버튼
             st.write("")  # 라벨 높이 맞추기
             icon = "🙈" if st.session_state[show_key] else "👁️"
             if st.button(icon, key=f"toggle_{show_key}"):
                 st.session_state[show_key] = not st.session_state[show_key]
                 st.rerun()
         
-        # 보안 경고 표시
-        security_warning = False
-        if value and len(value) > 0:
-            st.info("🔒 **보안 알림**: 민감한 정보는 연결 테스트 완료 후 자동으로 삭제됩니다.")
-            security_warning = True
-        
-        return value, st.session_state[show_key], security_warning
+        return value, st.session_state[show_key], False
     else:
         # 일반 텍스트 입력
         value = st.text_input(label, help=help)
@@ -644,7 +631,7 @@ def sidebar_panel():
         col1, col2 = st.columns(2)
         with col1:
             if st.button("⏮️ 처음으로", use_container_width=True):
-                st.session_state.current_step = 1
+                SessionManager.reset_connection_data()
                 st.rerun()
         
         with col2:
@@ -665,8 +652,8 @@ def sidebar_panel():
         st.markdown("#### 🔧 세션 관리")
         
         if st.button("🔄 전체 초기화", type="secondary", use_container_width=True):
-            for key in list(st.session_state.keys()):
-                del st.session_state[key]
+            # 안전한 초기화
+            SessionManager.reset_all(keep_aws_handler=False)
             st.rerun()
         
         # 데이터 내보내기
@@ -684,12 +671,26 @@ def sidebar_panel():
         
         # 디버그 정보 (접을 수 있게)
         with st.expander("🐛 디버그 정보", expanded=False):
-            st.json({
+            # 실제 Secret Key 길이 계산
+            actual_secret = st.session_state.get('temp_secret_key', '') 
+            if not actual_secret:
+                stored_secret = st.session_state.account_data.get('secret_access_key', '')
+                actual_secret = stored_secret if stored_secret != '[MASKED]' else ''
+
+            debug_info = {
                 "current_step": st.session_state.current_step,
                 "connection_type": st.session_state.connection_type,
                 "connection_status": st.session_state.connection_status,
-                "account_data": st.session_state.account_data
-            })
+                "account_data": {
+                    "cloud_name": st.session_state.account_data.get('cloud_name', ''),
+                    "account_id": st.session_state.account_data.get('account_id', ''),
+                    "access_key_length": len(st.session_state.account_data.get('access_key_id', '')),
+                    "secret_key_length": len(actual_secret),
+                    "secret_key_status": "temp_stored" if st.session_state.get('temp_secret_key') else ("masked" if st.session_state.account_data.get('secret_access_key') == '[MASKED]' else "direct"),
+                    "region": st.session_state.account_data.get('primary_region', '')
+                }
+            }
+            st.json(debug_info)
             
 def navigation_buttons(show_prev=True, show_next=True, prev_label="이전", next_label="다음", 
                       next_disabled=False, prev_callback=None, next_callback=None):
@@ -737,41 +738,6 @@ def navigation_buttons(show_prev=True, show_next=True, prev_label="이전", next
                 next_callback()
     
     return prev_clicked, next_clicked
-
-def reset_session_state(keep_aws_handler=True):
-    """
-    세션 상태 초기화 공통 함수
-    
-    Args:
-        keep_aws_handler (bool): AWS 핸들러 유지 여부
-    """
-    keys_to_delete = []
-    for key in st.session_state.keys():
-        if key.startswith(('current_step', 'connection_type', 'account_data', 
-                          'connection_status', 'test_results')):
-            keys_to_delete.append(key)
-    
-    for key in keys_to_delete:
-        del st.session_state[key]
-    
-    # 기본값으로 재초기화
-    st.session_state.current_step = 1
-    st.session_state.connection_type = 'cross-account-role'
-    st.session_state.account_data = {
-        'cloud_name': '',
-        'account_id': '',
-        'role_arn': '',
-        'external_id': '',
-        'access_key_id': '',
-        'secret_access_key': '',
-        'primary_region': 'ap-northeast-2',
-        'contact_email': ''
-    }
-    st.session_state.connection_status = 'idle'
-    st.session_state.test_results = None
-    
-    if keep_aws_handler and 'aws_handler' not in st.session_state:
-        st.session_state.aws_handler = AWSConnectionHandler()
 
 def validate_and_show_error(field_name, value, validator_func):
     """

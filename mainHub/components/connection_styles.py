@@ -19,10 +19,6 @@ def get_main_styles():
     """
     return """
     <style>
-    /* 전체 페이지 배경 */
-    .stApp {
-        background-color: #F9FAFB;
-    }
     
     /* 메인 컨테이너 */
     .main-container {
@@ -39,6 +35,9 @@ def get_main_styles():
         display: flex;
         align-items: center;
         gap: 0.75rem;
+    }
+    .stMainBlockContainer {
+        padding-top: 5rem !important ;
     }
     </style>
     """
@@ -101,7 +100,7 @@ def get_step_indicator_styles():
         display: flex;
         justify-content: space-between;
         align-items: center;
-        margin: 2rem 0;
+        margin: 0;
         padding: 0 1rem;
     }
     
