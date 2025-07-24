@@ -1,0 +1,383 @@
+# .github/workflows/deploy-app.yml
+# 애플리케이션 배포 워크플로우 (server 폴더 변경시만 실행)
+
+name: Deploy Application
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'WALB/server/**'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'WALB/server/**'
+
+env:
+  PROJECT_NAME: "WALB-app"
+  JAVA_VERSION: "17"
+  
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    
+    # 워킹 디렉토리를 WALB로 설정
+    defaults:
+      run:
+        working-directory: ./WALB
+    
+    permissions:
+      id-token: write
+      contents: read
+    
+    steps:
+    # ===============================================
+    # 소스코드 체크아웃
+    # ===============================================
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    # ===============================================
+    # Java 환경 설정
+    # ===============================================
+    - name: Set up JDK ${{ env.JAVA_VERSION }}
+      uses: actions/setup-java@v4
+      with:
+        java-version: ${{ env.JAVA_VERSION }}
+        distribution: 'temurin'
+        cache: maven
+    
+    # ===============================================
+    # Maven 빌드 및 테스트
+    # ===============================================
+    - name: Run tests
+      run: |
+        echo "🧪 애플리케이션 테스트 실행 중..."
+        if [ -f "mvnw" ]; then
+          ./mvnw test
+        elif [ -f "pom.xml" ]; then
+          mvn test
+        else
+          echo "⚠️ Maven 프로젝트가 아닙니다. 테스트를 건너뜁니다."
+        fi
+        echo "✅ 테스트 완료"
+    
+    - name: Build with Maven
+      run: |
+        echo "🔨 애플리케이션 빌드 중..."
+        if [ -f "mvnw" ]; then
+          ./mvnw clean package -DskipTests
+        elif [ -f "pom.xml" ]; then
+          mvn clean package -DskipTests
+        else
+          echo "ℹ️ Maven 빌드 파일이 없습니다. Docker 빌드만 실행합니다."
+        fi
+        echo "✅ 빌드 완료"
+    
+    # ===============================================
+    # AWS 인증 (OIDC 방식)
+    # ===============================================
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+        aws-region: ${{ secrets.AWS_REGION }}
+        role-session-name: GitHubActions-Application-${{ github.run_id }}
+    
+    # ===============================================
+    # 기존 인프라 정보 조회
+    # ===============================================
+    - name: Get Infrastructure Resources
+      run: |
+        echo "🔍 기존 인프라 리소스 정보 조회 중..."
+        
+        # ECR 리포지토리 URI 조회
+        ECR_REPO=$(aws ecr describe-repositories --repository-names ${PROJECT_NAME}-app --query 'repositories[0].repositoryUri' --output text 2>/dev/null || echo "")
+        if [ -z "$ECR_REPO" ]; then
+          echo "❌ ECR 리포지토리를 찾을 수 없습니다: ${PROJECT_NAME}-app"
+          echo "먼저 인프라 배포가 필요합니다."
+          exit 1
+        fi
+        echo "ECR_REPOSITORY=$ECR_REPO" >> $GITHUB_ENV
+        echo "✅ ECR Repository: $ECR_REPO"
+        
+        # EKS 클러스터 이름 조회
+        EKS_CLUSTER=$(aws eks describe-cluster --name ${PROJECT_NAME}-eks --query 'cluster.name' --output text 2>/dev/null || echo "")
+        if [ -z "$EKS_CLUSTER" ] || [ "$EKS_CLUSTER" == "None" ]; then
+          echo "❌ EKS 클러스터를 찾을 수 없습니다: ${PROJECT_NAME}-eks"
+          echo "먼저 인프라 배포가 필요합니다."
+          exit 1
+        fi
+        echo "EKS_CLUSTER_NAME=$EKS_CLUSTER" >> $GITHUB_ENV
+        echo "✅ EKS Cluster: $EKS_CLUSTER"
+        
+        # EKS 클러스터 상태 확인
+        EKS_STATUS=$(aws eks describe-cluster --name $EKS_CLUSTER --query 'cluster.status' --output text)
+        if [ "$EKS_STATUS" != "ACTIVE" ]; then
+          echo "❌ EKS 클러스터가 활성 상태가 아닙니다: $EKS_STATUS"
+          exit 1
+        fi
+        echo "✅ EKS Cluster Status: $EKS_STATUS"
+    
+    # ===============================================
+    # ECR 로그인
+    # ===============================================
+    - name: Login to Amazon ECR
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v2
+    
+    # ===============================================
+    # Docker 이미지 빌드 및 푸시
+    # ===============================================
+    - name: Build and push Docker image
+      id: build-image
+      run: |
+        echo "🐳 Docker 이미지 빌드 중..."
+        
+        # Git 커밋 해시를 태그로 사용
+        IMAGE_TAG=${{ github.sha }}
+        IMAGE_URI=${{ env.ECR_REPOSITORY }}:$IMAGE_TAG
+        
+        # Docker 이미지 빌드
+        docker build -t $IMAGE_URI .
+        docker tag $IMAGE_URI ${{ env.ECR_REPOSITORY }}:latest
+        
+        echo "📤 ECR에 이미지 푸시 중..."
+        docker push $IMAGE_URI
+        docker push ${{ env.ECR_REPOSITORY }}:latest
+        
+        echo "✅ 이미지 푸시 완료: $IMAGE_URI"
+        echo "image=$IMAGE_URI" >> $GITHUB_OUTPUT
+    
+    # ===============================================
+    # kubectl 설치 및 EKS 연결
+    # ===============================================
+    - name: Install kubectl
+      uses: azure/setup-kubectl@v3
+      with:
+        version: 'v1.28.0'
+    
+    - name: Update kubeconfig for EKS
+      run: |
+        echo "🔧 EKS 클러스터 kubeconfig 업데이트 중..."
+        aws eks update-kubeconfig --region ${{ secrets.AWS_REGION }} --name ${{ env.EKS_CLUSTER_NAME }}
+        
+        # 클러스터 연결 테스트
+        echo "🔍 클러스터 연결 테스트..."
+        kubectl cluster-info
+        kubectl get nodes
+    
+    # ===============================================
+    # Kubernetes 매니페스트 파일 생성
+    # ===============================================
+    - name: Generate Kubernetes manifests
+      run: |
+        echo "📝 Kubernetes 매니페스트 생성 중..."
+        
+        # Namespace 생성
+        cat <<EOF > namespace.yaml
+        apiVersion: v1
+        kind: Namespace
+        metadata:
+          name: ${{ env.PROJECT_NAME }}
+          labels:
+            name: ${{ env.PROJECT_NAME }}
+        EOF
+        
+        # ConfigMap 생성 (환경변수)
+        cat <<EOF > configmap.yaml
+        apiVersion: v1
+        kind: ConfigMap
+        metadata:
+          name: ${{ env.PROJECT_NAME }}-config
+          namespace: ${{ env.PROJECT_NAME }}
+        data:
+          SPRING_PROFILES_ACTIVE: "production"
+          AWS_REGION: "${{ secrets.AWS_REGION }}"
+          DB_HOST: "$(aws rds describe-db-instances --query 'DBInstances[?DBName==\`demoapp\`].Endpoint.Address' --output text 2>/dev/null || echo 'localhost')"
+          DB_PORT: "5432"
+          DB_NAME: "demoapp"
+        EOF
+        
+        # Secret 생성 (DB 패스워드)
+        cat <<EOF > secret.yaml
+        apiVersion: v1
+        kind: Secret
+        metadata:
+          name: ${{ env.PROJECT_NAME }}-secret
+          namespace: ${{ env.PROJECT_NAME }}
+        type: Opaque
+        data:
+          DB_PASSWORD: $(echo -n "your-db-password" | base64)
+        EOF
+        
+        # Deployment 생성
+        cat <<EOF > deployment.yaml
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata:
+          name: ${{ env.PROJECT_NAME }}-app
+          namespace: ${{ env.PROJECT_NAME }}
+          labels:
+            app: ${{ env.PROJECT_NAME }}-app
+        spec:
+          replicas: 2
+          selector:
+            matchLabels:
+              app: ${{ env.PROJECT_NAME }}-app
+          template:
+            metadata:
+              labels:
+                app: ${{ env.PROJECT_NAME }}-app
+            spec:
+              serviceAccountName: ${{ env.PROJECT_NAME }}-service-account
+              containers:
+              - name: app
+                image: ${{ steps.build-image.outputs.image }}
+                ports:
+                - containerPort: 8080
+                  name: http
+                envFrom:
+                - configMapRef:
+                    name: ${{ env.PROJECT_NAME }}-config
+                - secretRef:
+                    name: ${{ env.PROJECT_NAME }}-secret
+                livenessProbe:
+                  httpGet:
+                    path: /health
+                    port: 8080
+                  initialDelaySeconds: 60
+                  periodSeconds: 30
+                  timeoutSeconds: 10
+                readinessProbe:
+                  httpGet:
+                    path: /health
+                    port: 8080
+                  initialDelaySeconds: 30
+                  periodSeconds: 10
+                  timeoutSeconds: 5
+                resources:
+                  requests:
+                    memory: "256Mi"
+                    cpu: "250m"
+                  limits:
+                    memory: "512Mi"
+                    cpu: "500m"
+                securityContext:
+                  runAsNonRoot: true
+                  runAsUser: 1001
+                  allowPrivilegeEscalation: false
+                  readOnlyRootFilesystem: false
+        EOF
+        
+        # Service 생성
+        cat <<EOF > service.yaml
+        apiVersion: v1
+        kind: Service
+        metadata:
+          name: ${{ env.PROJECT_NAME }}-service
+          namespace: ${{ env.PROJECT_NAME }}
+          labels:
+            app: ${{ env.PROJECT_NAME }}-app
+        spec:
+          type: ClusterIP
+          ports:
+          - port: 80
+            targetPort: 8080
+            protocol: TCP
+            name: http
+          selector:
+            app: ${{ env.PROJECT_NAME }}-app
+        EOF
+        
+        # ServiceAccount 생성 (IRSA용)
+        cat <<EOF > serviceaccount.yaml
+        apiVersion: v1
+        kind: ServiceAccount
+        metadata:
+          name: ${{ env.PROJECT_NAME }}-service-account
+          namespace: ${{ env.PROJECT_NAME }}
+          annotations:
+            eks.amazonaws.com/role-arn: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/${{ env.PROJECT_NAME }}-eks-app-role
+        EOF
+        
+        echo "✅ 매니페스트 파일 생성 완료"
+    
+    # ===============================================
+    # EKS에 애플리케이션 배포 (main 브랜치일 때만)
+    # ===============================================
+    - name: Deploy to EKS
+      if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+      run: |
+        echo "🚀 EKS에 애플리케이션 배포 중..."
+        
+        # Namespace 먼저 생성
+        kubectl apply -f namespace.yaml
+        
+        # 나머지 리소스 배포
+        kubectl apply -f serviceaccount.yaml
+        kubectl apply -f configmap.yaml
+        kubectl apply -f secret.yaml
+        kubectl apply -f deployment.yaml
+        kubectl apply -f service.yaml
+        
+        echo "⏳ 배포 완료 대기 중..."
+        kubectl rollout status deployment/${{ env.PROJECT_NAME }}-app -n ${{ env.PROJECT_NAME }} --timeout=300s
+    
+    # ===============================================
+    # 배포 결과 확인
+    # ===============================================
+    - name: Verify deployment
+      if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+      run: |
+        echo "🔍 배포 상태 확인 중..."
+        
+        # Pod 상태 확인
+        kubectl get pods -n ${{ env.PROJECT_NAME }} -l app=${{ env.PROJECT_NAME }}-app
+        
+        # Service 확인
+        kubectl get svc -n ${{ env.PROJECT_NAME }}
+        
+        # Deployment 상태 확인
+        READY_REPLICAS=$(kubectl get deployment ${{ env.PROJECT_NAME }}-app -n ${{ env.PROJECT_NAME }} -o jsonpath='{.status.readyReplicas}')
+        DESIRED_REPLICAS=$(kubectl get deployment ${{ env.PROJECT_NAME }}-app -n ${{ env.PROJECT_NAME }} -o jsonpath='{.spec.replicas}')
+        
+        echo "준비된 레플리카: $READY_REPLICAS"
+        echo "원하는 레플리카: $DESIRED_REPLICAS"
+        
+        if [ "$READY_REPLICAS" = "$DESIRED_REPLICAS" ]; then
+          echo "✅ 배포가 성공적으로 완료되었습니다!"
+        else
+          echo "❌ 배포에 문제가 있습니다."
+          kubectl describe deployment ${{ env.PROJECT_NAME }}-app -n ${{ env.PROJECT_NAME }}
+          kubectl logs -l app=${{ env.PROJECT_NAME }}-app -n ${{ env.PROJECT_NAME }} --tail=100
+          exit 1
+        fi
+    
+    # ===============================================
+    # 배포 완료 알림
+    # ===============================================
+    - name: Application Deployment Notification
+      if: success() && github.ref == 'refs/heads/main' && github.event_name == 'push'
+      run: |
+        echo "🎉 애플리케이션 배포 완료!"
+        echo "프로젝트: ${{ env.PROJECT_NAME }}"
+        echo "이미지: ${{ steps.build-image.outputs.image }}"
+        echo "클러스터: ${{ env.EKS_CLUSTER_NAME }}"
+        echo "네임스페이스: ${{ env.PROJECT_NAME }}"
+        echo "커밋: ${{ github.sha }}"
+        echo "배포 시간: $(date)"
+        
+        # 배포된 서비스 정보 출력
+        kubectl get all -n ${{ env.PROJECT_NAME }}
+
+    # ===============================================
+    # 배포 실패 시 롤백
+    # ===============================================
+    - name: Rollback on failure
+      if: failure() && github.ref == 'refs/heads/main' && github.event_name == 'push'
+      run: |
+        echo "❌ 배포 실패 - 이전 버전으로 롤백 중..."
+        kubectl rollout undo deployment/${{ env.PROJECT_NAME }}-app -n ${{ env.PROJECT_NAME }}
+        kubectl rollout status deployment/${{ env.PROJECT_NAME }}-app -n ${{ env.PROJECT_NAME }} --timeout=300s
+        echo "✅ 롤백 완료"
