@@ -383,10 +383,7 @@ def render_step3():
                     is_password=True,
                     help="AWS Secret Access Key를 입력하세요."
                 )
-                # 민감 정보는 세션에 저장하지 않고 즉시 사용
-                if secret_access_key:
-                    st.session_state.temp_secret_key = secret_access_key
-                    st.session_state.account_data['secret_access_key'] = '[MASKED]'
+                st.session_state.account_data['secret_access_key'] = secret_access_key
                 
                 # 실제 입력된 Secret Key로 검증 (마스킹 전)
                 if secret_access_key:
@@ -479,14 +476,9 @@ def render_step4():
                         region=st.session_state.account_data['primary_region']
                     )
                 else:
-                    # 실제 Secret Key 가져오기
-                    actual_secret_key = st.session_state.get('temp_secret_key', '') or st.session_state.account_data.get('secret_access_key', '')
-                    if actual_secret_key == '[MASKED]':
-                        actual_secret_key = st.session_state.get('temp_secret_key', '')
-
                     test_results = st.session_state.aws_handler.test_access_key_connection(
                         access_key_id=st.session_state.account_data['access_key_id'],
-                        secret_access_key=actual_secret_key,
+                        secret_access_key=st.session_state.account_data['secret_access_key'],
                         region=st.session_state.account_data['primary_region']
                     )
                 return test_results
@@ -582,9 +574,14 @@ def render_step4():
                     # 실제 API 호출
                     test_results = run_connection_test()
                     st.session_state.test_results = test_results
-                    st.session_state.connection_status = (
-                        'success' if test_results['status'] == 'success' else 'failed'
-                    )
+                    if test_results['status'] == 'success':
+                        st.session_state.connection_status = 'success'
+                        
+                        # Access Key 방식인 경우 계정 ID 자동 업데이트
+                        if st.session_state.connection_type == 'access-key' and test_results.get('account_id'):
+                            st.session_state.account_data['account_id'] = test_results['account_id']
+                    else:
+                        st.session_state.connection_status = 'failed'
                 
                 # 자동으로 결과 페이지로 이동
                 time.sleep(1)
@@ -607,11 +604,12 @@ def render_step4():
                     st.rerun()
             with col2:
                 if st.button("✅ 계정 등록 완료", type="primary", use_container_width=True):
+                    
                     # 계정 등록 처리
                     account = st.session_state.account_data.copy()
                     
                     try:
-                        # 파일에 저장 (Secret Key 포함)
+                        # 파일에 저장 (Secret Key 평문 저장)
                         with open("registered_accounts.json", "a", encoding="utf-8") as f:
                             f.write(json.dumps(account, ensure_ascii=False) + "\n")
                         

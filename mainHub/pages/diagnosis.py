@@ -572,54 +572,16 @@ def main():
         # 세션 상태 상세 정보
         with st.expander("🐛 상세 디버그 정보"):
             # Secret Key 디버깅 정보 추가
-            secret_key_debug = {
-                "temp_secret_key_exists": bool(st.session_state.get('temp_secret_key')),
-                "temp_secret_key_length": len(st.session_state.get('temp_secret_key', '')),
-                "account_secret_key": account.get('secret_access_key', 'N/A'),
-                "account_secret_key_length": len(account.get('secret_access_key', '')),
-                "access_key_id": account.get('access_key_id', 'N/A'),
-                "access_key_length": len(account.get('access_key_id', ''))
-            }
-            
             debug_info = {
-                "selected_account": bool(st.session_state.get('selected_account')),
-                "aws_handler": bool(st.session_state.get('aws_handler')),
-                "account_keys": list(account.keys()) if account else [],
-                "session_keys_total": len(st.session_state.keys()),
-                "secret_key_debug": secret_key_debug,
-                "diagnosis_sessions": get_diagnosis_session_info()
-            }
-            st.json(debug_info)
-
-        # Secret Key 상태 별도 표시
-        st.markdown("#### 🔑 키 상태 확인")
-        temp_secret = st.session_state.get('temp_secret_key', '')
-        stored_secret = account.get('secret_access_key', '')
-
-        if temp_secret:
-            st.write(f"**Temp Secret Key:** 있음 ({len(temp_secret)}자)")
-        else:
-            st.write("**Temp Secret Key:** 없음")
-
-        if stored_secret and stored_secret != '[MASKED]':
-            st.write(f"**Account Secret Key:** 있음 ({len(stored_secret)}자)")
-        elif stored_secret == '[MASKED]':
-            st.write("**Account Secret Key:** [MASKED]")
-        else:
-            st.write("**Account Secret Key:** 없음")
-
-        # 실제 사용될 Secret Key 확인
-        actual_secret = st.session_state.get('temp_secret_key') or account.get('secret_access_key')
-        if actual_secret == '[MASKED]':
-            actual_secret = st.session_state.get('temp_secret_key')
-
-        if actual_secret and actual_secret != '[MASKED]':
-            st.write(f"**실제 사용 Secret:** 있음 ({len(actual_secret)}자)")
-            # 마지막 4자리만 표시 (보안)
-            masked_secret = actual_secret[-4:] if len(actual_secret) >= 4 else "***"
-            st.write(f"**끝 4자리:** ...{masked_secret}")
-        else:
-            st.error("**실제 사용 Secret:** ❌ 없음")
+            "current_step": "diagnosis",
+            "selected_account": account.get('cloud_name', ''),
+            "account_id": account.get('account_id', ''),
+            "connection_type": "role" if account.get('role_arn') else "access_key",
+            "region": account.get('primary_region', ''),
+            "secret_key_length": len(account.get('secret_access_key', '')) if account.get('secret_access_key') else 0,
+            "diagnosis_sessions": get_diagnosis_session_info()
+        }
+        st.json(debug_info)
         
         # 진단 세션 초기화
         if st.button("🗑️ 진단 상태 초기화", type="secondary", use_container_width=True):

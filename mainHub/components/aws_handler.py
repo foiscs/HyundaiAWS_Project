@@ -230,13 +230,30 @@ class AWSConnectionHandler:
             sts_client = session.client('sts')
             identity = sts_client.get_caller_identity()
             print(f"연결된 계정 정보: {identity}")
+
+            # ARN에서 사용자 ID 추출
+            user_id = None
+            arn = identity.get('Arn', '')
+            if ':user/' in arn:
+                # IAM 사용자의 경우: arn:aws:iam::123456789012:user/username
+                user_id = arn.split(':user/')[-1]
+            elif ':assumed-role/' in arn:
+                # AssumeRole의 경우: arn:aws:sts::123456789012:assumed-role/role-name/session-name
+                parts = arn.split(':assumed-role/')[-1].split('/')
+                user_id = parts[0] if parts else None
+            elif ':root' in arn:
+                # Root 계정의 경우
+                user_id = 'root'
+
+            print(f"추출된 사용자 ID: {user_id}")
                     
             # 각 서비스별 권한 테스트
             test_results = self._test_service_permissions(session)
-            
+
             return {
                 'status': 'success',
                 'account_id': identity['Account'],
+                'user_id': identity['UserId'],
                 'user_arn': identity['Arn'],
                 'regions': self._count_available_regions(session),
                 'services': list(test_results.keys()),

@@ -108,19 +108,6 @@ class SessionManager:
             st.session_state.aws_handler = aws_handler
     
     @staticmethod
-    def cleanup_sensitive_data():
-        """민감정보 정리"""
-        # 임시 Secret Key 제거
-        if 'temp_secret_key' in st.session_state:
-            del st.session_state['temp_secret_key']
-        
-        # Secret Key 마스킹
-        if 'account_data' in st.session_state:
-            if st.session_state.account_data.get('secret_access_key'):
-                if st.session_state.account_data['secret_access_key'] != '[MASKED]':
-                    st.session_state.account_data['secret_access_key'] = '[MASKED]'
-    
-    @staticmethod
     def get_session_summary():
         """세션 상태 요약 정보 반환 (디버깅용)"""
         return {

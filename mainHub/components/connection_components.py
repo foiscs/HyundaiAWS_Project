@@ -761,24 +761,3 @@ def validate_and_show_error(field_name, value, validator_func):
         return False
     
     return True
-
-def get_actual_secret_key():
-    """실제 Secret Key 반환 (마스킹되지 않은)"""
-    temp_key = st.session_state.get('temp_secret_key', '')
-    stored_key = st.session_state.account_data.get('secret_access_key', '')
-    
-    if temp_key:
-        return temp_key
-    elif stored_key and stored_key != '[MASKED]':
-        return stored_key
-    else:
-        return ''
-
-def cleanup_sensitive_data():
-    """민감 정보 정리"""
-    if 'temp_secret_key' in st.session_state:
-        del st.session_state.temp_secret_key
-    
-    if 'account_data' in st.session_state:
-        if st.session_state.account_data.get('secret_access_key') != '[MASKED]':
-            st.session_state.account_data['secret_access_key'] = '[MASKED]'
