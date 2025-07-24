@@ -244,11 +244,6 @@ resource "aws_iam_role" "node_group" {
 
 }
 
-resource "aws_iam_role_policy_attachment" "ecr_pull" {
-  role       = aws_iam_role.node_group.name
-  policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
-}
-
 # EKS 노드 그룹 정책 연결
 resource "aws_iam_role_policy_attachment" "node_group_AmazonEKSWorkerNodePolicy" {
   policy_arn = "arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy"
