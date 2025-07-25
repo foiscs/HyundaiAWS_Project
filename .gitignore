@@ -27,4 +27,3 @@ terraform.tfplan
 # OS
 .DS_Store
 Thumbs.db
-WALB/server/
