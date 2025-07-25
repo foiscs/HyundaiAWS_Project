@@ -143,7 +143,7 @@ jobs:
         
         echo "✅ 이미지 푸시 완료: $IMAGE_URI"
         echo "image=$IMAGE_URI" >> $GITHUB_OUTPUT
-        
+
     # Terraform 설치
     - name: Setup Terraform
       uses: hashicorp/setup-terraform@v3
@@ -184,7 +184,7 @@ jobs:
         kill $SSH_PID
         rm bastion_key.pem
       env:
-        PROJECT_NAME: "WALB-app"
+        PROJECT_NAME: "walb-app"
         
     # ===============================================
     # PostgreSQL 클라이언트 설치 및 스키마 적용
