@@ -501,10 +501,6 @@ resource "kubernetes_config_map_v1_data" "aws_auth" {
   }
 
   force = true
-
-  lifecycle {
-    ignore_changes = [metadata[0].annotations]
-  }
 }
 
 # EKS 애플리케이션용 정책 연결
