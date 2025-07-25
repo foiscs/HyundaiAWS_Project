@@ -9,29 +9,38 @@ def check():
     print("[INFO] 4.2 RDS 암호화 설정 체크 중...")
     rds = boto3.client('rds')
     unencrypted_resources = []
+    total_resources = 0  # 전체 리소스 수 추적
 
     try:
         # DB 인스턴스 점검
-        for inst in rds.describe_db_instances()['DBInstances']:
+        instances = rds.describe_db_instances()['DBInstances']
+        for inst in instances:
+            total_resources += 1
             if not inst.get('StorageEncrypted'):
                 unencrypted_resources.append(f"인스턴스: {inst['DBInstanceIdentifier']}")
-        # Aurora 클러스터 점검
-        for cluster in rds.describe_db_clusters()['DBClusters']:
-             if not cluster.get('StorageEncrypted'):
+
+        # DB 클러스터 점검
+        clusters = rds.describe_db_clusters()['DBClusters']
+        for cluster in clusters:
+            total_resources += 1
+            if not cluster.get('StorageEncrypted'):
                 unencrypted_resources.append(f"클러스터: {cluster['DBClusterIdentifier']}")
 
-        if not unencrypted_resources:
+        # 출력 분기 처리
+        if total_resources == 0:
+            print("[✓ INFO] 4.2 점검할 RDS 리소스가 존재하지 않습니다.")
+        elif not unencrypted_resources:
             print("[✓ COMPLIANT] 4.2 모든 RDS 리소스가 암호화되어 있습니다.")
         else:
             print(f"[⚠ WARNING] 4.2 스토리지 암호화가 비활성화된 RDS 리소스가 존재합니다 ({len(unencrypted_resources)}개).")
-            for res in unencrypted_resources: print(f"  ├─ {res}")
-        
+            for res in unencrypted_resources:
+                print(f"  ├─ {res}")
         return unencrypted_resources
 
     except ClientError as e:
         print(f"[ERROR] RDS 정보를 가져오는 중 오류 발생: {e}")
         return []
-
+    
 def fix(unencrypted_resources):
     """
     [4.2] RDS 암호화 설정 조치
