@@ -144,96 +144,128 @@ jobs:
         echo "✅ 이미지 푸시 완료: $IMAGE_URI"
         echo "image=$IMAGE_URI" >> $GITHUB_OUTPUT
 
-    # Terraform 설치
-    - name: Setup Terraform
-      uses: hashicorp/setup-terraform@v3
-      with:
-        terraform_version: "1.9.0"
-        terraform_wrapper: false
-
-    # Terraform 초기화 및 상태 확인
-    - name: Initialize Terraform and Get Outputs
-      run: |
-        echo "🔧 Terraform 초기화 및 출력값 확인 중..."
-        cd infrastructure/terraform
-        
-        # Terraform 초기화
-        terraform init -input=false
-        
-        # Terraform 상태 확인
-        terraform plan -input=false -detailed-exitcode || echo "Plan completed"
-        
-        # 출력값들이 존재하는지 확인
-        echo "📋 사용 가능한 출력값들:"
-        terraform output
-        
-        # 개별 출력값 테스트
-        echo "🔍 개별 출력값 테스트 중..."
-        terraform output rds_endpoint || echo "❌ rds_endpoint not found"
-        terraform output db_name || echo "❌ db_name not found"  
-        terraform output db_username || echo "❌ db_username not found"
-        terraform output bastion_public_ip || echo "❌ bastion_public_ip not found"
-
-    # 데이터베이스 테스트 단계
     - name: Test Database Connection via Bastion
       run: |
-        # PostgreSQL 클라이언트 설치
-        sudo apt-get update && sudo apt-get install -y postgresql-client netcat-openbsd
+        # AWS CLI를 사용해서 리소스 정보 직접 조회
+        PROJECT_NAME="walb-app"
         
-        # Terraform outputs에서 DB 정보 가져오기
-        cd infrastructure/terraform
+        # RDS 엔드포인트 조회 (태그 기반)
+        echo "🔍 RDS 인스턴스 조회 중..."
+        DB_HOST=$(aws rds describe-db-instances \
+          --query "DBInstances[?contains(keys(TagList[?Key=='Project']), 'Project') && TagList[?Key=='Project'].Value[0]=='${PROJECT_NAME}'].Endpoint.Address" \
+          --output text 2>/dev/null || echo "")
         
-        # 출력값들을 안전하게 가져오기 (따옴표로 감싸서)
-        DB_HOST=$(terraform output -raw rds_endpoint | tr -d '\n\r' | xargs)
-        DB_NAME=$(terraform output -raw db_name | tr -d '\n\r' | xargs)
-        DB_USER=$(terraform output -raw db_username | tr -d '\n\r' | xargs)
-        BASTION_IP=$(terraform output -raw bastion_public_ip | tr -d '\n\r' | xargs)
+        if [ -z "$DB_HOST" ]; then
+          # 태그 조회가 안 되면 DB 이름으로 조회
+          DB_HOST=$(aws rds describe-db-instances \
+            --query "DBInstances[?DBName=='mydb'].Endpoint.Address" \
+            --output text 2>/dev/null || echo "")
+        fi
         
-        # 값들이 제대로 설정되었는지 확인
-        if [ -z "$DB_HOST" ] || [ -z "$BASTION_IP" ]; then
-          echo "❌ 필수 출력값을 가져올 수 없습니다"
-          echo "DB_HOST: '$DB_HOST'"
-          echo "DB_NAME: '$DB_NAME'"
-          echo "DB_USER: '$DB_USER'"  
-          echo "BASTION_IP: '$BASTION_IP'"
+        # Bastion Host IP 조회 (태그 기반)
+        echo "🔍 Bastion Host 조회 중..."
+        BASTION_IP=$(aws ec2 describe-instances \
+          --filters "Name=tag:Name,Values=${PROJECT_NAME}-bastion-host" "Name=instance-state-name,Values=running" \
+          --query "Reservations[0].Instances[0].PublicIpAddress" \
+          --output text 2>/dev/null || echo "")
+        
+        if [ -z "$BASTION_IP" ] || [ "$BASTION_IP" == "None" ]; then
+          # 태그로 안 되면 보안그룹으로 조회
+          BASTION_IP=$(aws ec2 describe-instances \
+            --filters "Name=tag:Component,Values=Bastion" "Name=instance-state-name,Values=running" \
+            --query "Reservations[0].Instances[0].PublicIpAddress" \
+            --output text 2>/dev/null || echo "")
+        fi
+        
+        # DB 사용자명과 DB 이름 (하드코딩된 값 사용)
+        DB_NAME="mydb"
+        DB_USER="dbadmin"
+        
+        # Parameter Store에서 DB 패스워드 조회
+        echo "🔍 DB 패스워드 조회 중..."
+        DB_PASSWORD=$(aws ssm get-parameter \
+          --name "/${PROJECT_NAME}/rds/master-password" \
+          --with-decryption \
+          --query 'Parameter.Value' \
+          --output text 2>/dev/null || echo "")
+        
+        # 값 검증
+        if [ -z "$DB_HOST" ] || [ "$DB_HOST" == "None" ]; then
+          echo "❌ RDS 엔드포인트를 찾을 수 없습니다."
+          echo "사용 가능한 RDS 인스턴스:"
+          aws rds describe-db-instances --query "DBInstances[*].[DBInstanceIdentifier,Endpoint.Address,DBName]" --output table
           exit 1
         fi
         
-        DB_PASSWORD=$(aws ssm get-parameter --name "/${PROJECT_NAME}/rds/master-password" --with-decryption --query 'Parameter.Value' --output text)
-
-        # SSH 키를 Parameter Store에서 가져오기
-        aws ssm get-parameter --name "/${PROJECT_NAME}/bastion/ssh-private-key" --with-decryption --query 'Parameter.Value' --output text > bastion_key.pem
-        chmod 600 bastion_key.pem
-
+        if [ -z "$BASTION_IP" ] || [ "$BASTION_IP" == "None" ]; then
+          echo "❌ Bastion Host를 찾을 수 없습니다."
+          echo "실행 중인 EC2 인스턴스:"
+          aws ec2 describe-instances \
+            --filters "Name=instance-state-name,Values=running" \
+            --query "Reservations[*].Instances[*].[InstanceId,PublicIpAddress,Tags[?Key=='Name'].Value[0]]" \
+            --output table
+          exit 1
+        fi
+        
+        if [ -z "$DB_PASSWORD" ]; then
+          echo "❌ DB 패스워드를 Parameter Store에서 찾을 수 없습니다."
+          exit 1
+        fi
+        
         echo "✅ DB Host: '$DB_HOST'"
         echo "✅ Bastion IP: '$BASTION_IP'"
         echo "✅ DB User: '$DB_USER'"
         echo "✅ DB Name: '$DB_NAME'"
         
-        # SSH 연결 테스트 먼저 수행
+        # SSH 키를 Parameter Store에서 가져오기
+        echo "🔑 SSH 키 조회 중..."
+        aws ssm get-parameter \
+          --name "/${PROJECT_NAME}/bastion/ssh-private-key" \
+          --with-decryption \
+          --query 'Parameter.Value' \
+          --output text > bastion_key.pem
+        chmod 600 bastion_key.pem
+        
         echo "🔍 SSH 연결 테스트 중..."
-        ssh -i bastion_key.pem -o StrictHostKeyChecking=no -o ConnectTimeout=10 ec2-user@$BASTION_IP "echo 'SSH connection successful'"
+        # SSH 연결 테스트 (타임아웃 설정)
+        if ! ssh -i bastion_key.pem -o StrictHostKeyChecking=no -o ConnectTimeout=10 -o BatchMode=yes ec2-user@$BASTION_IP "echo 'SSH connection successful'" 2>/dev/null; then
+          echo "❌ SSH 연결 실패. Bastion Host 상태 확인:"
+          aws ec2 describe-instances \
+            --filters "Name=tag:Component,Values=Bastion" \
+            --query "Reservations[*].Instances[*].[InstanceId,State.Name,PublicIpAddress,PrivateIpAddress]" \
+            --output table
+          exit 1
+        fi
         
-        # SSH 터널을 백그라운드에서 실행
-        echo "🚀 SSH 터널 설정 중..."
-        ssh -i bastion_key.pem -o StrictHostKeyChecking=no -o ExitOnForwardFailure=yes -f -N -L 5432:$DB_HOST:5432 ec2-user@$BASTION_IP
+        echo "🔗 SSH 터널을 통한 PostgreSQL 연결 테스트 중..."
+        # SSH 터널을 통한 PostgreSQL 연결 테스트
+        ssh -i bastion_key.pem -o StrictHostKeyChecking=no -o ExitOnForwardFailure=yes -L 5432:$DB_HOST:5432 ec2-user@$BASTION_IP -N &
+        SSH_PID=$!
         
-        # 터널이 설정될 때까지 대기
-        sleep 15
+        # 터널 설정 대기
+        sleep 10
         
-        # 포트가 열려있는지 확인
-        echo "🔍 포트 연결 확인 중..."
-        nc -z localhost 5432 || (echo "❌ SSH 터널 설정 실패"; exit 1)
+        # PostgreSQL 클라이언트 설치 (필요한 경우)
+        if ! command -v psql &> /dev/null; then
+          echo "📦 PostgreSQL 클라이언트 설치 중..."
+          sudo apt-get update && sudo apt-get install -y postgresql-client
+        fi
         
         # 로컬 포트를 통해 RDS 연결 테스트
-        echo "🗄️ 데이터베이스 연결 테스트 중..."
-        PGPASSWORD=$DB_PASSWORD psql -h localhost -p 5432 -U $DB_USER -d $DB_NAME -c "SELECT 1;" -v ON_ERROR_STOP=1
-        
-        echo "✅ 데이터베이스 연결 성공!"
+        if PGPASSWORD=$DB_PASSWORD psql -h localhost -p 5432 -U $DB_USER -d $DB_NAME -c "SELECT 1;" 2>/dev/null; then
+          echo "✅ 데이터베이스 연결 성공"
+        else
+          echo "❌ 데이터베이스 연결 실패"
+          kill $SSH_PID 2>/dev/null
+          rm -f bastion_key.pem
+          exit 1
+        fi
         
         # SSH 터널 종료 및 정리
-        pkill -f "ssh.*5432:$DB_HOST:5432" || true
+        kill $SSH_PID 2>/dev/null
         rm -f bastion_key.pem
+        
+        echo "✅ 데이터베이스 연결 테스트 완료"
       env:
         PROJECT_NAME: "walb-app"
         
