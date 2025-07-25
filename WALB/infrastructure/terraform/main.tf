@@ -831,6 +831,11 @@ resource "aws_iam_role_policy" "github_actions_app_policy" {
           # LoadBalancer 조회
           "elasticloadbalancing:DescribeLoadBalancers",
           "elasticloadbalancing:DescribeTargetGroups",
+
+          # SSM Parameter Store 권한 추가
+          "ssm:GetParameter",
+          "ssm:GetParameters",
+          "ssm:GetParametersByPath",
           
           # 계정 정보 조회
           "sts:GetCallerIdentity"
