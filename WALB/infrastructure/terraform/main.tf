@@ -470,6 +470,12 @@ resource "kubernetes_config_map_v1_data" "aws_auth" {
         username = "system:node:{{EC2PrivateDNSName}}"
         groups   = ["system:bootstrappers", "system:nodes"]
       },
+      # 현재 사용자를 관리자로 추가
+      {
+        rolearn  = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"
+        username = "cluster-creator"
+        groups   = ["system:masters"]
+      },
       # GitHub Actions 애플리케이션 배포 역할
       {
         rolearn  = aws_iam_role.github_actions_app.arn
@@ -483,9 +489,22 @@ resource "kubernetes_config_map_v1_data" "aws_auth" {
         groups   = ["system:masters"]
       }
     ])
+    
+    mapUsers = yamlencode([
+      # 현재 사용자를 직접 매핑
+      {
+        userarn  = data.aws_caller_identity.current.arn
+        username = "admin"
+        groups   = ["system:masters"]
+      }
+    ])
   }
 
   force = true
+
+  lifecycle {
+    ignore_changes = [metadata[0].annotations]
+  }
 }
 
 # EKS 애플리케이션용 정책 연결

@@ -273,14 +273,6 @@ output "aws_load_balancer_controller_role_arn" {
   value       = var.enable_load_balancer ? aws_iam_role.aws_load_balancer_controller[0].arn : null
 }
 
-# AWS Auth ConfigMap 정보
-output "aws_auth_configmap_yaml" {
-  description = "aws-auth ConfigMap YAML 내용"
-  value = {
-    mapRoles = yamlencode(local.all_role_mappings)
-    mapUsers = yamlencode(local.all_user_mappings)
-  }
-}
 
 output "current_user_access" {
   description = "현재 사용자의 클러스터 접근 정보"
