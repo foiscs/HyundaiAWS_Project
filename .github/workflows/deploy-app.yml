@@ -143,7 +143,14 @@ jobs:
         
         echo "✅ 이미지 푸시 완료: $IMAGE_URI"
         echo "image=$IMAGE_URI" >> $GITHUB_OUTPUT
-    
+        
+    # Terraform 설치
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: "1.9.0"
+        terraform_wrapper: false
+
     # 데이터베이스 테스트 단계 수정
     - name: Test Database Connection via Bastion
       run: |
