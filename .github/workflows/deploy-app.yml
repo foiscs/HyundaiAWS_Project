@@ -194,9 +194,10 @@ jobs:
         data:
           SPRING_PROFILES_ACTIVE: "production"
           AWS_REGION: "${{ secrets.AWS_REGION }}"
-          DB_HOST: "$(aws rds describe-db-instances --query 'DBInstances[?DBName==\`demoapp\`].Endpoint.Address' --output text 2>/dev/null || echo 'localhost')"
+          DB_HOST: "$(terraform output -raw rds_endpoint 2>/dev/null | cut -d':' -f1)"
           DB_PORT: "5432"
-          DB_NAME: "demoapp"
+          DB_NAME: "mydb"
+          DB_USER: "dbadmin"
         EOF
         
         # Secret 생성 (DB 패스워드)
@@ -208,7 +209,7 @@ jobs:
           namespace: ${{ env.PROJECT_NAME }}
         type: Opaque
         data:
-          DB_PASSWORD: $(echo -n "your-db-password" | base64)
+          DB_PASSWORD: $(echo -n "MySecurePassword123!" | base64)
         EOF
         
         # Deployment 생성
@@ -235,7 +236,7 @@ jobs:
               - name: app
                 image: ${{ steps.build-image.outputs.image }}
                 ports:
-                - containerPort: 8080
+                - containerPort: 80
                   name: http
                 envFrom:
                 - configMapRef:
@@ -244,15 +245,15 @@ jobs:
                     name: ${{ env.PROJECT_NAME }}-secret
                 livenessProbe:
                   httpGet:
-                    path: /health
-                    port: 8080
+                    path: /healthcheck.php
+                    port: 80
                   initialDelaySeconds: 60
                   periodSeconds: 30
                   timeoutSeconds: 10
                 readinessProbe:
                   httpGet:
-                    path: /health
-                    port: 8080
+                    path: /healthcheck.php
+                    port: 80
                   initialDelaySeconds: 30
                   periodSeconds: 10
                   timeoutSeconds: 5
@@ -283,7 +284,7 @@ jobs:
           type: ClusterIP
           ports:
           - port: 80
-            targetPort: 8080
+            targetPort: 80
             protocol: TCP
             name: http
           selector:
@@ -381,3 +382,31 @@ jobs:
         kubectl rollout undo deployment/${{ env.PROJECT_NAME }}-app -n ${{ env.PROJECT_NAME }}
         kubectl rollout status deployment/${{ env.PROJECT_NAME }}-app -n ${{ env.PROJECT_NAME }} --timeout=300s
         echo "✅ 롤백 완료"
+
+    - name: Apply Database Schema
+      if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+      run: |
+        echo "🗄️ 데이터베이스 스키마 적용 중..."
+        
+        # RDS 엔드포인트 가져오기
+        RDS_ENDPOINT=$(aws rds describe-db-instances --query 'DBInstances[?DBName==`mydb`].Endpoint.Address' --output text 2>/dev/null || echo '')
+        
+        if [ -n "$RDS_ENDPOINT" ]; then
+          echo "RDS 엔드포인트: $RDS_ENDPOINT"
+          
+          # 스키마 파일 적용 (PostgreSQL 클라이언트 설치 후)
+          sudo apt-get update && sudo apt-get install -y postgresql-client
+          
+          # 스키마 적용
+          PGPASSWORD="${{ secrets.DB_PASSWORD }}" psql \
+            -h "$RDS_ENDPOINT" \
+            -p 5432 \
+            -U dbadmin \
+            -d mydb \
+            -f server/files/schema.sql \
+            -v ON_ERROR_STOP=1
+            
+          echo "✅ 스키마 적용 완료"
+        else
+          echo "❌ RDS 엔드포인트를 찾을 수 없습니다"
+        fi
