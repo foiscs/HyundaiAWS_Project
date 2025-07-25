@@ -184,7 +184,7 @@ module "dynamodb_security_logs" {
   project_name = var.project_name
 
   # 테이블 기본 설정
-  table_name   = "security-logs-metadata"
+  table_name   = "walb-security-logs-metadata"
   billing_mode = var.dynamodb_billing_mode
   hash_key     = "log_id"
   range_key    = "timestamp"
@@ -242,7 +242,7 @@ module "dynamodb_user_sessions" {
   project_name = var.project_name
 
   # 테이블 기본 설정
-  table_name   = "user-sessions"
+  table_name   = "walb-user-sessions"
   billing_mode = var.dynamodb_billing_mode
   hash_key     = "session_id"
   range_key    = null
@@ -628,10 +628,10 @@ locals {
 module "ecr" {
   source = "./modules/ecr"
 
-  name = "myapp"
+  name = "${var.project_name}-ecr"
   tags = {
-    Environment = "dev"
-    Project     = "myproject"
+    Environment = var.environment
+    Project     = var.project_name
   }
 }
 

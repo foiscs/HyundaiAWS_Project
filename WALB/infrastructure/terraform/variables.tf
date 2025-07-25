@@ -6,15 +6,15 @@
 variable "project_name" {
   description = "프로젝트 이름"
   type        = string
-  default     = "WALB"
+  default     = "walb"
 }
 
 variable "environment" {
-  description = "환경 (dev, staging, prod)"
+  description = "환경 (dev, staging, prod, walb)"
   type        = string
-  default     = "dev"
+  default     = "walb"
   validation {
-    condition     = contains(["dev", "staging", "prod"], var.environment)
+    condition     = contains(["dev", "staging", "prod", "walb"], var.environment)
     error_message = "Environment must be dev, staging, or prod."
   }
 }
@@ -79,7 +79,7 @@ variable "rds_instance_class" {
 variable "db_name" {
   description = "데이터베이스 이름"
   type        = string
-  default     = "WALB_DB"
+  default     = "walb_DB"
 }
 
 variable "db_username" {
@@ -545,6 +545,14 @@ locals {
       enable_deletion_protection = true
       backup_retention_days   = 30
       log_retention_days      = 90
+    }
+    walb = {
+      instance_class           = "db.t3.micro"
+      node_desired_capacity   = 1
+      node_max_capacity       = 2
+      enable_deletion_protection = false
+      backup_retention_days   = 3
+      log_retention_days      = 7
     }
   }
 

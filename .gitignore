@@ -1,0 +1,29 @@
+# Java
+target/
+*.jar
+*.war
+*.ear
+*.class
+
+# Spring Boot
+*.log
+spring.log
+
+# Maven
+.mvn/wrapper/maven-wrapper.jar
+
+# Terraform
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraform.lock.hcl
+terraform.tfplan
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# OS
+.DS_Store
+Thumbs.db
