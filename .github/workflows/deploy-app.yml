@@ -151,9 +151,12 @@ jobs:
         terraform_version: "1.9.0"
         terraform_wrapper: false
 
-    # 데이터베이스 테스트 단계 수정
+    # 데이터베이스 테스트 단계
     - name: Test Database Connection via Bastion
       run: |
+        # PostgreSQL 클라이언트 설치
+        sudo apt-get update && sudo apt-get install -y postgresql-client
+        
         # Terraform outputs에서 DB 정보 가져오기
         cd infrastructure/terraform
         
@@ -170,19 +173,24 @@ jobs:
         echo "DB Host: $DB_HOST"
         echo "Bastion IP: $BASTION_IP"
         
-        # SSH 터널을 통한 PostgreSQL 연결 테스트
-        ssh -i bastion_key.pem -o StrictHostKeyChecking=no -L 5432:$DB_HOST:5432 ec2-user@$BASTION_IP &
-        SSH_PID=$!
+        # SSH 연결 테스트 먼저 수행
+        ssh -i bastion_key.pem -o StrictHostKeyChecking=no -o ConnectTimeout=10 ec2-user@$BASTION_IP "echo 'SSH connection successful'"
         
-        # 잠시 대기 (터널 설정 시간)
-        sleep 10
+        # SSH 터널을 백그라운드에서 실행
+        ssh -i bastion_key.pem -o StrictHostKeyChecking=no -o ExitOnForwardFailure=yes -f -N -L 5432:$DB_HOST:5432 ec2-user@$BASTION_IP
+        
+        # 터널이 설정될 때까지 대기
+        sleep 15
+        
+        # 포트가 열려있는지 확인
+        nc -z localhost 5432 || (echo "SSH 터널 설정 실패"; exit 1)
         
         # 로컬 포트를 통해 RDS 연결 테스트
-        PGPASSWORD=$DB_PASSWORD psql -h localhost -p 5432 -U $DB_USER -d $DB_NAME -c "SELECT 1;"
+        PGPASSWORD=$DB_PASSWORD psql -h localhost -p 5432 -U $DB_USER -d $DB_NAME -c "SELECT 1;" -v ON_ERROR_STOP=1
         
         # SSH 터널 종료 및 정리
-        kill $SSH_PID
-        rm bastion_key.pem
+        pkill -f "ssh.*5432:$DB_HOST:5432" || true
+        rm -f bastion_key.pem
       env:
         PROJECT_NAME: "walb-app"
         
