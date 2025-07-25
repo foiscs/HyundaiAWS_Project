@@ -571,3 +571,10 @@ variable "db_user" {
   type        = string
   default     = "dbadmin"
 }
+
+# GitHub Repository 설정
+variable "github_repository" {
+  description = "GitHub 리포지토리 (owner/repo 형식)"
+  type        = string
+  default     = "Ggoon23/HyundaiAWS_Project"  # 실제 리포지토리로 변경 필요
+}

@@ -13,3 +13,4 @@ project_name       = "walb-app"
 #create_launch_template = false
 enable_load_balancer = true
 application_port     = 8080
+github_repository = "Ggoon23/WALB"

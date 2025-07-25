@@ -64,10 +64,10 @@ jobs:
     - name: Configure AWS credentials
       uses: aws-actions/configure-aws-credentials@v4
       with:
-        role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+        role-to-assume: ${{ secrets.AWS_ROLE_ARN_APP }}
         aws-region: ${{ secrets.AWS_REGION }}
         role-session-name: GitHubActions-Application-${{ github.run_id }}
-    
+
     # ===============================================
     # 기존 인프라 정보 조회
     # ===============================================

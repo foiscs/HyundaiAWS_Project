@@ -293,3 +293,27 @@ output "next_steps" {
     view_logs      = "Check CloudWatch logs in: ${aws_cloudwatch_log_group.application_logs.name}"
   }
 }
+
+# =========================================
+# GitHub Actions OIDC 정보
+# =========================================
+output "github_actions_roles" {
+  description = "GitHub Actions에서 사용할 IAM 역할 정보"
+  value = {
+    infrastructure_role_arn = aws_iam_role.github_actions_infra.arn
+    application_role_arn   = aws_iam_role.github_actions_app.arn
+    oidc_provider_arn      = aws_iam_openid_connect_provider.github_actions.arn
+  }
+}
+
+output "github_secrets_setup" {
+  description = "GitHub Secrets에 설정할 값들"
+  value = {
+    AWS_ROLE_ARN_INFRA = aws_iam_role.github_actions_infra.arn
+    AWS_ROLE_ARN_APP   = aws_iam_role.github_actions_app.arn
+    AWS_REGION         = var.aws_region
+    AWS_ACCOUNT_ID     = data.aws_caller_identity.current.account_id
+    DB_PASSWORD        = var.db_password
+  }
+  sensitive = true
+}
