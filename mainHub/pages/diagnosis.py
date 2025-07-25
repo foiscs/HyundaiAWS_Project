@@ -28,7 +28,7 @@ import os
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
 from components.diagnosis_styles import get_all_diagnosis_styles
-from components.diagnosis_templates import get_hero_header_html
+from components.diagnosis_templates import get_hero_header_html, get_expander_color_script
 from components.diagnosis_ui import DiagnosisUI
 
 # 페이지 설정
@@ -51,6 +51,9 @@ def main():
     # CSS 스타일 및 헤더
     st.markdown(get_all_diagnosis_styles(), unsafe_allow_html=True)
     components.html(get_hero_header_html(), height=200)
+    
+    # Expander 색상 적용 스크립트
+    components.html(get_expander_color_script(), height=0)
     
     # 사이드바
     ui.render_sidebar()

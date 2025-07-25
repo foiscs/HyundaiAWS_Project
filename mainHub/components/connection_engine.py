@@ -110,12 +110,7 @@ class ConnectionEngine:
         connection_type = form_data.get('connection_type', 'cross-account-role')
         
         # 공통 필드 검증
-        if not form_data.get('cloud_name', '').strip():
-            errors.append("클라우드 이름을 입력해주세요")
-        
-        if not form_data.get('contact_email', '').strip():
-            errors.append("담당자 이메일을 입력해주세요")
-        elif not self.validator.validate_email(form_data['contact_email']):
+        if form_data.get('contact_email', '').strip() and not self.validator.validate_email(form_data['contact_email']):
             errors.append("올바른 이메일 형식을 입력해주세요")
         
         # 연결 방식별 검증
@@ -133,9 +128,7 @@ class ConnectionEngine:
         role_arn = form_data.get('role_arn', '').strip()
         external_id = form_data.get('external_id', '').strip()
         
-        if not role_arn:
-            errors.append("IAM Role ARN을 입력해주세요")
-        elif not self.validator.validate_role_arn(role_arn):
+        if role_arn and not self.validator.validate_role_arn(role_arn):
             errors.append("올바른 IAM Role ARN 형식을 입력해주세요")
         
         if not external_id:

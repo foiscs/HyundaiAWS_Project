@@ -113,13 +113,6 @@ class ConnectionUI:
                 "info",
                 "권장 연결 방식"
             )
-        elif st.session_state.connection_type == "access-key":
-            self.info_box(
-                "Access Key 방식은 설정이 간단하지만 장기 자격 증명을 사용합니다. "
-                "정기적인 키 로테이션과 최소 권한 원칙을 준수해주세요.",
-                "warning",
-                "보안 주의사항"
-            )
     
     def render_step2(self) -> None:
         """2단계: 권한 설정 가이드 렌더링"""
@@ -225,13 +218,6 @@ class ConnectionUI:
         
         self.info_box(steps_text, "info", "IAM User 및 Access Key 생성 단계")
         
-        # 보안 주의사항
-        self.info_box(
-            "⚠️ Access Key는 장기 자격 증명입니다. 정기적으로 로테이션하고 "
-            "불필요한 권한은 제거하여 보안을 유지하세요.",
-            "warning",
-            "보안 주의사항"
-        )
     
     def render_step3(self) -> None:
         """3단계: 연결 정보 입력 렌더링"""
@@ -745,38 +731,16 @@ class ConnectionUI:
     
     def input_field_with_toggle(self, label: str, key: str, placeholder: str = "", 
                                help: str = "", is_password: bool = True) -> None:
-        """비밀번호 토글 입력 필드 컴포넌트"""
-        col1, col2 = st.columns([4, 1])
-        
-        with col1:
-            if is_password and st.session_state.get(f'show_{key}', False):
-                # 평문 표시
-                value = st.text_input(
-                    label,
-                    value=st.session_state.account_data.get(key, ''),
-                    placeholder=placeholder,
-                    help=help,
-                    key=f"input_{key}"
-                )
-            else:
-                # 마스킹 표시
-                value = st.text_input(
-                    label,
-                    value=st.session_state.account_data.get(key, ''),
-                    placeholder=placeholder,
-                    help=help,
-                    type="password" if is_password else "default",
-                    key=f"input_{key}"
-                )
-        
-        with col2:
-            if is_password:
-                show_key = f'show_{key}'
-                current_show = st.session_state.get(show_key, False)
-                
-                if st.button("👁️" if not current_show else "🙈", key=f"toggle_{key}"):
-                    st.session_state[show_key] = not current_show
-                    st.rerun()
+        """비밀번호 입력 필드 컴포넌트"""
+        # 마스킹 표시
+        value = st.text_input(
+            label,
+            value=st.session_state.account_data.get(key, ''),
+            placeholder=placeholder,
+            help=help,
+            type="password" if is_password else "default",
+            key=f"input_{key}"
+        )
         
         # 값 업데이트
         if value != st.session_state.account_data.get(key, ''):

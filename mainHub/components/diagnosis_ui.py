@@ -75,6 +75,28 @@ class DiagnosisUI:
             if not st.session_state.get('full_diagnosis_running', False):
                 st.markdown("### 🎛️ 진단 관리")
                 
+                # 레이아웃 선택 - 3:1:1 컬럼으로 구성
+                layout_disabled = st.session_state.get('full_diagnosis_running', False)
+                if 'layout_mode' not in st.session_state:
+                    st.session_state.layout_mode = '2열'
+                
+                col1, col2, col3 = st.columns([3, 1, 1])
+                
+                with col1:
+                    st.markdown("**🔄 진단항목 정렬**")
+                
+                with col2:
+                    if st.button("1열", type="primary" if st.session_state.layout_mode == '1열' else "secondary", 
+                                use_container_width=True, disabled=layout_disabled):
+                        st.session_state.layout_mode = '1열'
+                        st.rerun()
+                    
+                with col3:
+                    if st.button("2열", type="primary" if st.session_state.layout_mode == '2열' else "secondary", 
+                                use_container_width=True, disabled=layout_disabled):
+                        st.session_state.layout_mode = '2열'
+                        st.rerun()
+                
                 # 항목 펼치기/접기
                 if st.session_state.get('expand_all_items', False):
                     if st.button("📁 모든 항목 접기", type="secondary", use_container_width=True):
@@ -110,27 +132,11 @@ class DiagnosisUI:
     
     def render_layout_controls(self):
         """레이아웃 제어 버튼들"""
-        col1, col2 = st.columns([1, 1])
-        
-        with col1:
-            if st.button("🚀 전체 항목 일괄 진단", type="primary", use_container_width=True):
-                total_items = SessionManager.run_full_diagnosis_setup()
-                st.success(f"🚀 {total_items}개 항목의 전체 진단을 시작합니다!")
-                st.rerun()
-        
-        with col2:
-            layout_disabled = st.session_state.get('full_diagnosis_running', False)
-            if 'layout_mode' not in st.session_state:
-                st.session_state.layout_mode = '2열'
-            
-            layout_mode = st.radio(
-                "📊 레이아웃 선택",
-                ["1열", "2열"],
-                index=1 if st.session_state.layout_mode == '2열' else 0,
-                disabled=layout_disabled,
-                horizontal=True
-            )
-            st.session_state.layout_mode = layout_mode
+        # 전체 진단 버튼만 표시
+        if st.button("🚀 전체 항목 일괄 진단", type="primary", use_container_width=True):
+            total_items = SessionManager.run_full_diagnosis_setup()
+            st.success(f"🚀 {total_items}개 항목의 전체 진단을 시작합니다!")
+            st.rerun()
 
     def render_diagnosis_items(self):
         """진단 항목들 렌더링"""

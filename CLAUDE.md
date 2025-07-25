@@ -314,6 +314,47 @@ terraform plan -var-file="terraform.tfvars"
 
 **IMPORTANT**: Only work within the `mainHub/` directory. Other directories (`SHIELDUS-AWS-CHECKER/`, `WALB/`) are managed by team members and should not be modified.
 
+**BACKUP FILES**: Never modify files in the `mainHub/backup/` directory. These are legacy files from before refactoring:
+- `backup/connection_backup.py` - Legacy connection page (pre-refactoring)
+- `backup/diagnosis_backup.py` - Legacy diagnosis page (pre-refactoring)
+
+These backup files are kept for reference only and should not be used or modified. The current active files are in `mainHub/pages/` and `mainHub/components/`.
+
+### CSS Styling Guidelines
+
+When working with CSS styles in Streamlit applications, **ALWAYS use specific `data-testid` selectors** for better reliability and maintainability:
+
+**Preferred CSS Selectors:**
+```css
+/* Use data-testid for precise targeting */
+div[data-testid="stRadio"] { }
+div[data-testid="stSelectbox"] { }
+div[data-testid="stButton"] { }
+div[data-testid="stExpander"] { }
+div[data-testid="stExpanderHeader"] { }
+div[data-testid="stExpanderDetails"] { }
+div[data-testid="stSidebar"] { }
+div[data-testid="stVerticalBlock"] { }
+div[data-testid="stHorizontalBlock"] { }
+div[data-testid="stColumn"] { }
+div[data-testid="metric-container"] { }
+```
+
+**Avoid Generic Selectors:**
+```css
+/* Avoid these - they may break with Streamlit updates */
+.streamlit-expanderHeader { } /* Use div[data-testid="stExpanderHeader"] instead */
+.stExpander { } /* Use div[data-testid="stExpander"] instead */
+.stButton { } /* Use div[data-testid="stButton"] instead */
+```
+
+**Best Practices:**
+- Always inspect browser DevTools to find the exact `data-testid` values
+- Use combination selectors when needed: `div[data-testid="stSidebar"] div[data-testid="stButton"]`
+- Add `!important` only when absolutely necessary for Streamlit override
+- Test CSS changes across different browsers and Streamlit versions
+- Document any custom selectors for future reference
+
 ## Project-Specific Notes
 
 -   SHIELDUS-AWS-CHECKER contains 41 security check items based on SK Shieldus guidelines

@@ -81,7 +81,7 @@ def render_account_card(account, index):
         padding: 1.2rem;
         margin: 1rem 0 0.2rem 0;  /* 아래 마진 줄임 */
         box-shadow: 0 2px 4px rgba(0,0,0,0.03);
-        font-family: 'Segoe UI', sans-serif;
+        font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, Roboto, 'Helvetica Neue', 'Segoe UI', 'Apple SD Gothic Neo', 'Noto Sans KR', 'Malgun Gothic', sans-serif;
     }}
     .card-header {{
         display: flex;
@@ -259,7 +259,6 @@ def main():
         body {{
             margin: 0;
             padding: 0;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
         }}
         .hero-header {{
             background: linear-gradient(135deg, #ff6b6b 0%, #ee5a24 100%);

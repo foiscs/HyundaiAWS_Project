@@ -20,10 +20,12 @@ def get_hero_header_template() -> str:
     <html>
     <head>
         <style>
+        @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css');
+        
         body {
             margin: 0;
             padding: 0;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+            font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, Roboto, 'Helvetica Neue', 'Segoe UI', sans-serif;
         }
         .hero-header {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -106,7 +108,7 @@ def get_step_indicator_template(step_items_html: str) -> str:
         body {{
             margin: 0;
             padding: 0;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+            font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, Roboto, 'Helvetica Neue', 'Segoe UI', sans-serif;
         }}
         .step-container {{
             background: white;
@@ -187,7 +189,7 @@ def get_connection_type_card_template(title: str, description: str, pros: str, i
         body {{
             margin: 0;
             padding: 0;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+            font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, Roboto, 'Helvetica Neue', 'Segoe UI', sans-serif;
         }}
         .connection-card {{
             border: 2px solid #e5e7eb;
@@ -280,14 +282,14 @@ def get_info_box_template(message: str, box_type: str, title: str = "", icon: st
         body {{
             margin: 0;
             padding: 0;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+            font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, Roboto, 'Helvetica Neue', 'Segoe UI', sans-serif;
         }}
         .info-box {{
             background-color: {style['bg']};
             border: 1px solid {style['border']};
             border-radius: 8px;
             padding: 1rem;
-            margin: 1rem 0;
+            margin: 0.25rem 0;
             color: {style['color']};
         }}
         .info-title {{
@@ -320,7 +322,7 @@ def get_json_code_block_template(formatted_json: str, title: str) -> str:
         body {{
             margin: 0;
             padding: 0;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+            font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, Roboto, 'Helvetica Neue', 'Segoe UI', sans-serif;
         }}
         .json-container {{
             background: #f8f9fa;
@@ -353,7 +355,7 @@ def get_json_code_block_template(formatted_json: str, title: str) -> str:
         }}
         .json-content {{
             padding: 1rem;
-            font-family: 'Courier New', monospace;
+            font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, Roboto, 'Helvetica Neue', 'Segoe UI', 'Apple SD Gothic Neo', 'Noto Sans KR', 'Malgun Gothic', sans-serif;
             font-size: 0.85rem;
             line-height: 1.4;
             white-space: pre-wrap;
@@ -398,7 +400,7 @@ def get_test_result_table_template(table_rows_html: str) -> str:
         body {{
             margin: 0;
             padding: 0;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+            font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, Roboto, 'Helvetica Neue', 'Segoe UI', sans-serif;
         }}
         .test-table {{
             width: 100%;
@@ -470,7 +472,7 @@ def get_loading_spinner_template(message: str) -> str:
         body {{
             margin: 0;
             padding: 0;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+            font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, Roboto, 'Helvetica Neue', 'Segoe UI', sans-serif;
         }}
         .loading-container {{
             display: flex;
@@ -530,7 +532,7 @@ def get_navigation_buttons_template(show_prev: bool, show_next: bool, prev_text:
         body {{
             margin: 0;
             padding: 0;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+            font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, Roboto, 'Helvetica Neue', 'Segoe UI', sans-serif;
         }}
         .nav-container {{
             display: flex;

@@ -13,13 +13,52 @@ Note: 이 파일은 diagnosis와 공통으로 사용되는 기본 스타일들�
 """
 
 def inject_custom_font():
-    """전체 폰트 설정"""
+    """전체 폰트 설정 - 모든 Streamlit 요소에 Pretendard 강제 적용"""
     return """
     <style>
-    @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700&display=swap');
+    @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css');
     
-    html, body, [class*="css"] {
-        font-family: 'Noto Sans KR', sans-serif !important;
+    /* 최상위 우선순위로 전역 폰트 강제 적용 */
+    *, *::before, *::after,
+    html, body, div, span, h1, h2, h3, h4, h5, h6, p, a, em, img, strong, sub, sup, ol, ul, li, fieldset, form, label, legend, table, caption, tbody, tfoot, thead, tr, th, td, article, aside, canvas, details, embed, figure, figcaption, footer, header, hgroup, menu, nav, output, ruby, section, summary, time, mark, audio, video, input, textarea, select, option, button {
+        font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, Roboto, 'Helvetica Neue', 'Segoe UI', 'Apple SD Gothic Neo', 'Noto Sans KR', 'Malgun Gothic', 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', sans-serif !important;
+        font-weight: inherit !important;
+    }
+    
+    /* Streamlit 클래스 기반 강제 적용 */
+    [class*="css"], [class*="st"], [class*="streamlit"] {
+        font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, Roboto, 'Helvetica Neue', 'Segoe UI', 'Apple SD Gothic Neo', 'Noto Sans KR', 'Malgun Gothic', 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', sans-serif !important;
+    }
+    
+    /* Streamlit data-testid 기반 강제 적용 */
+    [data-testid] *,
+    div[data-testid="stSidebar"] *,
+    div[data-testid="stMain"] *,
+    div[data-testid="stHeader"] *,
+    div[data-testid="stButton"] *,
+    div[data-testid="stSelectbox"] *,
+    div[data-testid="stRadio"] *,
+    div[data-testid="stTextInput"] *,
+    div[data-testid="stTextArea"] *,
+    div[data-testid="stExpander"] *,
+    div[data-testid="stExpanderHeader"] *,
+    div[data-testid="stExpanderDetails"] *,
+    div[data-testid="stMarkdown"] *,
+    div[data-testid="stMetric"] *,
+    div[data-testid="metric-container"] * {
+        font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, Roboto, 'Helvetica Neue', 'Segoe UI', 'Apple SD Gothic Neo', 'Noto Sans KR', 'Malgun Gothic', 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', sans-serif !important;
+    }
+    
+    /* 동적으로 생성되는 Streamlit 요소들 */
+    .stButton > button,
+    .stSelectbox > div,
+    .stRadio > div,
+    .stTextInput > div,
+    .stTextArea > div,
+    .stExpander > div,
+    .stMarkdown,
+    .stMetric {
+        font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, Roboto, 'Helvetica Neue', 'Segoe UI', 'Apple SD Gothic Neo', 'Noto Sans KR', 'Malgun Gothic', 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', sans-serif !important;
     }
     
     .main > div {
@@ -94,6 +133,115 @@ def inject_expander_style():
     }
     </style>
     """
+
+def get_sidebar_navigation_styles():
+    """사이드바 네비게이션 스타일"""
+    return """
+    <style>
+    /* 사이드바 스타일 */
+    .css-1d391kg {
+        background-color: #f8fafc;
+    }
+    
+    /* 사이드바 네비게이션 스타일 */
+    .stSidebar {
+        background-color: #f8fafc;
+    }
+    
+    /* 사이드바 네비게이션 링크 스타일 */
+    .stSidebar [data-testid="stSidebarNav"] ul {
+        padding: 0;
+        margin: 0;
+        list-style: none;
+        background: white;
+        border-radius: 12px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        padding: 0.5rem;
+        margin-bottom: 1rem;
+    }
+    
+    .stSidebar [data-testid="stSidebarNav"] ul li {
+        margin: 0.25rem 0;
+    }
+    
+    .stSidebar [data-testid="stSidebarNav"] ul li a {
+        display: flex;
+        align-items: center;
+        padding: 0.75rem 1rem;
+        text-decoration: none;
+        color: #475569;
+        border-radius: 8px;
+        transition: all 0.2s ease;
+        font-weight: 500;
+        font-size: 0.95rem;
+        position: relative;
+        overflow: hidden;
+    }
+    
+    .stSidebar [data-testid="stSidebarNav"] ul li a:before {
+        content: '';
+        position: absolute;
+        left: 0;
+        top: 0;
+        height: 100%;
+        width: 4px;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        transform: scaleY(0);
+        transition: transform 0.2s ease;
+    }
+    
+    .stSidebar [data-testid="stSidebarNav"] ul li a:hover {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        transform: translateX(4px);
+        box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+    }
+    
+    .stSidebar [data-testid="stSidebarNav"] ul li a:hover:before {
+        transform: scaleY(1);
+    }
+    
+    /* 활성 페이지 스타일 */
+    .stSidebar [data-testid="stSidebarNav"] ul li a[aria-current="page"] {
+        background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+        color: white;
+        box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+        transform: translateX(4px);
+    }
+    
+    .stSidebar [data-testid="stSidebarNav"] ul li a[aria-current="page"]:before {
+        transform: scaleY(1);
+        background: rgba(255, 255, 255, 0.3);
+    }
+    
+    /* 각 페이지별 아이콘 추가 */
+    .stSidebar [data-testid="stSidebarNav"] ul li a[href="/"]::before {
+        content: "🏠 ";
+        margin-right: 0.5rem;
+    }
+    
+    .stSidebar [data-testid="stSidebarNav"] ul li a[href="/connection"]::before {
+        content: "🔗 ";
+        margin-right: 0.5rem;
+    }
+    
+    .stSidebar [data-testid="stSidebarNav"] ul li a[href="/connection_backup"]::before {
+        content: "🔗📋 ";
+        margin-right: 0.5rem;
+    }
+    
+    .stSidebar [data-testid="stSidebarNav"] ul li a[href="/diagnosis"]::before {
+        content: "🛡️ ";
+        margin-right: 0.5rem;
+    }
+    
+    .stSidebar [data-testid="stSidebarNav"] ul li a[href="/diagnosis_backup"]::before {
+        content: "🛡️📋 ";
+        margin-right: 0.5rem;
+    }
+    </style>
+    """
+
 
 def get_main_styles():
     """메인 페이지 기본 스타일"""
@@ -175,11 +323,6 @@ def get_main_styles():
         border: 1px solid #3b82f6;
         border-radius: 8px;
         padding: 1rem;
-    }
-    
-    /* 사이드바 스타일 */
-    .css-1d391kg {
-        background-color: #f8fafc;
     }
     
     /* 메트릭 컨테이너 스타일 */
@@ -302,11 +445,36 @@ def get_main_styles():
     </style>
     """
 
+def get_force_pretendard_font():
+    """Pretendard 폰트 강제 적용 - 모든 Streamlit 요소 오버라이드"""
+    return """
+    <style>
+    /* 최우선 Pretendard 폰트 강제 적용 */
+    *, *::before, *::after {
+        font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, Roboto, 'Helvetica Neue', 'Segoe UI', 'Apple SD Gothic Neo', 'Noto Sans KR', 'Malgun Gothic', sans-serif !important;
+    }
+    
+    /* Streamlit 기본 폰트 오버라이드 */
+    .css-10trblm, .css-1d391kg, .css-1cpxqw2, .css-1avcm0n,
+    .css-145kmo2, .css-1544g2n, .css-1y4p8pa, .css-17lntkn,
+    .css-1aumxhk, .css-1629p8f, .css-19ih9d0, .css-17eq0hr {
+        font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, Roboto, 'Helvetica Neue', 'Segoe UI', 'Apple SD Gothic Neo', 'Noto Sans KR', 'Malgun Gothic', sans-serif !important;
+    }
+    
+    /* 모든 텍스트 요소 강제 오버라이드 */
+    input, textarea, select, option, label, button, span, div, p, h1, h2, h3, h4, h5, h6, li, ul, ol, table, td, th, a {
+        font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, Roboto, 'Helvetica Neue', 'Segoe UI', 'Apple SD Gothic Neo', 'Noto Sans KR', 'Malgun Gothic', sans-serif !important;
+    }
+    </style>
+    """
+
 def get_all_styles():
     """모든 스타일 통합 반환"""
     return (
         inject_custom_font() +
+        get_force_pretendard_font() +
         inject_custom_button_style() +
         inject_expander_style() +
+        get_sidebar_navigation_styles() +
         get_main_styles()
     )
