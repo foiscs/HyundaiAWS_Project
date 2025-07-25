@@ -76,9 +76,9 @@ jobs:
         echo "🔍 기존 인프라 리소스 정보 조회 중..."
         
         # ECR 리포지토리 URI 조회
-        ECR_REPO=$(aws ecr describe-repositories --repository-names ${PROJECT_NAME}-app --query 'repositories[0].repositoryUri' --output text 2>/dev/null || echo "")
+        ECR_REPO=$(aws ecr describe-repositories --repository-names ${PROJECT_NAME}-ecr --query 'repositories[0].repositoryUri' --output text 2>/dev/null || echo "")
         if [ -z "$ECR_REPO" ]; then
-          echo "❌ ECR 리포지토리를 찾을 수 없습니다: ${PROJECT_NAME}-app"
+          echo "❌ ECR 리포지토리를 찾을 수 없습니다: ${PROJECT_NAME}-ecr"
           echo "먼저 인프라 배포가 필요합니다."
           exit 1
         fi
