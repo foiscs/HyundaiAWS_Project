@@ -151,42 +151,85 @@ jobs:
         terraform_version: "1.9.0"
         terraform_wrapper: false
 
+    # Terraform 초기화 및 상태 확인
+    - name: Initialize Terraform and Get Outputs
+      run: |
+        echo "🔧 Terraform 초기화 및 출력값 확인 중..."
+        cd infrastructure/terraform
+        
+        # Terraform 초기화
+        terraform init -input=false
+        
+        # Terraform 상태 확인
+        terraform plan -input=false -detailed-exitcode || echo "Plan completed"
+        
+        # 출력값들이 존재하는지 확인
+        echo "📋 사용 가능한 출력값들:"
+        terraform output
+        
+        # 개별 출력값 테스트
+        echo "🔍 개별 출력값 테스트 중..."
+        terraform output rds_endpoint || echo "❌ rds_endpoint not found"
+        terraform output db_name || echo "❌ db_name not found"  
+        terraform output db_username || echo "❌ db_username not found"
+        terraform output bastion_public_ip || echo "❌ bastion_public_ip not found"
+
     # 데이터베이스 테스트 단계
     - name: Test Database Connection via Bastion
       run: |
         # PostgreSQL 클라이언트 설치
-        sudo apt-get update && sudo apt-get install -y postgresql-client
+        sudo apt-get update && sudo apt-get install -y postgresql-client netcat-openbsd
         
         # Terraform outputs에서 DB 정보 가져오기
         cd infrastructure/terraform
         
-        DB_HOST=$(terraform output -raw rds_endpoint)
-        DB_NAME=$(terraform output -raw db_name)
-        DB_USER=$(terraform output -raw db_username)
-        BASTION_IP=$(terraform output -raw bastion_public_ip)
+        # 출력값들을 안전하게 가져오기 (따옴표로 감싸서)
+        DB_HOST=$(terraform output -raw rds_endpoint | tr -d '\n\r' | xargs)
+        DB_NAME=$(terraform output -raw db_name | tr -d '\n\r' | xargs)
+        DB_USER=$(terraform output -raw db_username | tr -d '\n\r' | xargs)
+        BASTION_IP=$(terraform output -raw bastion_public_ip | tr -d '\n\r' | xargs)
+        
+        # 값들이 제대로 설정되었는지 확인
+        if [ -z "$DB_HOST" ] || [ -z "$BASTION_IP" ]; then
+          echo "❌ 필수 출력값을 가져올 수 없습니다"
+          echo "DB_HOST: '$DB_HOST'"
+          echo "DB_NAME: '$DB_NAME'"
+          echo "DB_USER: '$DB_USER'"  
+          echo "BASTION_IP: '$BASTION_IP'"
+          exit 1
+        fi
+        
         DB_PASSWORD=$(aws ssm get-parameter --name "/${PROJECT_NAME}/rds/master-password" --with-decryption --query 'Parameter.Value' --output text)
 
         # SSH 키를 Parameter Store에서 가져오기
         aws ssm get-parameter --name "/${PROJECT_NAME}/bastion/ssh-private-key" --with-decryption --query 'Parameter.Value' --output text > bastion_key.pem
         chmod 600 bastion_key.pem
 
-        echo "DB Host: $DB_HOST"
-        echo "Bastion IP: $BASTION_IP"
+        echo "✅ DB Host: '$DB_HOST'"
+        echo "✅ Bastion IP: '$BASTION_IP'"
+        echo "✅ DB User: '$DB_USER'"
+        echo "✅ DB Name: '$DB_NAME'"
         
         # SSH 연결 테스트 먼저 수행
+        echo "🔍 SSH 연결 테스트 중..."
         ssh -i bastion_key.pem -o StrictHostKeyChecking=no -o ConnectTimeout=10 ec2-user@$BASTION_IP "echo 'SSH connection successful'"
         
         # SSH 터널을 백그라운드에서 실행
+        echo "🚀 SSH 터널 설정 중..."
         ssh -i bastion_key.pem -o StrictHostKeyChecking=no -o ExitOnForwardFailure=yes -f -N -L 5432:$DB_HOST:5432 ec2-user@$BASTION_IP
         
         # 터널이 설정될 때까지 대기
         sleep 15
         
         # 포트가 열려있는지 확인
-        nc -z localhost 5432 || (echo "SSH 터널 설정 실패"; exit 1)
+        echo "🔍 포트 연결 확인 중..."
+        nc -z localhost 5432 || (echo "❌ SSH 터널 설정 실패"; exit 1)
         
         # 로컬 포트를 통해 RDS 연결 테스트
+        echo "🗄️ 데이터베이스 연결 테스트 중..."
         PGPASSWORD=$DB_PASSWORD psql -h localhost -p 5432 -U $DB_USER -d $DB_NAME -c "SELECT 1;" -v ON_ERROR_STOP=1
+        
+        echo "✅ 데이터베이스 연결 성공!"
         
         # SSH 터널 종료 및 정리
         pkill -f "ssh.*5432:$DB_HOST:5432" || true
