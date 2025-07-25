@@ -51,7 +51,6 @@ def fix(subnet_group_names):
         return
 
     print("[FIX] 3.8 DB 서브넷 그룹의 가용 영역 수정은 수동 조치가 필요합니다.")
-    print("  └─ check() 단계에서 출력된 각 서브넷 그룹의 가용 영역 구성을 검토 후 아래 절차를 따르세요.")
     print("  └─ 1. AWS Management Console에서 RDS 서비스로 이동합니다.")
     print("  └─ 2. 왼쪽 메뉴에서 [서브넷 그룹]을 선택합니다.")
     print("  └─ 3. 수정이 필요한 서브넷 그룹(예: " + f"'{subnet_group_names[0]}'" + ")을 선택하고 [편집] 버튼을 클릭합니다.")
