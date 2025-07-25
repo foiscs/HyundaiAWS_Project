@@ -1,7 +1,7 @@
 # .github/workflows/deploy-app.yml
-# 애플리케이션 배포 워크플로우 (server 폴더 변경시만 실행)
+# PHP 애플리케이션 배포 워크플로우 (server 폴더 변경시만 실행)
 
-name: Deploy Application
+name: Deploy PHP Application
 
 on:
   push:
@@ -14,8 +14,7 @@ on:
       - 'WALB/server/**'
 
 env:
-  PROJECT_NAME: "WALB-app"
-  JAVA_VERSION: "17"
+  PROJECT_NAME: "walb-app"
   
 jobs:
   build-and-deploy:
@@ -38,41 +37,26 @@ jobs:
       uses: actions/checkout@v4
     
     # ===============================================
-    # Java 환경 설정
+    # PHP 및 Composer 환경 설정
     # ===============================================
-    - name: Set up JDK ${{ env.JAVA_VERSION }}
-      uses: actions/setup-java@v4
+    - name: Set up PHP
+      uses: shivammathur/setup-php@v2
       with:
-        java-version: ${{ env.JAVA_VERSION }}
-        distribution: 'temurin'
-        cache: maven
+        php-version: '8.1'
+        extensions: pdo, pdo_pgsql, mbstring, xml, zip, gd
+        coverage: none
     
-    # ===============================================
-    # Maven 빌드 및 테스트
-    # ===============================================
-    - name: Run tests
+    - name: Validate Composer
       run: |
-        echo "🧪 애플리케이션 테스트 실행 중..."
-        if [ -f "mvnw" ]; then
-          ./mvnw test
-        elif [ -f "pom.xml" ]; then
-          mvn test
+        echo "🔍 PHP 애플리케이션 검증 중..."
+        if [ -f "server/composer.json" ]; then
+          cd server
+          composer validate --no-check-publish
+          composer install --no-dev --optimize-autoloader --no-interaction
+          echo "✅ Composer 검증 완료"
         else
-          echo "⚠️ Maven 프로젝트가 아닙니다. 테스트를 건너뜁니다."
+          echo "ℹ️ Composer 파일이 없습니다. Docker 빌드만 실행합니다."
         fi
-        echo "✅ 테스트 완료"
-    
-    - name: Build with Maven
-      run: |
-        echo "🔨 애플리케이션 빌드 중..."
-        if [ -f "mvnw" ]; then
-          ./mvnw clean package -DskipTests
-        elif [ -f "pom.xml" ]; then
-          mvn clean package -DskipTests
-        else
-          echo "ℹ️ Maven 빌드 파일이 없습니다. Docker 빌드만 실행합니다."
-        fi
-        echo "✅ 빌드 완료"
     
     # ===============================================
     # AWS 인증 (OIDC 방식)
@@ -111,6 +95,16 @@ jobs:
         echo "EKS_CLUSTER_NAME=$EKS_CLUSTER" >> $GITHUB_ENV
         echo "✅ EKS Cluster: $EKS_CLUSTER"
         
+        # RDS 엔드포인트 조회
+        RDS_ENDPOINT=$(aws rds describe-db-instances --query 'DBInstances[?DBName==`mydb`].Endpoint.Address' --output text 2>/dev/null || echo "")
+        if [ -z "$RDS_ENDPOINT" ] || [ "$RDS_ENDPOINT" == "None" ]; then
+          echo "❌ RDS 인스턴스를 찾을 수 없습니다"
+          echo "먼저 인프라 배포가 필요합니다."
+          exit 1
+        fi
+        echo "RDS_ENDPOINT=$RDS_ENDPOINT" >> $GITHUB_ENV
+        echo "✅ RDS Endpoint: $RDS_ENDPOINT"
+        
         # EKS 클러스터 상태 확인
         EKS_STATUS=$(aws eks describe-cluster --name $EKS_CLUSTER --query 'cluster.status' --output text)
         if [ "$EKS_STATUS" != "ACTIVE" ]; then
@@ -138,7 +132,8 @@ jobs:
         IMAGE_TAG=${{ github.sha }}
         IMAGE_URI=${{ env.ECR_REPOSITORY }}:$IMAGE_TAG
         
-        # Docker 이미지 빌드
+        # server 폴더로 이동해서 Docker 빌드
+        cd server
         docker build -t $IMAGE_URI .
         docker tag $IMAGE_URI ${{ env.ECR_REPOSITORY }}:latest
         
@@ -148,6 +143,62 @@ jobs:
         
         echo "✅ 이미지 푸시 완료: $IMAGE_URI"
         echo "image=$IMAGE_URI" >> $GITHUB_OUTPUT
+    
+    # ===============================================
+    # PostgreSQL 클라이언트 설치 및 스키마 적용
+    # ===============================================
+    - name: Apply Database Schema
+      if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+      run: |
+        echo "🗄️ 데이터베이스 스키마 적용 중..."
+        
+        # PostgreSQL 클라이언트 설치
+        sudo apt-get update && sudo apt-get install -y postgresql-client
+        
+        # 스키마 적용
+        echo "RDS 엔드포인트: ${{ env.RDS_ENDPOINT }}"
+        
+        # 연결 테스트
+        PGPASSWORD="${{ secrets.DB_PASSWORD }}" psql \
+          -h "${{ env.RDS_ENDPOINT }}" \
+          -p 5432 \
+          -U dbadmin \
+          -d mydb \
+          -c "SELECT version();" \
+          -v ON_ERROR_STOP=1
+        
+        # 기존 테이블 확인
+        EXISTING_TABLES=$(PGPASSWORD="${{ secrets.DB_PASSWORD }}" psql \
+          -h "${{ env.RDS_ENDPOINT }}" \
+          -p 5432 \
+          -U dbadmin \
+          -d mydb \
+          -t -c "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_name IN ('users', 'posts', 'images', 'files');" \
+          -v ON_ERROR_STOP=1 | tr -d ' ')
+        
+        if [ "$EXISTING_TABLES" -eq "0" ]; then
+          echo "📝 스키마 파일 적용 중..."
+          PGPASSWORD="${{ secrets.DB_PASSWORD }}" psql \
+            -h "${{ env.RDS_ENDPOINT }}" \
+            -p 5432 \
+            -U dbadmin \
+            -d mydb \
+            -f server/files/schema.sql \
+            -v ON_ERROR_STOP=1
+          echo "✅ 스키마 적용 완료"
+        else
+          echo "ℹ️ 테이블이 이미 존재합니다. 스키마 적용을 건너뜁니다."
+        fi
+        
+        # 테이블 목록 확인
+        echo "📋 생성된 테이블 목록:"
+        PGPASSWORD="${{ secrets.DB_PASSWORD }}" psql \
+          -h "${{ env.RDS_ENDPOINT }}" \
+          -p 5432 \
+          -U dbadmin \
+          -d mydb \
+          -c "\dt" \
+          -v ON_ERROR_STOP=1
     
     # ===============================================
     # kubectl 설치 및 EKS 연결
@@ -192,12 +243,21 @@ jobs:
           name: ${{ env.PROJECT_NAME }}-config
           namespace: ${{ env.PROJECT_NAME }}
         data:
-          SPRING_PROFILES_ACTIVE: "production"
-          AWS_REGION: "${{ secrets.AWS_REGION }}"
-          DB_HOST: "$(terraform output -raw rds_endpoint 2>/dev/null | cut -d':' -f1)"
+          DB_HOST: "${{ env.RDS_ENDPOINT }}"
           DB_PORT: "5432"
           DB_NAME: "mydb"
           DB_USER: "dbadmin"
+          AWS_REGION: "${{ secrets.AWS_REGION }}"
+          AWS_S3_BUCKET: "walb-app-files"
+          AWS_S3_REGION: "${{ secrets.AWS_REGION }}"
+          STORAGE_TYPE: "s3"
+          APP_ENV: "production"
+          APP_DEBUG: "false"
+          PHP_MEMORY_LIMIT: "256M"
+          PHP_MAX_EXECUTION_TIME: "30"
+          PHP_TIMEZONE: "Asia/Seoul"
+          UPLOAD_MAX_SIZE: "10M"
+          SESSION_LIFETIME: "7200"
         EOF
         
         # Secret 생성 (DB 패스워드)
@@ -209,7 +269,7 @@ jobs:
           namespace: ${{ env.PROJECT_NAME }}
         type: Opaque
         data:
-          DB_PASSWORD: $(echo -n "MySecurePassword123!" | base64)
+          DB_PASSWORD: $(echo -n "${{ secrets.DB_PASSWORD }}" | base64)
         EOF
         
         # Deployment 생성
@@ -233,7 +293,7 @@ jobs:
             spec:
               serviceAccountName: ${{ env.PROJECT_NAME }}-service-account
               containers:
-              - name: app
+              - name: php-app
                 image: ${{ steps.build-image.outputs.image }}
                 ports:
                 - containerPort: 80
@@ -265,8 +325,7 @@ jobs:
                     memory: "512Mi"
                     cpu: "500m"
                 securityContext:
-                  runAsNonRoot: true
-                  runAsUser: 1001
+                  runAsNonRoot: false
                   allowPrivilegeEscalation: false
                   readOnlyRootFilesystem: false
         EOF
@@ -299,7 +358,7 @@ jobs:
           name: ${{ env.PROJECT_NAME }}-service-account
           namespace: ${{ env.PROJECT_NAME }}
           annotations:
-            eks.amazonaws.com/role-arn: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/${{ env.PROJECT_NAME }}-eks-app-role
+            eks.amazonaws.com/role-arn: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/walb-app-eks-app-role
         EOF
         
         echo "✅ 매니페스트 파일 생성 완료"
@@ -334,9 +393,11 @@ jobs:
         echo "🔍 배포 상태 확인 중..."
         
         # Pod 상태 확인
+        echo "📦 Pod 상태:"
         kubectl get pods -n ${{ env.PROJECT_NAME }} -l app=${{ env.PROJECT_NAME }}-app
         
         # Service 확인
+        echo "🌐 Service 상태:"
         kubectl get svc -n ${{ env.PROJECT_NAME }}
         
         # Deployment 상태 확인
@@ -348,11 +409,36 @@ jobs:
         
         if [ "$READY_REPLICAS" = "$DESIRED_REPLICAS" ]; then
           echo "✅ 배포가 성공적으로 완료되었습니다!"
+          
+          # 애플리케이션 로그 확인
+          echo "📋 애플리케이션 로그 (마지막 50줄):"
+          kubectl logs -l app=${{ env.PROJECT_NAME }}-app -n ${{ env.PROJECT_NAME }} --tail=50
+          
         else
           echo "❌ 배포에 문제가 있습니다."
+          echo "🔍 상세 정보:"
           kubectl describe deployment ${{ env.PROJECT_NAME }}-app -n ${{ env.PROJECT_NAME }}
+          echo "📋 Pod 로그:"
           kubectl logs -l app=${{ env.PROJECT_NAME }}-app -n ${{ env.PROJECT_NAME }} --tail=100
           exit 1
+        fi
+    
+    # ===============================================
+    # LoadBalancer 설정 확인 및 접속 URL 제공
+    # ===============================================
+    - name: Get Application URL
+      if: success() && github.ref == 'refs/heads/main' && github.event_name == 'push'
+      run: |
+        echo "🔗 애플리케이션 접속 정보 확인 중..."
+        
+        # ALB 정보 확인
+        ALB_DNS=$(aws elbv2 describe-load-balancers --query 'LoadBalancers[?contains(LoadBalancerName, `walb-app`)].DNSName' --output text 2>/dev/null || echo "")
+        
+        if [ -n "$ALB_DNS" ]; then
+          echo "🌐 애플리케이션 접속 URL: http://$ALB_DNS"
+        else
+          echo "ℹ️ LoadBalancer DNS를 찾을 수 없습니다. kubectl port-forward를 사용하세요:"
+          echo "kubectl port-forward -n ${{ env.PROJECT_NAME }} svc/${{ env.PROJECT_NAME }}-service 8080:80"
         fi
     
     # ===============================================
@@ -361,11 +447,12 @@ jobs:
     - name: Application Deployment Notification
       if: success() && github.ref == 'refs/heads/main' && github.event_name == 'push'
       run: |
-        echo "🎉 애플리케이션 배포 완료!"
+        echo "🎉 PHP 애플리케이션 배포 완료!"
         echo "프로젝트: ${{ env.PROJECT_NAME }}"
         echo "이미지: ${{ steps.build-image.outputs.image }}"
         echo "클러스터: ${{ env.EKS_CLUSTER_NAME }}"
         echo "네임스페이스: ${{ env.PROJECT_NAME }}"
+        echo "데이터베이스: ${{ env.RDS_ENDPOINT }}"
         echo "커밋: ${{ github.sha }}"
         echo "배포 시간: $(date)"
         
@@ -379,34 +466,6 @@ jobs:
       if: failure() && github.ref == 'refs/heads/main' && github.event_name == 'push'
       run: |
         echo "❌ 배포 실패 - 이전 버전으로 롤백 중..."
-        kubectl rollout undo deployment/${{ env.PROJECT_NAME }}-app -n ${{ env.PROJECT_NAME }}
-        kubectl rollout status deployment/${{ env.PROJECT_NAME }}-app -n ${{ env.PROJECT_NAME }} --timeout=300s
-        echo "✅ 롤백 완료"
-
-    - name: Apply Database Schema
-      if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-      run: |
-        echo "🗄️ 데이터베이스 스키마 적용 중..."
-        
-        # RDS 엔드포인트 가져오기
-        RDS_ENDPOINT=$(aws rds describe-db-instances --query 'DBInstances[?DBName==`mydb`].Endpoint.Address' --output text 2>/dev/null || echo '')
-        
-        if [ -n "$RDS_ENDPOINT" ]; then
-          echo "RDS 엔드포인트: $RDS_ENDPOINT"
-          
-          # 스키마 파일 적용 (PostgreSQL 클라이언트 설치 후)
-          sudo apt-get update && sudo apt-get install -y postgresql-client
-          
-          # 스키마 적용
-          PGPASSWORD="${{ secrets.DB_PASSWORD }}" psql \
-            -h "$RDS_ENDPOINT" \
-            -p 5432 \
-            -U dbadmin \
-            -d mydb \
-            -f server/files/schema.sql \
-            -v ON_ERROR_STOP=1
-            
-          echo "✅ 스키마 적용 완료"
-        else
-          echo "❌ RDS 엔드포인트를 찾을 수 없습니다"
-        fi
+        kubectl rollout undo deployment/${{ env.PROJECT_NAME }}-app -n ${{ env.PROJECT_NAME }} || true
+        kubectl rollout status deployment/${{ env.PROJECT_NAME }}-app -n ${{ env.PROJECT_NAME }} --timeout=300s || true
+        echo "✅ 롤백 시도 완료"
