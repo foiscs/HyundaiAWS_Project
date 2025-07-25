@@ -1,13 +1,15 @@
 -- PostgreSQL 블로그 데이터베이스 스키마
--- 데이터베이스 생성 (관리자 권한으로 실행)
-CREATE DATABASE mydb;
+-- RDS에서는 데이터베이스와 사용자가 이미 생성되어 있음
 
--- 사용자 생성 및 권한 부여 (관리자 권한으로 실행)
-CREATE USER dbadmin WITH PASSWORD 'MySecurePassword123!';
-GRANT ALL PRIVILEGES ON DATABASE mydb TO dbadmin;
+-- 데이터베이스 생성 제거
+-- CREATE DATABASE mydb;
 
--- 데이터베이스 연결 후 실행할 스키마
-\c mydb;
+-- 사용자 생성 제거
+-- CREATE USER dbadmin WITH PASSWORD 'MySecurePassword123!';
+-- GRANT ALL PRIVILEGES ON DATABASE mydb TO dbadmin;
+
+-- 데이터베이스 연결 명령 제거
+-- \c mydb;
 
 -- 사용자 테이블
 CREATE TABLE IF NOT EXISTS users (
