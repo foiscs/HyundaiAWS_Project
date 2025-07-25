@@ -451,6 +451,43 @@ resource "aws_iam_role" "eks_app_role" {
   })
 }
 
+# =========================================
+# aws-auth ConfigMap for GitHub Actions Access
+# =========================================
+resource "kubernetes_config_map_v1_data" "aws_auth" {
+  depends_on = [module.eks]
+  
+  metadata {
+    name      = "aws-auth"
+    namespace = "kube-system"
+  }
+
+  data = {
+    mapRoles = yamlencode([
+      # EKS 노드 그룹 역할
+      {
+        rolearn  = module.eks.node_group_iam_role_arn
+        username = "system:node:{{EC2PrivateDNSName}}"
+        groups   = ["system:bootstrappers", "system:nodes"]
+      },
+      # GitHub Actions 애플리케이션 배포 역할
+      {
+        rolearn  = aws_iam_role.github_actions_app.arn
+        username = "github-actions-app"
+        groups   = ["system:masters"]
+      },
+      # GitHub Actions 인프라 배포 역할
+      {
+        rolearn  = aws_iam_role.github_actions_infra.arn
+        username = "github-actions-infra"
+        groups   = ["system:masters"]
+      }
+    ])
+  }
+
+  force = true
+}
+
 # EKS 애플리케이션용 정책 연결
 resource "aws_iam_role_policy" "eks_app_policy" {
   name = "eks-app-policy"

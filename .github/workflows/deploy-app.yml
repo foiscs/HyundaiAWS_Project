@@ -401,26 +401,82 @@ jobs:
       run: |
         echo "🔧 EKS 클러스터 kubeconfig 업데이트 중..."
         
-        # EKS 클러스터 이름 조회
-        EKS_CLUSTER_NAME=$(aws eks list-clusters --query 'clusters[0]' --output text 2>/dev/null || echo "walb-eks-cluster")
+        # 현재 AWS 자격 증명 확인
+        echo "🔍 현재 AWS 자격 증명 확인..."
+        aws sts get-caller-identity
         
+        # EKS 클러스터 이름 조회 (여러 방법 시도)
+        echo "🔍 EKS 클러스터 조회 중..."
+        
+        # 방법 1: 클러스터 목록에서 첫 번째 조회
+        EKS_CLUSTER_NAME=$(aws eks list-clusters --query 'clusters[0]' --output text 2>/dev/null || echo "")
+        
+        # 방법 2: 특정 이름으로 조회
         if [ -z "$EKS_CLUSTER_NAME" ] || [ "$EKS_CLUSTER_NAME" == "None" ]; then
-          echo "❌ EKS 클러스터를 찾을 수 없습니다."
+          EKS_CLUSTER_NAME="walb-eks-cluster"
+          echo "기본 클러스터 이름 사용: $EKS_CLUSTER_NAME"
+        fi
+        
+        # 클러스터 존재 확인
+        if ! aws eks describe-cluster --name "$EKS_CLUSTER_NAME" --region ${{ secrets.AWS_REGION }} >/dev/null 2>&1; then
+          echo "❌ EKS 클러스터 '$EKS_CLUSTER_NAME'를 찾을 수 없습니다."
           echo "사용 가능한 클러스터 목록:"
-          aws eks list-clusters
+          aws eks list-clusters --region ${{ secrets.AWS_REGION }}
           exit 1
         fi
         
         echo "✅ EKS 클러스터: $EKS_CLUSTER_NAME"
         echo "EKS_CLUSTER_NAME=$EKS_CLUSTER_NAME" >> $GITHUB_ENV
         
-        # kubeconfig 업데이트
-        aws eks update-kubeconfig --region ${{ secrets.AWS_REGION }} --name $EKS_CLUSTER_NAME
+        # 클러스터 상태 확인
+        CLUSTER_STATUS=$(aws eks describe-cluster --name "$EKS_CLUSTER_NAME" --region ${{ secrets.AWS_REGION }} --query 'cluster.status' --output text)
+        echo "클러스터 상태: $CLUSTER_STATUS"
         
-        # 클러스터 연결 테스트
+        if [ "$CLUSTER_STATUS" != "ACTIVE" ]; then
+          echo "❌ 클러스터가 ACTIVE 상태가 아닙니다: $CLUSTER_STATUS"
+          exit 1
+        fi
+        
+        # kubeconfig 업데이트 (상세 로그 포함)
+        echo "🔧 kubeconfig 업데이트 중..."
+        aws eks update-kubeconfig --region ${{ secrets.AWS_REGION }} --name "$EKS_CLUSTER_NAME" --verbose
+        
+        # kubeconfig 파일 확인
+        echo "📋 kubeconfig 파일 내용:"
+        cat ~/.kube/config
+        
+        # AWS CLI 버전 확인
+        echo "🔍 AWS CLI 버전:"
+        aws --version
+        
+        # kubectl 버전 확인
+        echo "🔍 kubectl 버전:"
+        kubectl version --client
+        
+        # 클러스터 연결 테스트 (자세한 오류 정보 포함)
         echo "🔍 클러스터 연결 테스트..."
-        kubectl cluster-info
-        kubectl get nodes
+        if ! kubectl cluster-info --request-timeout=30s; then
+          echo "❌ kubectl cluster-info 실패. 추가 진단 정보:"
+          
+          # kubectl 설정 확인
+          echo "kubectl 설정 확인:"
+          kubectl config view
+          
+          # 현재 컨텍스트 확인
+          echo "현재 컨텍스트:"
+          kubectl config current-context
+          
+          # 클러스터 엔드포인트 직접 테스트
+          CLUSTER_ENDPOINT=$(aws eks describe-cluster --name "$EKS_CLUSTER_NAME" --region ${{ secrets.AWS_REGION }} --query 'cluster.endpoint' --output text)
+          echo "클러스터 엔드포인트: $CLUSTER_ENDPOINT"
+          
+          # IAM 역할과 RBAC 매핑 확인
+          echo "EKS 클러스터의 aws-auth ConfigMap 확인이 필요할 수 있습니다."
+          exit 1
+        fi
+        
+        echo "🔍 노드 상태 확인..."
+        kubectl get nodes --show-labels
     
     # ===============================================
     # Kubernetes 매니페스트 파일 생성
