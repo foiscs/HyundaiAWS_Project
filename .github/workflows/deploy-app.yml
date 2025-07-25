@@ -400,7 +400,22 @@ jobs:
     - name: Update kubeconfig for EKS
       run: |
         echo "🔧 EKS 클러스터 kubeconfig 업데이트 중..."
-        aws eks update-kubeconfig --region ${{ secrets.AWS_REGION }} --name ${{ env.EKS_CLUSTER_NAME }}
+        
+        # EKS 클러스터 이름 조회
+        EKS_CLUSTER_NAME=$(aws eks list-clusters --query 'clusters[0]' --output text 2>/dev/null || echo "walb-eks-cluster")
+        
+        if [ -z "$EKS_CLUSTER_NAME" ] || [ "$EKS_CLUSTER_NAME" == "None" ]; then
+          echo "❌ EKS 클러스터를 찾을 수 없습니다."
+          echo "사용 가능한 클러스터 목록:"
+          aws eks list-clusters
+          exit 1
+        fi
+        
+        echo "✅ EKS 클러스터: $EKS_CLUSTER_NAME"
+        echo "EKS_CLUSTER_NAME=$EKS_CLUSTER_NAME" >> $GITHUB_ENV
+        
+        # kubeconfig 업데이트
+        aws eks update-kubeconfig --region ${{ secrets.AWS_REGION }} --name $EKS_CLUSTER_NAME
         
         # 클러스터 연결 테스트
         echo "🔍 클러스터 연결 테스트..."
