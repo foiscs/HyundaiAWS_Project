@@ -840,3 +840,99 @@ resource "aws_iam_role_policy" "github_actions_app_policy" {
     ]
   })
 }
+# =========================================
+# EC2 Key Pair for Bastion Host
+# =========================================
+resource "tls_private_key" "bastion_key" {
+  count     = var.enable_bastion_host ? 1 : 0
+  algorithm = "RSA"
+  rsa_bits  = 4096
+}
+
+resource "aws_key_pair" "bastion_key" {
+  count      = var.enable_bastion_host ? 1 : 0
+  key_name   = "${var.project_name}-bastion-key"
+  public_key = tls_private_key.bastion_key[0].public_key_openssh
+
+  tags = merge(local.common_tags, {
+    Name      = "${var.project_name}-bastion-key"
+    Component = "Bastion"
+  })
+}
+
+# SSH 개인키를 SSM Parameter Store에 저장
+resource "aws_ssm_parameter" "bastion_private_key" {
+  count = var.enable_bastion_host ? 1 : 0
+  name  = "/${var.project_name}/bastion/ssh-private-key"
+  type  = "SecureString"
+  value = tls_private_key.bastion_key[0].private_key_pem
+
+  tags = merge(local.common_tags, {
+    Name = "${var.project_name}-bastion-ssh-key"
+  })
+}
+
+# 기존 DB 비밀번호를 Parameter Store에 저장 (참조용)
+resource "aws_ssm_parameter" "db_password" {
+  name  = "/${var.project_name}/rds/master-password"
+  type  = "SecureString"
+  value = var.db_password  # 기존에 정의된 변수 사용
+
+  tags = merge(local.common_tags, {
+    Name = "${var.project_name}-db-password"
+  })
+}
+
+# =========================================
+# Bastion Host EC2 Instance
+# =========================================
+resource "aws_instance" "bastion" {
+  count                  = var.enable_bastion_host ? 1 : 0
+  ami                   = data.aws_ami.amazon_linux.id
+  instance_type         = var.bastion_instance_type
+  key_name              = aws_key_pair.bastion_key[0].key_name
+  vpc_security_group_ids = [aws_security_group.bastion.id]
+  subnet_id             = module.vpc.public_subnet_ids[0]
+  
+  # PostgreSQL 클라이언트 설치를 위한 user data
+  user_data = base64encode(<<-EOF
+    #!/bin/bash
+    yum update -y
+    amazon-linux-extras install -y postgresql13
+    yum install -y postgresql
+    
+    # AWS CLI 설치 (최신 버전)
+    curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+    unzip awscliv2.zip
+    ./aws/install
+    
+    # kubectl 설치
+    curl -O https://s3.us-west-2.amazonaws.com/amazon-eks/1.28.3/2023-11-14/bin/linux/amd64/kubectl
+    chmod +x ./kubectl
+    mv ./kubectl /usr/local/bin
+    
+    echo "Bastion host setup completed" > /var/log/bastion-setup.log
+  EOF
+  )
+
+  tags = merge(local.common_tags, {
+    Name      = "${var.project_name}-bastion-host"
+    Component = "Bastion"
+  })
+}
+
+# AMI 데이터 소스
+data "aws_ami" "amazon_linux" {
+  most_recent = true
+  owners      = ["amazon"]
+
+  filter {
+    name   = "name"
+    values = ["amzn2-ami-hvm-*-x86_64-gp2"]
+  }
+
+  filter {
+    name   = "virtualization-type"
+    values = ["hvm"]
+  }
+}

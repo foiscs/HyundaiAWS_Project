@@ -395,7 +395,7 @@ resource "aws_eks_node_group" "main" {
 
   # 원격 액세스 설정
   dynamic "remote_access" {
-    for_each = var.enable_ssh_access ? [1] : []
+    for_each = var.enable_ssh_access && !var.create_launch_template ? [1] : []
     content {
       ec2_ssh_key               = var.ec2_key_pair_name
       source_security_group_ids = [aws_security_group.node_group.id]

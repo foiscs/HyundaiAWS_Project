@@ -507,7 +507,7 @@ variable "developer_access_cidrs" {
 variable "enable_bastion_host" {
   description = "Bastion Host 생성 여부"
   type        = bool
-  default     = false  # 보안상 기본 비활성화
+  default     = true  # CI/CD를 위해 활성화
 }
 
 variable "bastion_instance_type" {

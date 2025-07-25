@@ -317,3 +317,36 @@ output "github_secrets_setup" {
   }
   sensitive = true
 }
+
+output "rds_endpoint" {
+  description = "RDS 엔드포인트"
+  value       = module.rds.db_instance_endpoint
+}
+
+output "db_name" {
+  description = "데이터베이스 이름"
+  value       = var.db_name
+}
+
+output "db_username" {
+  description = "데이터베이스 사용자명"
+  value       = var.db_username
+}
+
+output "db_port" {
+  description = "데이터베이스 포트"
+  value       = module.rds.db_instance_port
+}
+
+# =========================================
+# Bastion Host 정보
+# =========================================
+output "bastion_public_ip" {
+  description = "Bastion Host 공인 IP"
+  value       = var.enable_bastion_host ? aws_instance.bastion[0].public_ip : null
+}
+
+output "bastion_private_ip" {
+  description = "Bastion Host 사설 IP"
+  value       = var.enable_bastion_host ? aws_instance.bastion[0].private_ip : null
+}
