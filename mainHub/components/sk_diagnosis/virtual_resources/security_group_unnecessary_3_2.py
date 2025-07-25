@@ -177,11 +177,7 @@ class SecurityGroupUnnecessaryChecker(BaseChecker):
     
     def render_result_ui(self, result, item_key, ui_handler):
         """3.2 진단 결과 UI 렌더링"""
-        col1, col2 = st.columns(2)
-        with col1:
-            st.metric("삭제 가능한 보안그룹", result.get('finding_count', 0))
-        with col2:
-            st.metric("위험도", result.get('risk_level', 'low').upper())
+        st.metric("삭제 가능한 보안그룹", result.get('finding_count', 0))
         
         # 발견된 문제 표시
         if result.get('deletable_sgs'):

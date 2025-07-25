@@ -107,14 +107,11 @@ class KeyPairAccessChecker(BaseChecker):
             st.error(f"❌ **취약**: {result['issues_count']}개의 인스턴스에 Key Pair가 할당되지 않았습니다.")
         
         # 통계 정보
-        col1, col2, col3 = st.columns(3)
+        col1, col2 = st.columns(2)
         with col1:
             st.metric("총 실행 중 인스턴스", result['total_instances_checked'])
         with col2:
             st.metric("Key Pair 미할당", result['issues_count'])
-        with col3:
-            risk_colors = {"low": "🟢", "medium": "🟡", "high": "🔴"}
-            st.metric("위험도", f"{risk_colors.get(result['risk_level'], '⚪')} {result['risk_level'].upper()}")
         
         # Key Pair 미할당 인스턴스 상세 정보
         if result['instances_without_keypair']:

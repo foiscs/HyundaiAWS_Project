@@ -206,16 +206,13 @@ class KeyPairStorageChecker(BaseChecker):
             st.error(f"❌ **취약**: {len(result['vulnerable_keys'])}개의 공개 버킷에서 총 {result['total_pem_files']}개의 Key Pair 파일(.pem)이 발견되었습니다.")
         
         # 통계 정보
-        col1, col2, col3, col4 = st.columns(4)
+        col1, col2, col3 = st.columns(3)
         with col1:
             st.metric("총 S3 버킷", result['total_buckets'])
         with col2:
             st.metric("공개 버킷", result['public_buckets'])
         with col3:
             st.metric("취약한 .pem 파일", result['total_pem_files'])
-        with col4:
-            risk_colors = {"low": "🟢", "medium": "🟡", "high": "🔴"}
-            st.metric("위험도", f"{risk_colors.get(result['risk_level'], '⚪')} {result['risk_level'].upper()}")
         
         # 취약한 Key Pair 파일 상세 정보
         if result['vulnerable_keys']:

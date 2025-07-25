@@ -128,8 +128,127 @@ def render_account_card(account, index):
             st.switch_page("pages/diagnosis.py")
 
 
+def render_sidebar():
+    """사이드바 렌더링"""
+    with st.sidebar:
+        # 사용자 세션 정보
+        st.markdown("### 👤 세션 정보")
+        
+        # 현재 시간 표시
+        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        st.markdown(f"**현재 시간**: {current_time}")
+        
+        # 세션 ID (간단한 버전)
+        if 'session_id' not in st.session_state:
+            st.session_state.session_id = f"WALB-{datetime.now().strftime('%Y%m%d%H%M%S')}"
+        
+        st.markdown(f"**세션 ID**: `{st.session_state.session_id}`")
+        
+        # 마지막 활동 시간
+        if 'last_activity' not in st.session_state:
+            st.session_state.last_activity = datetime.now()
+        
+        time_diff = datetime.now() - st.session_state.last_activity
+        st.markdown(f"**마지막 활동**: {time_diff.seconds // 60}분 전")
+        
+        st.divider()
+        
+        # 연결된 계정 통계
+        st.markdown("### 📊 계정 통계")
+        accounts = load_connected_accounts()
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            st.metric("총 계정", len(accounts))
+        with col2:
+            active_accounts = len([acc for acc in accounts if acc.get('status', 'active') == 'active'])
+            st.metric("활성 계정", active_accounts)
+        
+        # 연결 방식별 통계
+        role_based = len([acc for acc in accounts if acc.get('role_arn')])
+        key_based = len(accounts) - role_based
+        
+        st.markdown("**연결 방식별 분포:**")
+        st.markdown(f"🛡️ Cross-Account Role: **{role_based}**개")
+        st.markdown(f"🔑 Access Key: **{key_based}**개")
+        
+        st.divider()
+        
+        # 빠른 액세스 메뉴
+        st.markdown("### ⚡ 빠른 액세스")
+        
+        if st.button("🔄 전체 새로고침", use_container_width=True):
+            st.rerun()
+            
+        if st.button("➕ 계정 추가", use_container_width=True):
+            SessionManager.reset_connection_data()
+            st.switch_page("pages/connection.py")
+            
+        if st.button("📊 대시보드", use_container_width=True):
+            st.info("통합 대시보드 (준비중)")
+        
+        st.divider()
+        
+        # 시스템 상태
+        st.markdown("### 🔧 시스템 상태")
+        
+        # AWS 연결 상태 체크 (간단한 버전)
+        aws_status = "🟢 정상" if accounts else "🟡 계정 없음"
+        st.markdown(f"**AWS 연결**: {aws_status}")
+        
+        # 파일 시스템 상태
+        json_exists = os.path.exists("registered_accounts.json")
+        file_status = "🟢 정상" if json_exists else "🔴 파일 없음"
+        st.markdown(f"**데이터 파일**: {file_status}")
+        
+        st.markdown(f"**플랫폼**: WALB v1.0")
+        
+        st.divider()
+        
+        # 도움말 및 지원
+        st.markdown("### 💡 도움말")
+        
+        with st.expander("📖 사용 가이드"):
+            st.markdown("""
+            **1단계**: AWS 계정 연결
+            - Cross-Account Role 방식 권장
+            - Access Key 방식도 지원
+            
+            **2단계**: 보안 진단 실행
+            - 개별 항목 진단 가능
+            - 일괄 진단 기능 (준비중)
+            
+            **3단계**: 결과 확인 및 조치
+            - 위험도별 분류 제공
+            - 자동 조치 기능 (일부 항목)
+            """)
+            
+        with st.expander("🚨 문제 해결"):
+            st.markdown("""
+            **연결 실패시**:
+            - AWS 자격증명 확인
+            - 네트워크 연결 상태 확인
+            - IAM 권한 검토
+            
+            **진단 오류시**:
+            - 계정 권한 재확인
+            - 리전 설정 점검
+            - 로그 확인
+            """)
+        
+        # 푸터
+        st.markdown("---")
+        st.markdown("**WALB** • 통합 보안 관리 솔루션")
+        st.markdown("*Powered by Streamlit*")
+
 def main():
     st.markdown(get_all_styles(), unsafe_allow_html=True)
+    
+    # 세션 활동 시간 업데이트
+    st.session_state.last_activity = datetime.now()
+    
+    # 사이드바 렌더링
+    render_sidebar()
             
     # 세련된 헤더 렌더링
     header_html = f"""

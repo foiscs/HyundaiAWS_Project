@@ -48,8 +48,7 @@ class DiagnosisUIHandler:
             session = self._create_session()
             checker.session = session
             
-            with st.spinner(f"{item_name}을(를) 분석하고 있습니다..."):
-                return checker.run_diagnosis()
+            return checker.run_diagnosis()
                 
         except Exception as e:
             return {
@@ -66,6 +65,33 @@ class DiagnosisUIHandler:
         else:
             # 기본 결과 표시
             self._show_default_result(result, item_key, item_code)
+    
+    def _show_risk_level(self, result):
+        """위험도 표시 - 모든 진단 결과에 공통 적용"""
+        risk_level = result.get('risk_level', 'unknown')
+        if risk_level != 'unknown':
+            risk_colors = {
+                "high": ("🔴", "#e53e3e", "높음"),
+                "medium": ("🟡", "#dd6b20", "보통"), 
+                "low": ("🟢", "#38a169", "낮음")
+            }
+            
+            if risk_level in risk_colors:
+                icon, color, text = risk_colors[risk_level]
+                st.markdown(f"""
+                <div style="
+                    display: inline-flex;
+                    align-items: center;
+                    padding: 6px 12px;
+                    background-color: {color}15;
+                    border: 1px solid {color}40;
+                    border-radius: 8px;
+                    margin-bottom: 12px;
+                ">
+                    <span style="font-size: 1.2rem; margin-right: 8px;">{icon}</span>
+                    <span style="font-weight: 600; color: {color};">{text}</span>
+                </div>
+                """, unsafe_allow_html=True)
     
     def _show_default_result(self, result, item_key, item_code):
         """기본 진단 결과 표시"""
@@ -105,6 +131,17 @@ class DiagnosisUIHandler:
                 
         except Exception as e:
             st.error(f"❌ 조치 실행 중 오류: {str(e)}")
+    
+    def show_rediagnose_button(self, item_key):
+        """재진단 버튼 표시"""
+        if st.button("🔄 재진단", key=f"rediagnose_{item_key}"):
+            # 진단 상태 초기화
+            if f'diagnosis_status_{item_key}' in st.session_state:
+                del st.session_state[f'diagnosis_status_{item_key}']
+            if f'diagnosis_result_{item_key}' in st.session_state:
+                del st.session_state[f'diagnosis_result_{item_key}']
+            st.rerun()
+    
     def _execute_group_assignment(self, user_group_assignments):
         """사용자 그룹 할당 실행"""
         try:
