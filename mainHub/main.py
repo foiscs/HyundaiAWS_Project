@@ -4,6 +4,7 @@ from datetime import datetime
 import streamlit as st
 from components.session_manager import SessionManager
 import streamlit.components.v1 as components
+from components.connection_styles import get_all_styles
 
 # 페이지 설정 추가
 st.set_page_config(
@@ -38,33 +39,98 @@ def load_connected_accounts():
     return unique_accounts
 
 def render_account_card(account, index):
-    """계정 카드 렌더링"""
-    connection_type = "🛡️ Cross-Account Role" if account.get('role_arn') else "🔑 Access Key"
-    
-    with st.container():
-        col1, col2, col3 = st.columns([3, 2, 1])
-        
-        with col1:
-            st.markdown(f"### ☁️ {account.get('cloud_name', 'Unknown')}")
-            st.write(f"**계정 ID:** `{account.get('account_id', 'N/A')}`")
-            st.write(f"**연결 방식:** {connection_type}")
-            st.write(f"**리전:** `{account.get('primary_region', 'N/A')}`")
-            
-        with col2:
-            st.write(f"**담당자:** {account.get('contact_email', 'N/A')}")
-            # 연결 상태 (실제 DB 연동 시 상태 필드 추가 필요)
-            st.success("🟢 연결됨")
-            
-        with col3:
-            if st.button("📡 모니터링", key=f"monitor_{index}"):
-                st.info("모니터링 기능 (준비중)")
-            if st.button("🛡️ 항목진단", key=f"diagnosis_{index}"):
-                # 선택된 계정 정보를 세션에 저장
-                st.session_state.selected_account = account
-                st.switch_page("pages/diagnosis.py")
+    account_name = account.get("cloud_name", "Unknown")
+    account_id = account.get("account_id", "N/A")
+    region = account.get("primary_region", "N/A")
+    contact = account.get("contact_email", "N/A")
+    conn_type = "🛡️ Cross-Account Role" if account.get('role_arn') else "🔑 Access Key"
+
+    # 카드 렌더링
+    html = f"""
+    <div class="account-card">
+        <div class="card-header">
+            <span class="cloud">☁️ <strong>{account_name}</strong></span>
+            <span class="contact">담당자: <a href="mailto:{contact}">{contact}</a></span>
+        </div>
+
+        <div class="info-grid">
+            <div class="info-item">
+                <div class="label">계정 ID</div>
+                <div class="value">{account_id}</div>
+            </div>
+            <div class="info-item">
+                <div class="label">리전</div>
+                <div class="value">{region}</div>
+            </div>
+            <div class="info-item">
+                <div class="label">연결 방식</div>
+                <div class="value">{conn_type}</div>
+            </div>
+            <div class="info-item">
+                <div class="label">상태</div>
+                <div class="value">🟢 연결됨</div>
+            </div>
+        </div>
+    </div>
+
+    <style>
+    .account-card {{
+        border: 1px solid #e2e8f0;
+        border-radius: 12px;
+        background-color: #f9fafb;
+        padding: 1.2rem;
+        margin: 1rem 0 0.2rem 0;  /* 아래 마진 줄임 */
+        box-shadow: 0 2px 4px rgba(0,0,0,0.03);
+        font-family: 'Segoe UI', sans-serif;
+    }}
+    .card-header {{
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 0.8rem;
+    }}
+    .cloud {{
+        font-size: 1.15rem;
+        font-weight: 600;
+    }}
+    .contact {{
+        font-size: 0.95rem;
+        color: #1d4ed8;
+    }}
+    .info-grid {{
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 0.6rem 1.5rem;
+    }}
+    .info-item .label {{
+        font-weight: 600;
+        font-size: 0.88rem;
+        color: #475569;
+        margin-bottom: 0.2rem;
+    }}
+    .info-item .value {{
+        font-size: 1rem;
+        color: #0f172a;
+    }}
+    </style>
+    """
+    components.html(html, height=200)
+
+    # 버튼: 하단에 촘촘히 붙임
+    col1, col2 = st.columns([1, 1], gap="small")
+    with col1:
+        if st.button("📡 모니터링", key=f"monitor_{index}", use_container_width=True):
+            st.info("모니터링 기능 (준비중)")
+
+    with col2:
+        if st.button("🛡️ 항목진단", key=f"diagnosis_{index}", use_container_width=True):
+            st.session_state.selected_account = account
+            st.switch_page("pages/diagnosis.py")
+
 
 def main():
-    
+    st.markdown(get_all_styles(), unsafe_allow_html=True)
+            
     # 세련된 헤더 렌더링
     header_html = f"""
     <!DOCTYPE html>
@@ -207,31 +273,31 @@ def main():
     # Components로 렌더링
     components.html(header_html, height=200)
     
-    # 연결된 계정 섹션
-    st.subheader("☁️ 연결된 AWS 계정")
-    
+    # 연결된 계정 섹션 + 버튼 라인
+    col_title, col_refresh, col_add = st.columns([2, 1, 1])
+
+    with col_title:
+        st.subheader("☁️ 연결된 AWS 계정")
+
+    with col_refresh:
+        if st.button("🔄 새로고침", type="secondary", use_container_width=True):
+            st.rerun()
+
+    with col_add:
+        if st.button("➕ 새 AWS 계정 추가", type="primary", use_container_width=True):
+            SessionManager.reset_connection_data()
+            st.switch_page("pages/connection.py")
+
     # 계정 로드
     accounts = load_connected_accounts()
-    
+
     if accounts:
         st.info(f"총 **{len(accounts)}개**의 AWS 계정이 연결되어 있습니다.")
         
         # 계정 카드들 표시
         for index, account in enumerate(accounts):
-            with st.expander(f"☁️ {account.get('cloud_name', 'Unknown')} ({account.get('account_id', 'N/A')})"):
+            with st.container():
                 render_account_card(account, index)
-                
-        # 액션 버튼들
-        col1, col2, col3 = st.columns([1, 1, 2])
-        
-        with col1:
-            if st.button("🔄 새로고침", type="secondary"):
-                st.rerun()
-                
-        with col2:
-            if st.button("➕ 계정 추가", type="primary"):
-                SessionManager.reset_connection_data()
-                st.switch_page("pages/connection.py")
                 
     else:
         st.warning("연결된 AWS 계정이 없습니다.")

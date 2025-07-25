@@ -13,6 +13,7 @@ from components.aws_handler import AWSConnectionHandler
 from components.session_manager import SessionManager
 import streamlit.components.v1 as components
 from components.diagnosis_ui_handler import DiagnosisUIHandler
+from components.connection_styles import get_all_styles 
 
 # 페이지 설정
 st.set_page_config(
@@ -234,6 +235,12 @@ def render_diagnosis_item(item, category, index):
         if diagnosis_status == 'completed' and diagnosis_result:
             if diagnosis_result.get('status') == 'success':
                 ui_handler.show_diagnosis_result(diagnosis_result, item_key, item['code'])
+                
+                # 조치 폼 표시 (show_fix_{item_key} 상태가 True일 때)
+                if st.session_state.get(f'show_fix_{item_key}', False):
+                    st.markdown("---")
+                    ui_handler.show_fix_form(diagnosis_result, item_key, item['code'])
+                    
             elif diagnosis_result.get('status') == 'not_implemented':
                 st.info(diagnosis_result.get('message', '구현되지 않음'))
             else:
@@ -325,6 +332,9 @@ def clear_diagnosis_states():
         del st.session_state[key]
         
 def main():
+    # CSS 스타일 주입
+    st.markdown(get_all_styles(), unsafe_allow_html=True)
+        
     """진단 페이지 메인"""
     # 세련된 헤더 렌더링
     header_html = f"""

@@ -1,0 +1,76 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: simpleblog-deployment
+  namespace: simpleblog-namespace
+  labels:
+    app: simpleblog-app
+    version: v1
+spec:
+  replicas: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app: simpleblog-app
+  template:
+    metadata:
+      labels:
+        app: simpleblog-app
+        version: v1
+    spec:
+      containers:
+      - name: simpleblog-app
+        image: 253157413163.dkr.ecr.ap-northeast-2.amazonaws.com/simple-blog-app:latest
+        ports:
+        - containerPort: 8000
+          name: http
+          protocol: TCP
+        env:
+        - name: SERVER_PORT
+          value: "8000"
+        - name: SPRING_PROFILES_ACTIVE
+          value: "prod"
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        readinessProbe:
+          httpGet:
+            path: /actuator/health
+            port: 8000
+          initialDelaySeconds: 30
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        livenessProbe:
+          httpGet:
+            path: /actuator/health
+            port: 8000
+          initialDelaySeconds: 60
+          periodSeconds: 10
+          timeoutSeconds: 3
+          failureThreshold: 3
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: simpleblog-deployment
+  namespace: simpleblog-namespace
+  labels:
+    app: simpleblog-app
+spec:
+  type: LoadBalancer
+  selector:
+    app: simpleblog-app
+  ports:
+  - port: 80
+    targetPort: 8000
+    protocol: TCP
+    name: http 
