@@ -11,7 +11,12 @@ def check():
     unencrypted_buckets = []
 
     try:
-        for bucket in s3.list_buckets()['Buckets']:
+        buckets = s3.list_buckets()['Buckets']
+        if not buckets:
+            print("[✓ INFO] 4.3 점검할 S3 버킷이 존재하지 않습니다.")
+            return []
+        
+        for bucket in buckets:
             bucket_name = bucket['Name']
             try:
                 s3.get_bucket_encryption(Bucket=bucket_name)

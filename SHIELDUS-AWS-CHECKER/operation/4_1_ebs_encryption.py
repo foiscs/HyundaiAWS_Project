@@ -30,6 +30,8 @@ def check():
         if findings['unencrypted_volumes']:
             print(f"[⚠ WARNING] 4.1 암호화되지 않은 EBS 볼륨이 존재합니다 ({len(findings['unencrypted_volumes'])}개).")
             for v in findings['unencrypted_volumes']: print(f"  ├─ {v['id']} ({v['region']})")
+        else:
+            print("[✓ INFO] 4.1 암호화되지 않은 EBS 볼륨이 존재하지 않습니다.")
         
         if not findings['non_default_regions'] and not findings['unencrypted_volumes']:
             print("[✓ COMPLIANT] 4.1 모든 리전의 기본 암호화가 활성화되어 있고, 암호화되지 않은 볼륨이 없습니다.")
