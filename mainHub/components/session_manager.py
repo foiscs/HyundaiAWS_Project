@@ -150,3 +150,66 @@ class SessionManager:
         for key in keys_to_delete:
             if key in st.session_state:
                 del st.session_state[key]
+    
+    @staticmethod
+    def get_diagnosis_stats():
+        """진단 현황 통계 반환"""
+        stats = {"idle": 0, "running": 0, "completed": 0, "failed": 0}
+        
+        for key in st.session_state.keys():
+            if key.startswith('diagnosis_status_'):
+                status = st.session_state[key]
+                if status == 'idle':
+                    stats['idle'] += 1
+                elif status == 'running':
+                    stats['running'] += 1
+                elif status == 'completed':
+                    result = st.session_state.get(key.replace('status', 'result'))
+                    if result and result.get('status') == 'success':
+                        stats['completed'] += 1
+                    else:
+                        stats['failed'] += 1
+        
+        return stats
+    
+    @staticmethod
+    def get_diagnosis_session_info():
+        """진단 세션 상세 정보 반환"""
+        diagnosis_sessions = {}
+        
+        for key in st.session_state.keys():
+            if key.startswith('diagnosis_status_'):
+                item_key = key.replace('diagnosis_status_', '')
+                status = st.session_state[key]
+                result = st.session_state.get(f'diagnosis_result_{item_key}')
+                
+                diagnosis_sessions[item_key] = {
+                    "status": status,
+                    "has_result": bool(result),
+                    "result_status": result.get('status') if result else None
+                }
+        
+        return diagnosis_sessions
+    
+    @staticmethod
+    def run_full_diagnosis_setup():
+        """전체 41개 항목 일괄 진단 상태 설정"""
+        from components.diagnosis_config import get_sk_shieldus_items
+        
+        st.session_state['full_diagnosis_running'] = True
+        
+        # 모든 진단 항목에 대해 진단 상태를 'running'으로 설정
+        sk_items = get_sk_shieldus_items()
+        
+        total_items = 0
+        for category, items in sk_items.items():
+            category_key = category.replace(' ', '_')
+            for index, item in enumerate(items):
+                item_key = f"{category_key}_{index}"
+                st.session_state[f'diagnosis_status_{item_key}'] = 'running'
+                total_items += 1
+        
+        # 모든 expander를 열어놓기 위한 플래그 설정
+        st.session_state['expand_all_items'] = True
+        
+        return total_items

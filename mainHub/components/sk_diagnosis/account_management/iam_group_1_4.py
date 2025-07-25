@@ -152,7 +152,7 @@ class IAMGroupChecker(BaseChecker):
                 with col_submit1:
                     if st.button("🚀 그룹 할당 실행", type="primary", key=f"execute_fix_{item_key}"):
                         if user_group_assignments:
-                            results = ui_handler._execute_group_assignment(user_group_assignments)
+                            results = ui_handler.engine._execute_group_assignment(user_group_assignments)
                             ui_handler._show_fix_results(results)
                             
                             # 조치 완료 후 폼 숨기기
