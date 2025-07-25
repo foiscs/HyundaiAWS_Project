@@ -389,12 +389,22 @@ resource "aws_security_group" "bastion" {
   vpc_id      = module.vpc.vpc_id
   description = "Security group for bastion host access"
 
+  # 기존 SSH 접근 (VPC 내부)
   ingress {
-    description = "SSH"
+    description = "SSH from VPC"
     from_port   = 22
     to_port     = 22
     protocol    = "tcp"
     cidr_blocks = var.allowed_ssh_cidrs
+  }
+
+  # GitHub Actions를 위한 전체 인터넷 SSH 접근 (임시 또는 조건부)
+  ingress {
+    description = "SSH from GitHub Actions"
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]  # 보안상 위험하지만 GitHub Actions용
   }
 
   egress {
@@ -480,7 +490,10 @@ resource "aws_iam_role_policy" "eks_app_policy" {
         Effect = "Allow"
         Action = [
           "rds:DescribeDBInstances",
-          "rds:DescribeDBClusters"
+          "rds:DescribeDBClusters",
+          "ec2:DescribeInstances",
+          "ec2:DescribeInstanceStatus",
+          "ec2:DescribeTags"
         ]
         Resource = "*"
       },
@@ -832,10 +845,15 @@ resource "aws_iam_role_policy" "github_actions_app_policy" {
           "elasticloadbalancing:DescribeLoadBalancers",
           "elasticloadbalancing:DescribeTargetGroups",
 
-          # SSM Parameter Store 권한 추가
+          # SSM Parameter Store 권한
           "ssm:GetParameter",
           "ssm:GetParameters",
           "ssm:GetParametersByPath",
+          
+          # EC2 권한 추가 (Bastion Host 조회용)
+          "ec2:DescribeInstances",
+          "ec2:DescribeInstanceStatus",
+          "ec2:DescribeTags",
           
           # 계정 정보 조회
           "sts:GetCallerIdentity"
@@ -845,6 +863,7 @@ resource "aws_iam_role_policy" "github_actions_app_policy" {
     ]
   })
 }
+
 # =========================================
 # EC2 Key Pair for Bastion Host
 # =========================================

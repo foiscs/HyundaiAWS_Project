@@ -280,50 +280,114 @@ jobs:
         # PostgreSQL 클라이언트 설치
         sudo apt-get update && sudo apt-get install -y postgresql-client
         
-        # 스키마 적용
-        echo "RDS 엔드포인트: ${{ env.RDS_ENDPOINT }}"
+        # 환경 변수 설정
+        PROJECT_NAME="walb-app"
+        DB_HOST="${{ env.RDS_ENDPOINT }}"
+        DB_NAME="mydb"
+        DB_USER="dbadmin"
         
-        # 연결 테스트
-        PGPASSWORD="${{ secrets.DB_PASSWORD }}" psql \
-          -h "${{ env.RDS_ENDPOINT }}" \
+        # Bastion Host IP 조회
+        BASTION_IP=$(aws ec2 describe-instances \
+          --filters "Name=tag:Name,Values=${PROJECT_NAME}-bastion-host" "Name=instance-state-name,Values=running" \
+          --query "Reservations[0].Instances[0].PublicIpAddress" \
+          --output text 2>/dev/null || echo "")
+        
+        if [ -z "$BASTION_IP" ] || [ "$BASTION_IP" == "None" ]; then
+          echo "❌ Bastion Host를 찾을 수 없습니다."
+          exit 1
+        fi
+        
+        echo "🔍 연결 정보:"
+        echo "  RDS 엔드포인트: $DB_HOST"
+        echo "  Bastion IP: $BASTION_IP"
+        echo "  DB 이름: $DB_NAME"
+        echo "  DB 사용자: $DB_USER"
+        
+        # SSH 키를 Parameter Store에서 가져오기
+        echo "🔑 SSH 키 가져오는 중..."
+        aws ssm get-parameter \
+          --name "/${PROJECT_NAME}/bastion/ssh-private-key" \
+          --with-decryption \
+          --query 'Parameter.Value' \
+          --output text > bastion_key.pem
+        chmod 600 bastion_key.pem
+        
+        # SSH 터널 생성 (백그라운드에서 실행)
+        echo "🔗 SSH 터널 생성 중..."
+        ssh -i bastion_key.pem \
+            -o StrictHostKeyChecking=no \
+            -o ExitOnForwardFailure=yes \
+            -L 5432:$DB_HOST:5432 \
+            ec2-user@$BASTION_IP \
+            -N &
+        SSH_PID=$!
+        
+        # 터널 설정 대기
+        echo "⏳ SSH 터널 설정 대기 중..."
+        sleep 15
+        
+        # SSH 터널 상태 확인
+        if ! kill -0 $SSH_PID 2>/dev/null; then
+          echo "❌ SSH 터널 생성 실패"
+          rm -f bastion_key.pem
+          exit 1
+        fi
+        
+        echo "✅ SSH 터널 생성 완료"
+        
+        # 로컬 포트를 통해 RDS 연결 테스트
+        echo "🔍 데이터베이스 연결 테스트 중..."
+        if ! PGPASSWORD="${{ secrets.DB_PASSWORD }}" psql \
+          -h localhost \
           -p 5432 \
-          -U dbadmin \
-          -d mydb \
+          -U "$DB_USER" \
+          -d "$DB_NAME" \
           -c "SELECT version();" \
-          -v ON_ERROR_STOP=1
+          -v ON_ERROR_STOP=1 >/dev/null 2>&1; then
+          echo "❌ 데이터베이스 연결 실패"
+          kill $SSH_PID 2>/dev/null
+          rm -f bastion_key.pem
+          exit 1
+        fi
+        
+        echo "✅ 데이터베이스 연결 성공"
         
         # 기존 테이블 확인
+        echo "🔍 기존 테이블 확인 중..."
         EXISTING_TABLES=$(PGPASSWORD="${{ secrets.DB_PASSWORD }}" psql \
-          -h "${{ env.RDS_ENDPOINT }}" \
+          -h localhost \
           -p 5432 \
-          -U dbadmin \
-          -d mydb \
+          -U "$DB_USER" \
+          -d "$DB_NAME" \
           -t -c "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_name IN ('users', 'posts', 'images', 'files');" \
           -v ON_ERROR_STOP=1 | tr -d ' ')
         
         if [ "$EXISTING_TABLES" -eq "0" ]; then
           echo "📝 스키마 파일 적용 중..."
-          PGPASSWORD="${{ secrets.DB_PASSWORD }}" psql \
-            -h "${{ env.RDS_ENDPOINT }}" \
+          if PGPASSWORD="${{ secrets.DB_PASSWORD }}" psql \
+            -h localhost \
             -p 5432 \
-            -U dbadmin \
-            -d mydb \
+            -U "$DB_USER" \
+            -d "$DB_NAME" \
             -f server/files/schema.sql \
-            -v ON_ERROR_STOP=1
-          echo "✅ 스키마 적용 완료"
+            -v ON_ERROR_STOP=1; then
+            echo "✅ 스키마 적용 완료"
+          else
+            echo "❌ 스키마 적용 실패"
+            kill $SSH_PID 2>/dev/null
+            rm -f bastion_key.pem
+            exit 1
+          fi
         else
           echo "ℹ️ 테이블이 이미 존재합니다. 스키마 적용을 건너뜁니다."
         fi
         
-        # 테이블 목록 확인
-        echo "📋 생성된 테이블 목록:"
-        PGPASSWORD="${{ secrets.DB_PASSWORD }}" psql \
-          -h "${{ env.RDS_ENDPOINT }}" \
-          -p 5432 \
-          -U dbadmin \
-          -d mydb \
-          -c "\dt" \
-          -v ON_ERROR_STOP=1
+        # 정리 작업
+        echo "🧹 정리 작업 중..."
+        kill $SSH_PID 2>/dev/null
+        rm -f bastion_key.pem
+        
+        echo "✅ 데이터베이스 스키마 작업 완료"
     
     # ===============================================
     # kubectl 설치 및 EKS 연결
