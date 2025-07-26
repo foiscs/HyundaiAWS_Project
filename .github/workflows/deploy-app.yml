@@ -241,8 +241,19 @@ jobs:
         
         # Bastion Host에서 RDS 연결 테스트 먼저 수행
         echo "🔍 Bastion Host에서 RDS 직접 연결 테스트 중..."
+        echo "  DB Host: $DB_HOST"
+        echo "  DB Port: 5432"
+        
+        # netcat 설치 및 연결 테스트
         ssh -i bastion_key.pem -o StrictHostKeyChecking=no -o ConnectTimeout=10 -o BatchMode=yes ec2-user@$BASTION_IP \
-          "timeout 10 nc -zv $DB_HOST 5432" || echo "⚠️ Bastion에서 RDS 직접 연결 실패"
+          "command -v nc >/dev/null 2>&1 || sudo yum install -y nc; echo 'Testing connection...'; timeout 10 nc -zv $DB_HOST 5432" || {
+          echo "⚠️ Bastion에서 RDS 직접 연결 실패"
+          echo "대체 연결 테스트 시도 중..."
+          
+          # telnet 대체 테스트
+          ssh -i bastion_key.pem -o StrictHostKeyChecking=no -o ConnectTimeout=10 -o BatchMode=yes ec2-user@$BASTION_IP \
+            "timeout 10 bash -c 'exec 3<>/dev/tcp/$DB_HOST/5432' && echo 'Raw socket connection successful' || echo 'Raw socket connection failed'"
+        }
         
         # 보안 그룹 정보 확인
         echo "🔍 보안 그룹 정보 확인 중..."
@@ -256,11 +267,17 @@ jobs:
         echo "Bastion Security Group: $BASTION_SG"
         echo "RDS Security Group: $RDS_SG"
         
-        # 보안 그룹 규칙 확인
+        # 보안 그룹 규칙 확인 (권한이 있는 경우에만)
         if [ -n "$RDS_SG" ]; then
-          echo "🔍 RDS 보안 그룹 인바운드 규칙:"
-          aws ec2 describe-security-groups --group-ids "$RDS_SG" \
-            --query "SecurityGroups[0].IpPermissions[?FromPort==\`5432\`]" --output table
+          echo "🔍 RDS 보안 그룹 인바운드 규칙 확인 시도..."
+          if aws ec2 describe-security-groups --group-ids "$RDS_SG" \
+            --query "SecurityGroups[0].IpPermissions[?FromPort==\`5432\`]" --output table 2>/dev/null; then
+            echo "✅ 보안 그룹 규칙 조회 성공"
+          else
+            echo "⚠️ 보안 그룹 규칙 조회 권한 없음 (정상 - 보안상 제한)"
+            echo "RDS Security Group ID: $RDS_SG"
+            echo "Bastion Security Group ID: $BASTION_SG"
+          fi
         fi
         
         # SSH 터널을 통한 PostgreSQL 연결 테스트
