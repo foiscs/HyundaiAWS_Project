@@ -11,6 +11,6 @@ aws_region         = "ap-northeast-2"
 environment        = "walb"
 project_name       = "walb-app"
 #create_launch_template = false
-enable_load_balancer = false
+enable_load_balancer = true
 application_port     = 30080
 github_repository = "foiscs/HyundaiAWS_Project"
