@@ -534,40 +534,53 @@ jobs:
         # IAM Role과 ServiceAccount 존재 확인
         echo "🔍 IAM Role 확인 중..."
         
-        # 여러 가능한 Role 이름 패턴 확인
-        ROLE_PATTERNS=(
-          "${{ env.EKS_CLUSTER_NAME }}-aws-load-balancer-controller"
-          "walb-eks-cluster-aws-load-balancer-controller"
-          "walb-app-aws-load-balancer-controller"
-        )
+        # EKS 클러스터 이름 기반으로 정확한 Role 이름 구성
+        PRIMARY_ROLE_NAME="${{ env.EKS_CLUSTER_NAME }}-aws-load-balancer-controller"
         
-        IAM_ROLE_ARN=""
-        FOUND_ROLE=""
+        echo "🔍 예상되는 IAM Role: $PRIMARY_ROLE_NAME"
         
-        for ROLE_NAME in "${ROLE_PATTERNS[@]}"; do
-          echo "🔍 IAM Role 확인: $ROLE_NAME"
-          if aws iam get-role --role-name "$ROLE_NAME" >/dev/null 2>&1; then
-            echo "✅ IAM Role 발견: $ROLE_NAME"
-            IAM_ROLE_ARN="arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/$ROLE_NAME"
-            FOUND_ROLE="$ROLE_NAME"
-            break
-          else
-            echo "⚠️ IAM Role 없음: $ROLE_NAME"
-          fi
-        done
-        
-        if [ -z "$FOUND_ROLE" ]; then
-          echo "❌ AWS Load Balancer Controller IAM Role을 찾을 수 없습니다."
-          echo "다음 패턴들을 확인했습니다:"
-          for pattern in "${ROLE_PATTERNS[@]}"; do
-            echo "  - $pattern"
+        # 먼저 예상되는 Role 이름으로 직접 확인
+        if aws iam get-role --role-name "$PRIMARY_ROLE_NAME" >/dev/null 2>&1; then
+          echo "✅ IAM Role 발견: $PRIMARY_ROLE_NAME"
+          IAM_ROLE_ARN="arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/$PRIMARY_ROLE_NAME"
+          FOUND_ROLE="$PRIMARY_ROLE_NAME"
+        else
+          echo "⚠️ 예상 Role 없음, 다른 패턴 확인 중..."
+          
+          # 백업 패턴들 확인
+          BACKUP_PATTERNS=(
+            "walb-eks-cluster-aws-load-balancer-controller"
+            "walb-app-aws-load-balancer-controller"
+          )
+          
+          FOUND_ROLE=""
+          for ROLE_NAME in "${BACKUP_PATTERNS[@]}"; do
+            echo "🔍 백업 패턴 확인: $ROLE_NAME"
+            if aws iam get-role --role-name "$ROLE_NAME" >/dev/null 2>&1; then
+              echo "✅ IAM Role 발견: $ROLE_NAME"
+              IAM_ROLE_ARN="arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/$ROLE_NAME"
+              FOUND_ROLE="$ROLE_NAME"
+              break
+            fi
           done
-          echo ""
-          echo "🔍 사용 가능한 IAM Role 목록:"
-          aws iam list-roles --query 'Roles[?contains(RoleName, `load-balancer`) || contains(RoleName, `alb`)].RoleName' --output table || echo "Role 조회 실패"
-          echo ""
-          echo "Terraform에서 enable_load_balancer = true로 설정하고 인프라를 다시 배포해주세요."
-          exit 1
+          
+          # 모든 패턴에서 찾지 못한 경우
+          if [ -z "$FOUND_ROLE" ]; then
+            echo "❌ AWS Load Balancer Controller IAM Role을 찾을 수 없습니다."
+            echo ""
+            echo "🔍 Load Balancer 관련 IAM Role 검색 중..."
+            if aws iam list-roles --query 'Roles[?contains(RoleName, `load-balancer`) || contains(RoleName, `alb`)].{RoleName:RoleName,CreateDate:CreateDate}' --output table 2>/dev/null; then
+              echo "위 Role들을 확인했지만 예상 패턴과 일치하지 않습니다."
+            else
+              echo "IAM Role 목록 조회 권한이 없습니다."
+            fi
+            echo ""
+            echo "해결 방법:"
+            echo "1. Terraform에서 enable_load_balancer = true로 설정"
+            echo "2. terraform apply로 인프라 재배포"
+            echo "3. 예상 Role 이름: $PRIMARY_ROLE_NAME"
+            exit 1
+          fi
         fi
         
         echo "✅ 사용할 IAM Role: $IAM_ROLE_ARN"

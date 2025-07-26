@@ -927,7 +927,11 @@ resource "aws_iam_role_policy" "github_actions_app_policy" {
           "ec2:DescribeTags",
           
           # 계정 정보 조회
-          "sts:GetCallerIdentity"
+          "sts:GetCallerIdentity",
+          
+          # IAM Role 조회 (AWS Load Balancer Controller Role 확인용)
+          "iam:ListRoles",
+          "iam:GetRole"
         ]
         Resource = "*"
       }
