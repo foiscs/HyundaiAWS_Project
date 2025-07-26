@@ -571,8 +571,28 @@ jobs:
         echo "⏳ AWS Load Balancer Controller Pod 시작 대기 중..."
         kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=aws-load-balancer-controller -n kube-system --timeout=300s
         
+        # 웹훅 서비스 준비 상태 확인
+        echo "🔍 웹훅 서비스 준비 상태 확인 중..."
+        for i in {1..12}; do
+          if kubectl get endpoints aws-load-balancer-webhook-service -n kube-system >/dev/null 2>&1; then
+            READY_ENDPOINTS=$(kubectl get endpoints aws-load-balancer-webhook-service -n kube-system -o jsonpath='{.subsets[*].addresses[*].ip}' | wc -w)
+            if [ "$READY_ENDPOINTS" -gt 0 ]; then
+              echo "✅ 웹훅 서비스 준비 완료 (Ready endpoints: $READY_ENDPOINTS)"
+              break
+            fi
+          fi
+          echo "웹훅 서비스 대기 중... ($i/12)"
+          sleep 10
+        done
+        
+        # 추가 안정화 대기
+        echo "⏳ Controller 완전 안정화 대기 중 (30초)..."
+        sleep 30
+        
         echo "✅ AWS Load Balancer Controller 설치 완료"
         kubectl get pods -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller
+        kubectl get service aws-load-balancer-webhook-service -n kube-system
+        kubectl get endpoints aws-load-balancer-webhook-service -n kube-system
 
     # ===============================================
     # Kubernetes 매니페스트 파일 생성
@@ -706,6 +726,20 @@ jobs:
             app: ${{ env.PROJECT_NAME }}-app
         EOF
         
+        # VPC 서브넷 정보 조회
+        echo "🔍 VPC 서브넷 정보 조회 중..."
+        PUBLIC_SUBNETS=$(aws ec2 describe-subnets \
+          --filters "Name=vpc-id,Values=$(aws eks describe-cluster --name ${{ env.EKS_CLUSTER_NAME }} --query "cluster.resourcesVpcConfig.vpcId" --output text)" \
+                    "Name=tag:Name,Values=*public*" \
+          --query "Subnets[*].SubnetId" --output text | tr '\t' ',')
+        
+        if [ -z "$PUBLIC_SUBNETS" ]; then
+          # 태그 기반 조회가 실패하면 EKS 서브넷 사용
+          PUBLIC_SUBNETS=$(aws eks describe-cluster --name ${{ env.EKS_CLUSTER_NAME }} --query "cluster.resourcesVpcConfig.subnetIds" --output text | tr '\t' ',')
+        fi
+        
+        echo "사용할 서브넷: $PUBLIC_SUBNETS"
+        
         # Ingress 생성 (AWS Load Balancer Controller 사용)
         cat <<EOF > ingress.yaml
         apiVersion: networking.k8s.io/v1
@@ -723,7 +757,7 @@ jobs:
             alb.ingress.kubernetes.io/healthcheck-timeout-seconds: '5'
             alb.ingress.kubernetes.io/healthy-threshold-count: '2'
             alb.ingress.kubernetes.io/unhealthy-threshold-count: '2'
-            alb.ingress.kubernetes.io/subnets: $(aws eks describe-cluster --name ${{ env.EKS_CLUSTER_NAME }} --query "cluster.resourcesVpcConfig.subnetIds" --output text | tr '\t' ',')
+            alb.ingress.kubernetes.io/subnets: $PUBLIC_SUBNETS
             alb.ingress.kubernetes.io/tags: Environment=${{ env.PROJECT_NAME }},Project=${{ env.PROJECT_NAME }}
         spec:
           ingressClassName: alb
@@ -769,7 +803,26 @@ jobs:
         kubectl apply -f secret.yaml
         kubectl apply -f deployment.yaml
         kubectl apply -f service.yaml
-        kubectl apply -f ingress.yaml
+        
+        # Ingress 배포 (재시도 로직 포함)
+        echo "🔗 Ingress 리소스 배포 중..."
+        for i in {1..5}; do
+          if kubectl apply -f ingress.yaml; then
+            echo "✅ Ingress 배포 성공"
+            break
+          else
+            echo "⚠️ Ingress 배포 실패 ($i/5) - 30초 후 재시도..."
+            if [ $i -lt 5 ]; then
+              sleep 30
+            else
+              echo "❌ Ingress 배포 최종 실패"
+              echo "AWS Load Balancer Controller 상태 확인:"
+              kubectl get pods -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller
+              kubectl logs -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller --tail=50 || true
+              exit 1
+            fi
+          fi
+        done
         
         echo "⏳ 배포 완료 대기 중..."
         kubectl rollout status deployment/${{ env.PROJECT_NAME }}-app -n ${{ env.PROJECT_NAME }} --timeout=300s
