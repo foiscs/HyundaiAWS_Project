@@ -43,6 +43,7 @@ def check():
         print(f"[ERROR] CloudTrail 조회 중 오류 발생: {e}")
         return False
 
+
 def fix():
     """
     [4.7] AWS 사용자 계정 접근 로깅 설정 조치
