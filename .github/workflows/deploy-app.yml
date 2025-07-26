@@ -647,40 +647,22 @@ jobs:
     # ===============================================
     # 배포 결과 확인
     # ===============================================
-    - name: Verify deployment
-      if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    - name: Verify Deployment
       run: |
-        echo "🔍 배포 상태 확인 중..."
+        kubectl get pods -n walb-app
+        kubectl get services -n walb-app
         
-        # Pod 상태 확인
-        echo "📦 Pod 상태:"
-        kubectl get pods -n ${{ env.PROJECT_NAME }} -l app=${{ env.PROJECT_NAME }}-app
+        # 로그 확인 (타임아웃 방지)
+        kubectl wait --for=condition=ready pod -l app=walb-app -n walb-app --timeout=300s
         
-        # Service 확인
-        echo "🌐 Service 상태:"
-        kubectl get svc -n ${{ env.PROJECT_NAME }}
+        # 직접 로그 대신 Pod 상태 확인
+        kubectl describe deployment walb-app-app -n walb-app
         
-        # Deployment 상태 확인
-        READY_REPLICAS=$(kubectl get deployment ${{ env.PROJECT_NAME }}-app -n ${{ env.PROJECT_NAME }} -o jsonpath='{.status.readyReplicas}')
-        DESIRED_REPLICAS=$(kubectl get deployment ${{ env.PROJECT_NAME }}-app -n ${{ env.PROJECT_NAME }} -o jsonpath='{.spec.replicas}')
-        
-        echo "준비된 레플리카: $READY_REPLICAS"
-        echo "원하는 레플리카: $DESIRED_REPLICAS"
-        
-        if [ "$READY_REPLICAS" = "$DESIRED_REPLICAS" ]; then
-          echo "✅ 배포가 성공적으로 완료되었습니다!"
-          
-          # 애플리케이션 로그 확인
-          echo "📋 애플리케이션 로그 (마지막 50줄):"
-          kubectl logs -l app=${{ env.PROJECT_NAME }}-app -n ${{ env.PROJECT_NAME }} --tail=50
-          
+        # 로그는 선택적으로만 시도
+        if kubectl logs -n walb-app deployment/walb-app-app --tail=10 --timeout=30s; then
+          echo "Logs retrieved successfully"
         else
-          echo "❌ 배포에 문제가 있습니다."
-          echo "🔍 상세 정보:"
-          kubectl describe deployment ${{ env.PROJECT_NAME }}-app -n ${{ env.PROJECT_NAME }}
-          echo "📋 Pod 로그:"
-          kubectl logs -l app=${{ env.PROJECT_NAME }}-app -n ${{ env.PROJECT_NAME }} --tail=100
-          exit 1
+          echo "Log retrieval timed out, but deployment status checked above"
         fi
     
     # ===============================================

@@ -323,6 +323,38 @@ resource "aws_security_group_rule" "node_group_from_cluster" {
   description             = "Communication with EKS cluster"
 }
 
+# EKS 클러스터 보안 그룹에 kubelet 포트 허용 규칙 추가
+resource "aws_security_group_rule" "cluster_kubelet_ingress" {
+  type                     = "ingress"
+  from_port                = 10250
+  to_port                  = 10250
+  protocol                 = "tcp"
+  source_security_group_id = aws_security_group.cluster.id
+  security_group_id        = aws_security_group.node_group.id
+  description              = "Allow kubelet communication from control plane"
+}
+
+resource "aws_security_group_rule" "cluster_kubelet_egress" {
+  type                     = "egress"
+  from_port                = 10250
+  to_port                  = 10250
+  protocol                 = "tcp"
+  source_security_group_id = aws_security_group.node_group.id
+  security_group_id        = aws_security_group.cluster.id
+  description              = "Allow kubelet communication to worker nodes"
+}
+
+# 노드 그룹 간 통신 허용
+resource "aws_security_group_rule" "node_to_node_kubelet" {
+  type                     = "ingress"
+  from_port                = 10250
+  to_port                  = 10250
+  protocol                 = "tcp"
+  self                     = true
+  security_group_id        = aws_security_group.node_group.id
+  description              = "Allow kubelet communication between nodes"
+}
+
 # 시작 템플릿 (노드 그룹용)
 resource "aws_launch_template" "node_group" {
   count = var.create_launch_template ? 1 : 0
