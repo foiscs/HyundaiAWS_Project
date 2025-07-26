@@ -154,13 +154,16 @@ resource "aws_security_group" "cluster" {
   vpc_id      = var.vpc_id
   description = "Security group for EKS cluster control plane"
 
-  # HTTPS 통신 (EKS API)
-  ingress {
-    from_port   = 443
-    to_port     = 443
-    protocol    = "tcp"
-    cidr_blocks = var.cluster_endpoint_private_access_cidrs
-    description = "HTTPS access to EKS API"
+  # HTTPS 통신 (EKS API) - 동적 규칙
+  dynamic "ingress" {
+    for_each = length(var.cluster_endpoint_private_access_cidrs) > 0 ? [1] : []
+    content {
+      from_port   = 443
+      to_port     = 443
+      protocol    = "tcp"
+      cidr_blocks = var.cluster_endpoint_private_access_cidrs
+      description = "HTTPS access to EKS API"
+    }
   }
 
   egress {
