@@ -533,13 +533,44 @@ jobs:
         
         # IAM Role과 ServiceAccount 존재 확인
         echo "🔍 IAM Role 확인 중..."
-        IAM_ROLE_ARN="arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/${{ env.EKS_CLUSTER_NAME }}-aws-load-balancer-controller"
-        if aws iam get-role --role-name "${{ env.EKS_CLUSTER_NAME }}-aws-load-balancer-controller" >/dev/null 2>&1; then
-          echo "✅ IAM Role 존재: $IAM_ROLE_ARN"
-        else
-          echo "❌ IAM Role이 존재하지 않습니다. Terraform 인프라 배포가 필요합니다."
+        
+        # 여러 가능한 Role 이름 패턴 확인
+        ROLE_PATTERNS=(
+          "${{ env.EKS_CLUSTER_NAME }}-aws-load-balancer-controller"
+          "walb-eks-cluster-aws-load-balancer-controller"
+          "walb-app-aws-load-balancer-controller"
+        )
+        
+        IAM_ROLE_ARN=""
+        FOUND_ROLE=""
+        
+        for ROLE_NAME in "${ROLE_PATTERNS[@]}"; do
+          echo "🔍 IAM Role 확인: $ROLE_NAME"
+          if aws iam get-role --role-name "$ROLE_NAME" >/dev/null 2>&1; then
+            echo "✅ IAM Role 발견: $ROLE_NAME"
+            IAM_ROLE_ARN="arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/$ROLE_NAME"
+            FOUND_ROLE="$ROLE_NAME"
+            break
+          else
+            echo "⚠️ IAM Role 없음: $ROLE_NAME"
+          fi
+        done
+        
+        if [ -z "$FOUND_ROLE" ]; then
+          echo "❌ AWS Load Balancer Controller IAM Role을 찾을 수 없습니다."
+          echo "다음 패턴들을 확인했습니다:"
+          for pattern in "${ROLE_PATTERNS[@]}"; do
+            echo "  - $pattern"
+          done
+          echo ""
+          echo "🔍 사용 가능한 IAM Role 목록:"
+          aws iam list-roles --query 'Roles[?contains(RoleName, `load-balancer`) || contains(RoleName, `alb`)].RoleName' --output table || echo "Role 조회 실패"
+          echo ""
+          echo "Terraform에서 enable_load_balancer = true로 설정하고 인프라를 다시 배포해주세요."
           exit 1
         fi
+        
+        echo "✅ 사용할 IAM Role: $IAM_ROLE_ARN"
         
         # 기존 ServiceAccount 확인 및 삭제 (재생성을 위해)
         if kubectl get serviceaccount aws-load-balancer-controller -n kube-system >/dev/null 2>&1; then
