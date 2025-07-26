@@ -38,7 +38,6 @@ provider "aws" {
       ManagedBy     = "Terraform"
       Owner         = "DevSecOps Team"
       CostCenter    = "Infrastructure"
-      CreatedDate   = formatdate("YYYY-MM-DD", timestamp())
       Component     = "Bootstrap"
     }
   }

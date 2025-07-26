@@ -61,9 +61,8 @@ data "aws_security_group" "rds_sg" {
   id = module.rds.security_group_id
 } 
 
-# Bastion에서 RDS로의 접근 허용 (관리 목적)
+# Bastion에서 RDS로의 접근 허용 (관리 목적) - 항상 생성
 resource "aws_security_group_rule" "rds_from_bastion" {
-  count                    = var.enable_bastion_host ? 1 : 0
   type                     = "ingress"
   from_port                = 5432
   to_port                  = 5432

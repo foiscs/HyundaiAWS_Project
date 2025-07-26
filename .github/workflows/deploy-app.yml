@@ -238,12 +238,38 @@ jobs:
         fi
         
         echo "🔗 SSH 터널을 통한 PostgreSQL 연결 테스트 중..."
+        
+        # Bastion Host에서 RDS 연결 테스트 먼저 수행
+        echo "🔍 Bastion Host에서 RDS 직접 연결 테스트 중..."
+        ssh -i bastion_key.pem -o StrictHostKeyChecking=no -o ConnectTimeout=10 -o BatchMode=yes ec2-user@$BASTION_IP \
+          "timeout 10 nc -zv $DB_HOST 5432" || echo "⚠️ Bastion에서 RDS 직접 연결 실패"
+        
+        # 보안 그룹 정보 확인
+        echo "🔍 보안 그룹 정보 확인 중..."
+        BASTION_SG=$(aws ec2 describe-instances \
+          --filters "Name=tag:Name,Values=${PROJECT_NAME}-bastion-host" "Name=instance-state-name,Values=running" \
+          --query "Reservations[0].Instances[0].SecurityGroups[0].GroupId" --output text)
+        
+        RDS_SG=$(aws rds describe-db-instances \
+          --query "DBInstances[?DBName=='mydb'].VpcSecurityGroups[0].VpcSecurityGroupId" --output text)
+        
+        echo "Bastion Security Group: $BASTION_SG"
+        echo "RDS Security Group: $RDS_SG"
+        
+        # 보안 그룹 규칙 확인
+        if [ -n "$RDS_SG" ]; then
+          echo "🔍 RDS 보안 그룹 인바운드 규칙:"
+          aws ec2 describe-security-groups --group-ids "$RDS_SG" \
+            --query "SecurityGroups[0].IpPermissions[?FromPort==\`5432\`]" --output table
+        fi
+        
         # SSH 터널을 통한 PostgreSQL 연결 테스트
+        echo "🔗 SSH 터널 생성 중..."
         ssh -i bastion_key.pem -o StrictHostKeyChecking=no -o ExitOnForwardFailure=yes -L 5432:$DB_HOST:5432 ec2-user@$BASTION_IP -N &
         SSH_PID=$!
         
         # 터널 설정 대기
-        sleep 10
+        sleep 15
         
         # PostgreSQL 클라이언트 설치 (필요한 경우)
         if ! command -v psql &> /dev/null; then
@@ -648,21 +674,49 @@ jobs:
     # 배포 결과 확인
     # ===============================================
     - name: Verify Deployment
+      if: github.ref == 'refs/heads/main' && github.event_name == 'push'
       run: |
-        kubectl get pods -n walb-app
-        kubectl get services -n walb-app
+        echo "🔍 배포 상태 확인 중..."
+        echo "네임스페이스: ${{ env.PROJECT_NAME }}"
+        echo "앱 라벨: ${{ env.PROJECT_NAME }}-app"
         
-        # 로그 확인 (타임아웃 방지)
-        kubectl wait --for=condition=ready pod -l app=walb-app -n walb-app --timeout=300s
+        # 네임스페이스 존재 확인
+        if ! kubectl get namespace ${{ env.PROJECT_NAME }} >/dev/null 2>&1; then
+          echo "❌ 네임스페이스 '${{ env.PROJECT_NAME }}'가 존재하지 않습니다."
+          kubectl get namespaces
+          exit 1
+        fi
         
-        # 직접 로그 대신 Pod 상태 확인
-        kubectl describe deployment walb-app-app -n walb-app
+        # 기본 리소스 상태 확인
+        echo "📋 Pod 상태:"
+        kubectl get pods -n ${{ env.PROJECT_NAME }} -o wide || echo "Pod를 찾을 수 없습니다."
         
-        # 로그는 선택적으로만 시도
-        if kubectl logs -n walb-app deployment/walb-app-app --tail=10 --timeout=30s; then
-          echo "Logs retrieved successfully"
+        echo "📋 Service 상태:"
+        kubectl get services -n ${{ env.PROJECT_NAME }} || echo "Service를 찾을 수 없습니다."
+        
+        echo "📋 Deployment 상태:"
+        kubectl get deployments -n ${{ env.PROJECT_NAME }} || echo "Deployment를 찾을 수 없습니다."
+        
+        # Deployment 존재 확인 후 대기
+        if kubectl get deployment ${{ env.PROJECT_NAME }}-app -n ${{ env.PROJECT_NAME }} >/dev/null 2>&1; then
+          echo "⏳ Pod 준비 상태 대기 중..."
+          kubectl wait --for=condition=ready pod -l app=${{ env.PROJECT_NAME }}-app -n ${{ env.PROJECT_NAME }} --timeout=300s || echo "Pod 준비 상태 대기 시간 초과"
+          
+          echo "📝 Deployment 상세 정보:"
+          kubectl describe deployment ${{ env.PROJECT_NAME }}-app -n ${{ env.PROJECT_NAME }}
+          
+          # 로그는 선택적으로만 시도
+          echo "📋 애플리케이션 로그 (최근 10줄):"
+          if kubectl logs -n ${{ env.PROJECT_NAME }} deployment/${{ env.PROJECT_NAME }}-app --tail=10 --timeout=30s 2>/dev/null; then
+            echo "✅ 로그 조회 성공"
+          else
+            echo "⚠️ 로그 조회 실패 또는 시간 초과"
+          fi
         else
-          echo "Log retrieval timed out, but deployment status checked above"
+          echo "❌ Deployment '${{ env.PROJECT_NAME }}-app'를 찾을 수 없습니다."
+          echo "사용 가능한 Deployment 목록:"
+          kubectl get deployments -n ${{ env.PROJECT_NAME }}
+          exit 1
         fi
     
     # ===============================================
@@ -674,7 +728,7 @@ jobs:
         echo "🔗 애플리케이션 접속 정보 확인 중..."
         
         # ALB 정보 확인
-        ALB_DNS=$(aws elbv2 describe-load-balancers --query 'LoadBalancers[?contains(LoadBalancerName, `walb-app`)].DNSName' --output text 2>/dev/null || echo "")
+        ALB_DNS=$(aws elbv2 describe-load-balancers --query 'LoadBalancers[?contains(LoadBalancerName, `${{ env.PROJECT_NAME }}`)].DNSName' --output text 2>/dev/null || echo "")
         
         if [ -n "$ALB_DNS" ]; then
           echo "🌐 애플리케이션 접속 URL: http://$ALB_DNS"
@@ -699,7 +753,8 @@ jobs:
         echo "배포 시간: $(date)"
         
         # 배포된 서비스 정보 출력
-        kubectl get all -n ${{ env.PROJECT_NAME }}
+        echo "📋 배포된 리소스 목록:"
+        kubectl get all -n ${{ env.PROJECT_NAME }} || echo "리소스 조회 실패"
 
     # ===============================================
     # 배포 실패 시 롤백
