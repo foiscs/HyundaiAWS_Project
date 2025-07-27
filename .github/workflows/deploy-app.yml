@@ -707,8 +707,22 @@ jobs:
 
           echo "✅ cert-manager 기본 설치 완료 (webhook 없이)"
 
-          # 4단계: ClusterIssuer 생성 (이제 webhook 없이 가능)
-          echo "4️⃣ Self-signed ClusterIssuer 생성 중..."
+          # 4단계: 전체 cert-manager 설치 (webhook 포함)
+          echo "4️⃣ 전체 cert-manager 설치 중 (webhook 포함)..."
+          kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.13.0/cert-manager.yaml
+
+          # 모든 Pod 준비 대기
+          echo "⏳ 모든 cert-manager Pod 준비 대기 중..."
+          kubectl wait --for=condition=ready pod -l app=cert-manager -n cert-manager --timeout=600s
+          kubectl wait --for=condition=ready pod -l app=webhook -n cert-manager --timeout=600s  
+          kubectl wait --for=condition=ready pod -l app=cainjector -n cert-manager --timeout=600s
+
+          # 최종 안정화 대기
+          echo "⏳ cert-manager 최종 안정화 대기 (60초)..."
+          sleep 60
+
+          # 5단계: ClusterIssuer 생성 (이제 webhook이 준비된 후)
+          echo "5️⃣ Self-signed ClusterIssuer 생성 중..."
           cat <<'EOF' | kubectl apply -f -
           apiVersion: cert-manager.io/v1
           kind: ClusterIssuer
@@ -723,21 +737,7 @@ jobs:
           sleep 10
           kubectl get clusterissuer selfsigned-issuer
 
-          # 5단계: 이제 전체 cert-manager 설치 (webhook 포함)
-          echo "5️⃣ 전체 cert-manager 설치 중 (webhook 포함)..."
-          kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.13.0/cert-manager.yaml
-
-          # 모든 Pod 준비 대기
-          echo "⏳ 모든 cert-manager Pod 준비 대기 중..."
-          kubectl wait --for=condition=ready pod -l app=cert-manager -n cert-manager --timeout=600s
-          kubectl wait --for=condition=ready pod -l app=webhook -n cert-manager --timeout=600s  
-          kubectl wait --for=condition=ready pod -l app=cainjector -n cert-manager --timeout=600s
-
-          # 최종 안정화 대기
-          echo "⏳ cert-manager 최종 안정화 대기 (60초)..."
-          sleep 60
-
-          # 6단계: webhook 기능 검증 및 ClusterIssuer 업데이트
+          # 6단계: webhook 기능 검증
           echo "6️⃣ cert-manager webhook 기능 검증 중..."
 
           # ValidatingAdmissionWebhook이 생성될 때까지 대기
