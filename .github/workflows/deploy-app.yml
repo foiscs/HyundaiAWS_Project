@@ -570,28 +570,103 @@ jobs:
         # cert-manager 네임스페이스 재생성
         kubectl create namespace cert-manager
         
-        # cert-manager 설치 (webhook 비활성화로 시작)
-        echo "📦 cert-manager 설치 중 (webhook 비활성화)..."
-        helm install cert-manager jetstack/cert-manager \
-          --namespace cert-manager \
-          --version v1.13.0 \
-          --set installCRDs=true \
-          --set webhook.enabled=false \
-          --set cainjector.enabled=true \
-          --set startupapicheck.enabled=false \
-          --timeout=600s \
-          --wait
+        # cert-manager kubectl 직접 설치 (더 안정적)
+        echo "📦 cert-manager kubectl 직접 설치 중..."
+        kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.13.0/cert-manager.yaml
         
-        echo "✅ cert-manager 기본 설치 완료 (webhook 비활성화)"
+        echo "✅ cert-manager 설치 완료"
         
-        # cert-manager와 cainjector Pod 준비 대기
-        echo "⏳ cert-manager 기본 Pod 준비 대기 중..."
-        kubectl wait --for=condition=ready pod -l app=cert-manager -n cert-manager --timeout=300s
-        kubectl wait --for=condition=ready pod -l app=cainjector -n cert-manager --timeout=300s
+        # cert-manager Pod 준비 상태 대기 (충분한 시간)
+        echo "⏳ cert-manager Pod 준비 대기 중..."
+        kubectl wait --for=condition=ready pod -l app=cert-manager -n cert-manager --timeout=600s
+        kubectl wait --for=condition=ready pod -l app=webhook -n cert-manager --timeout=600s  
+        kubectl wait --for=condition=ready pod -l app=cainjector -n cert-manager --timeout=600s
         
-        # Self-signed issuer 생성 (webhook용 TLS 인증서 생성을 위해)
+        # cert-manager 완전 안정화 대기
+        echo "⏳ cert-manager 완전 안정화 대기 (60초)..."
+        sleep 60
+        
+        # cert-manager webhook 서비스 확인
+        echo "🔍 cert-manager webhook 서비스 확인..."
+        kubectl get service cert-manager-webhook -n cert-manager
+        kubectl get endpoints cert-manager-webhook -n cert-manager
+        
+        # ValidatingAdmissionWebhook 확인
+        echo "🔍 ValidatingAdmissionWebhook 확인..."
+        kubectl get validatingadmissionwebhook cert-manager-webhook || echo "webhook 아직 준비 중..."
+        
+        # webhook 연결성 테스트 (강화된 검증)
+        echo "🔍 webhook 연결성 테스트..."
+        WEBHOOK_READY=false
+        for i in {1..15}; do
+          echo "webhook 테스트 시도 ($i/15)..."
+          
+          # 1단계: ValidatingAdmissionWebhook 존재 확인
+          if kubectl get validatingadmissionwebhook cert-manager-webhook >/dev/null 2>&1; then
+            echo "✅ ValidatingAdmissionWebhook 존재"
+            
+            # 2단계: webhook 서비스 엔드포인트 확인
+            ENDPOINTS=$(kubectl get endpoints cert-manager-webhook -n cert-manager -o jsonpath='{.subsets[*].addresses[*].ip}' 2>/dev/null || echo "")
+            if [ -n "$ENDPOINTS" ]; then
+              echo "✅ webhook 엔드포인트 준비: $ENDPOINTS"
+              
+              # 3단계: webhook readiness 확인
+              if kubectl get --raw /api/v1/namespaces/cert-manager/services/cert-manager-webhook:https:webhook/proxy/readyz 2>/dev/null; then
+                echo "✅ webhook readiness 테스트 성공"
+                
+                # 4단계: 실제 webhook 기능 테스트 (간단한 dry-run)
+                if kubectl apply --dry-run=server -f - <<EOF 2>/dev/null
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: test-cert
+  namespace: cert-manager
+spec:
+  secretName: test-cert-tls
+  commonName: test.example.com
+  issuerRef:
+    name: test-issuer
+    kind: ClusterIssuer
+EOF
+                then
+                  echo "✅ webhook 기능 테스트 성공"
+                  WEBHOOK_READY=true
+                  break
+                else
+                  echo "⚠️ webhook 기능 테스트 실패"
+                fi
+              else
+                echo "⚠️ webhook readiness 테스트 실패"
+              fi
+            else
+              echo "⚠️ webhook 엔드포인트 아직 준비되지 않음"
+            fi
+          else
+            echo "⚠️ ValidatingAdmissionWebhook 아직 생성되지 않음"
+          fi
+          
+          if [ $i -lt 15 ]; then
+            echo "15초 후 재시도..."
+            sleep 15
+          fi
+        done
+        
+        if [ "$WEBHOOK_READY" = false ]; then
+          echo "❌ cert-manager webhook 준비 실패"
+          echo "Pod 상태 확인:"
+          kubectl get pods -n cert-manager -o wide
+          echo "서비스 상태 확인:"
+          kubectl get services -n cert-manager
+          echo "이벤트 확인:"
+          kubectl get events -n cert-manager --sort-by='.lastTimestamp' | tail -10
+          exit 1
+        fi
+        
+        # Self-signed issuer 생성 (webhook 준비 후)
         echo "🔐 Self-signed issuer 생성 중..."
-        cat <<EOF | kubectl apply -f -
+        for i in {1..5}; do
+          echo "ClusterIssuer 생성 시도 ($i/5)..."
+          if cat <<EOF | kubectl apply -f -
         apiVersion: cert-manager.io/v1
         kind: ClusterIssuer
         metadata:
@@ -599,61 +674,18 @@ jobs:
         spec:
           selfSigned: {}
         EOF
+          then
+            echo "✅ ClusterIssuer 생성 성공"
+            break
+          else
+            echo "⚠️ ClusterIssuer 생성 실패, 30초 후 재시도..."
+            sleep 30
+          fi
+        done
         
-        # cert-manager webhook용 TLS 인증서 생성
-        echo "📜 cert-manager webhook TLS 인증서 생성 중..."
-        cat <<EOF | kubectl apply -f -
-        apiVersion: cert-manager.io/v1
-        kind: Certificate
-        metadata:
-          name: cert-manager-webhook-tls
-          namespace: cert-manager
-        spec:
-          secretName: cert-manager-webhook-tls
-          issuerRef:
-            name: selfsigned-issuer
-            kind: ClusterIssuer
-          dnsNames:
-          - cert-manager-webhook
-          - cert-manager-webhook.cert-manager
-          - cert-manager-webhook.cert-manager.svc
-          - cert-manager-webhook.cert-manager.svc.cluster.local
-        EOF
-        
-        # 인증서 생성 대기
-        echo "⏳ TLS 인증서 생성 대기 중..."
-        kubectl wait --for=condition=ready certificate cert-manager-webhook-tls -n cert-manager --timeout=300s
-        
-        # webhook 활성화로 업그레이드
-        echo "🔄 cert-manager webhook 활성화 중..."
-        helm upgrade cert-manager jetstack/cert-manager \
-          --namespace cert-manager \
-          --version v1.13.0 \
-          --set installCRDs=true \
-          --set webhook.enabled=true \
-          --set webhook.securePort=10250 \
-          --set webhook.hostNetwork=false \
-          --set webhook.servingCerts.caCert="" \
-          --set webhook.servingCerts.cert="" \
-          --set webhook.servingCerts.key="" \
-          --set cainjector.enabled=true \
-          --set startupapicheck.enabled=false \
-          --timeout=600s \
-          --wait
-        
-        # 모든 cert-manager Pod 준비 상태 대기
-        echo "⏳ cert-manager 전체 Pod 준비 대기 중..."
-        kubectl wait --for=condition=ready pod -l app=cert-manager -n cert-manager --timeout=300s
-        kubectl wait --for=condition=ready pod -l app=webhook -n cert-manager --timeout=300s
-        kubectl wait --for=condition=ready pod -l app=cainjector -n cert-manager --timeout=300s
-        
-        # cert-manager webhook 상태 확인
-        echo "🔍 cert-manager webhook 상태 확인..."
-        kubectl get validatingadmissionwebhook cert-manager-webhook 2>/dev/null || echo "cert-manager webhook 아직 생성되지 않음"
-        
-        # cert-manager 안정화 대기
-        echo "⏳ cert-manager 안정화 대기 (30초)..."
-        sleep 30
+        # ClusterIssuer 준비 대기
+        echo "⏳ ClusterIssuer 준비 대기..."
+        kubectl wait --for=condition=ready clusterissuer selfsigned-issuer --timeout=300s || echo "ClusterIssuer 대기 시간 초과"
         
         echo "✅ cert-manager 설치 완료"
         kubectl get pods -n cert-manager
