@@ -2,7 +2,7 @@ import boto3
 from botocore.exceptions import ClientError
 
 def check():
-    print("[INFO] 3.7 S3 버킷/객체 접근 관리 체크 중...")
+    print("[INFO] 3.7 S3 사용자 정책 접근 제어 체크 중...")
     s3 = boto3.client('s3')
     s3_control = boto3.client('s3control')
     sts = boto3.client('sts')
