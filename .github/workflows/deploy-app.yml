@@ -521,54 +521,43 @@ jobs:
           kubectl get nodes --show-labels
 
       # ===============================================
-      # 기존 ALB 정보 조회 (Terraform으로 생성된 것 사용)
+      # AWS Load Balancer Controller 확인
       # ===============================================
-      - name: Get existing ALB information
+      - name: Check AWS Load Balancer Controller
         run: |
-          echo "🔍 기존 ALB 정보 조회 중..."
+          echo "🔍 AWS Load Balancer Controller 상태 확인 중..."
           
-          # Terraform으로 생성된 ALB 조회
-          ALB_ARN=$(aws elbv2 describe-load-balancers \
-            --names "walb-app-alb" \
-            --query 'LoadBalancers[0].LoadBalancerArn' \
-            --output text 2>/dev/null || echo "")
-          
-          if [ -z "$ALB_ARN" ] || [ "$ALB_ARN" == "None" ]; then
-            echo "❌ walb-app-alb를 찾을 수 없습니다. 사용 가능한 ALB 확인:"
-            aws elbv2 describe-load-balancers --query 'LoadBalancers[*].[LoadBalancerName,LoadBalancerArn]' --output table
+          # AWS Load Balancer Controller Pod 확인
+          if kubectl get pods -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller >/dev/null 2>&1; then
+            echo "✅ AWS Load Balancer Controller Pod 발견"
+            kubectl get pods -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller
+          else
+            echo "❌ AWS Load Balancer Controller를 찾을 수 없습니다."
+            echo "Terraform으로 AWS Load Balancer Controller를 먼저 설치해주세요."
             exit 1
           fi
           
-          # ALB DNS 이름 조회
-          ALB_DNS=$(aws elbv2 describe-load-balancers \
-            --names "walb-app-alb" \
-            --query 'LoadBalancers[0].DNSName' \
-            --output text)
-          
-          # Target Group ARN 조회
-          TARGET_GROUP_ARN=$(aws elbv2 describe-target-groups \
-            --names "walb-app-eks-nodes-tg" \
-            --query 'TargetGroups[0].TargetGroupArn' \
-            --output text 2>/dev/null || echo "")
-          
-          if [ -z "$TARGET_GROUP_ARN" ] || [ "$TARGET_GROUP_ARN" == "None" ]; then
-            echo "❌ walb-app-eks-nodes-tg Target Group을 찾을 수 없습니다."
-            echo "사용 가능한 Target Group 확인:"
-            aws elbv2 describe-target-groups --query 'TargetGroups[*].[TargetGroupName,TargetGroupArn]' --output table
+          # IngressClass 확인
+          if kubectl get ingressclass alb >/dev/null 2>&1; then
+            echo "✅ IngressClass 'alb' 확인됨"
+            kubectl get ingressclass alb
+          else
+            echo "❌ IngressClass 'alb'를 찾을 수 없습니다."
+            echo "사용 가능한 IngressClass:"
+            kubectl get ingressclass
             exit 1
           fi
           
-          echo "✅ 기존 ALB 정보:"
-          echo "  ALB ARN: $ALB_ARN"
-          echo "  ALB DNS: $ALB_DNS" 
-          echo "  Target Group ARN: $TARGET_GROUP_ARN"
+          # ValidatingAdmissionWebhook 확인
+          if kubectl get validatingadmissionwebhook | grep -E "(vingress|aws-load-balancer)" >/dev/null 2>&1; then
+            echo "✅ ValidatingAdmissionWebhook 확인됨"
+            kubectl get validatingadmissionwebhook | grep -E "(vingress|aws-load-balancer)"
+          else
+            echo "⚠️ ValidatingAdmissionWebhook를 찾을 수 없습니다."
+            echo "AWS Load Balancer Controller가 아직 완전히 준비되지 않았을 수 있습니다."
+          fi
           
-          # 환경 변수로 저장
-          echo "EXISTING_ALB_ARN=$ALB_ARN" >> $GITHUB_ENV
-          echo "EXISTING_ALB_DNS=$ALB_DNS" >> $GITHUB_ENV
-          echo "EXISTING_TARGET_GROUP_ARN=$TARGET_GROUP_ARN" >> $GITHUB_ENV
-          
-          echo "✅ 기존 ALB 정보 확인 완료 - Terraform 생성 ALB 재사용"
+          echo "✅ AWS Load Balancer Controller 확인 완료 - Ingress 기반 ALB 생성 준비됨"
 
       # ===============================================
       # Kubernetes 매니페스트 파일 생성
@@ -682,7 +671,7 @@ jobs:
                     readOnlyRootFilesystem: false
           EOF
 
-          # Service 생성 (기존 ALB Target Group 연결용)
+          # Service 생성 (Ingress 기반이므로 ClusterIP 사용)
           cat <<EOF > service.yaml
           apiVersion: v1
           kind: Service
@@ -691,14 +680,8 @@ jobs:
             namespace: ${{ env.PROJECT_NAME }}
             labels:
               app: ${{ env.PROJECT_NAME }}-app
-            annotations:
-              # 기존 ALB Target Group 연결
-              service.beta.kubernetes.io/aws-load-balancer-target-group-arn: ${{ env.EXISTING_TARGET_GROUP_ARN }}
-              service.beta.kubernetes.io/aws-load-balancer-type: "external"
-              service.beta.kubernetes.io/aws-load-balancer-nlb-target-type: "ip"
-              service.beta.kubernetes.io/aws-load-balancer-scheme: "internet-facing"
           spec:
-            type: LoadBalancer
+            type: ClusterIP
             ports:
             - port: 80
               targetPort: 80
@@ -708,8 +691,58 @@ jobs:
               app: ${{ env.PROJECT_NAME }}-app
           EOF
 
-          echo "✅ 기존 ALB 재사용 방식으로 매니페스트 생성 완료"
-          echo "🔗 기존 ALB DNS: ${{ env.EXISTING_ALB_DNS }}"
+          # Ingress 생성 (AWS Load Balancer Controller 사용)
+          cat <<EOF > ingress.yaml
+          apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            name: ${{ env.PROJECT_NAME }}-ingress
+            namespace: ${{ env.PROJECT_NAME }}
+            annotations:
+              # AWS Application Load Balancer 설정
+              alb.ingress.kubernetes.io/scheme: internet-facing
+              alb.ingress.kubernetes.io/target-type: ip
+              alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}]'
+              
+              # Health Check 설정 (PHP 애플리케이션)
+              alb.ingress.kubernetes.io/healthcheck-path: /healthcheck.php
+              alb.ingress.kubernetes.io/healthcheck-interval-seconds: '30'
+              alb.ingress.kubernetes.io/healthcheck-timeout-seconds: '10'
+              alb.ingress.kubernetes.io/healthy-threshold-count: '2'
+              alb.ingress.kubernetes.io/unhealthy-threshold-count: '3'
+              alb.ingress.kubernetes.io/healthcheck-protocol: HTTP
+              alb.ingress.kubernetes.io/healthcheck-port: '80'
+              
+              # Load Balancer 설정
+              alb.ingress.kubernetes.io/load-balancer-name: ${{ env.PROJECT_NAME }}-ingress-alb
+              alb.ingress.kubernetes.io/target-group-attributes: |
+                stickiness.enabled=false,
+                deregistration_delay.timeout_seconds=60,
+                load_balancing.algorithm.type=round_robin,
+                slow_start.duration_seconds=30
+                
+              # 태그 설정
+              alb.ingress.kubernetes.io/tags: |
+                Environment=${{ env.PROJECT_NAME }},
+                Project=${{ env.PROJECT_NAME }},
+                ManagedBy=Kubernetes,
+                CreatedBy=AWS-Load-Balancer-Controller,
+                Application=PHP-Blog
+          spec:
+            ingressClassName: alb
+            rules:
+            - http:
+                paths:
+                - path: /
+                  pathType: Prefix
+                  backend:
+                    service:
+                      name: ${{ env.PROJECT_NAME }}-service
+                      port:
+                        number: 80
+          EOF
+
+          echo "✅ Ingress 기반 매니페스트 생성 완료"
 
           # ServiceAccount 생성 (IRSA용)
           cat <<EOF > serviceaccount.yaml
@@ -742,46 +775,63 @@ jobs:
           kubectl apply -f deployment.yaml
           kubectl apply -f service.yaml
 
-          # 기존 ALB와 연결 (LoadBalancer Service 사용)
-          echo "🔗 기존 ALB와 Service 연결 중..."
+          # Ingress 배포 (AWS Load Balancer Controller로 ALB 생성)
+          echo "🔗 Ingress 리소스 배포 중..."
           
-          # LoadBalancer Service를 통한 기존 Target Group 연결 대기
-          echo "⏳ LoadBalancer Service와 기존 ALB 연결 대기 중..."
-          SERVICE_READY=false
-          for i in {1..15}; do
-            # Service의 LoadBalancer 상태 확인
-            LB_STATUS=$(kubectl get service ${{ env.PROJECT_NAME }}-service -n ${{ env.PROJECT_NAME }} -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "")
+          # Ingress 배포
+          echo "🚀 Ingress 배포 시작..."
+          if kubectl apply -f ingress.yaml; then
+            echo "✅ Ingress 리소스 생성 성공"
             
-            if [ -n "$LB_STATUS" ]; then
-              echo "✅ LoadBalancer Service 연결 완료"
-              SERVICE_READY=true
-              break
+            # ALB 생성 대기
+            echo "⏳ AWS Load Balancer Controller에 의한 ALB 생성 대기 중..."
+            ALB_CREATED=false
+            for i in {1..25}; do
+              ALB_DNS=$(kubectl get ingress ${{ env.PROJECT_NAME }}-ingress -n ${{ env.PROJECT_NAME }} -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "")
+              if [ -n "$ALB_DNS" ]; then
+                echo "✅ ALB 생성 완료: $ALB_DNS"
+                echo "ALB_HOSTNAME=$ALB_DNS" >> $GITHUB_ENV
+                echo "DEPLOYMENT_METHOD=Ingress" >> $GITHUB_ENV
+                ALB_CREATED=true
+                break
+              fi
+              
+              # 진행 상황 확인
+              if [ $((i % 5)) -eq 0 ]; then
+                echo "🔍 Ingress 상태 확인 (${i}/25)..."
+                kubectl get ingress ${{ env.PROJECT_NAME }}-ingress -n ${{ env.PROJECT_NAME }} || true
+                kubectl describe ingress ${{ env.PROJECT_NAME }}-ingress -n ${{ env.PROJECT_NAME }} | grep -E "(Events|Address)" || true
+              fi
+              
+              echo "ALB 생성 대기 중... ($i/25)"
+              sleep 20
+            done
+            
+            if [ "$ALB_CREATED" != "true" ]; then
+              echo "⚠️ ALB 생성 시간 초과 - 상세 진단 실행"
+              
+              echo "🔍 Ingress 상세 상태:"
+              kubectl get ingress ${{ env.PROJECT_NAME }}-ingress -n ${{ env.PROJECT_NAME }} -o yaml || true
+              kubectl describe ingress ${{ env.PROJECT_NAME }}-ingress -n ${{ env.PROJECT_NAME }} || true
+              
+              echo "🔍 AWS Load Balancer Controller 로그:"
+              kubectl logs -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller --tail=100 || true
+              
+              echo "DEPLOYMENT_METHOD=Ingress-Pending" >> $GITHUB_ENV
+              echo "ALB_HOSTNAME=pending" >> $GITHUB_ENV
             fi
             
-            # 진행 상황 확인
-            if [ $((i % 3)) -eq 0 ]; then
-              echo "🔍 Service 상태 확인 (${i}/15)..."
-              kubectl get service ${{ env.PROJECT_NAME }}-service -n ${{ env.PROJECT_NAME }} || true
-              kubectl describe service ${{ env.PROJECT_NAME }}-service -n ${{ env.PROJECT_NAME }} | grep -E "(Events|External|LoadBalancer)" || true
-            fi
-            
-            echo "LoadBalancer Service 연결 대기 중... ($i/15)"
-            sleep 20
-          done
-          
-          if [ "$SERVICE_READY" != "true" ]; then
-            echo "⚠️ LoadBalancer Service 연결이 지연되고 있습니다."
-            echo "🔍 Service 상세 상태:"
-            kubectl get service ${{ env.PROJECT_NAME }}-service -n ${{ env.PROJECT_NAME }} -o yaml || true
-            kubectl describe service ${{ env.PROJECT_NAME }}-service -n ${{ env.PROJECT_NAME }} || true
-            echo "기존 ALB는 여전히 사용 가능합니다: ${{ env.EXISTING_ALB_DNS }}"
+          else
+            echo "❌ Ingress 배포 실패"
+            echo "🔍 진단 정보:"
+            kubectl get pods -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller
+            kubectl logs -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller --tail=50 || true
+            kubectl get validatingadmissionwebhook | grep -E "(vingress|aws-load-balancer)" || echo "웹훅 없음"
+            kubectl get ingressclass || true
+            exit 1
           fi
           
-          # 기존 ALB 정보를 환경 변수에 저장
-          echo "ALB_HOSTNAME=${{ env.EXISTING_ALB_DNS }}" >> $GITHUB_ENV
-          echo "DEPLOYMENT_METHOD=ExistingALB" >> $GITHUB_ENV
-          
-          echo "✅ 기존 ALB 사용 방식으로 배포 완료"
+          echo "✅ Ingress 기반 ALB 배포 완료"
 
           echo "⏳ 배포 완료 대기 중..."
           kubectl rollout status deployment/${{ env.PROJECT_NAME }}-app -n ${{ env.PROJECT_NAME }} --timeout=300s
@@ -813,9 +863,11 @@ jobs:
           echo "📋 Deployment 상태:"
           kubectl get deployments -n ${{ env.PROJECT_NAME }} || echo "Deployment를 찾을 수 없습니다."
 
-          echo "📋 기존 ALB 연결 상태:"
-          echo "  ALB DNS: ${{ env.EXISTING_ALB_DNS }}"
-          echo "  Target Group: ${{ env.EXISTING_TARGET_GROUP_ARN }}"
+          echo "📋 Ingress 상태:"
+          kubectl get ingress -n ${{ env.PROJECT_NAME }} || echo "Ingress를 찾을 수 없습니다."
+
+          echo "📋 AWS Load Balancer Controller 상태:"
+          kubectl get pods -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller || echo "AWS Load Balancer Controller를 찾을 수 없습니다."
 
           # Deployment 존재 확인 후 대기
           if kubectl get deployment ${{ env.PROJECT_NAME }}-app -n ${{ env.PROJECT_NAME }} >/dev/null 2>&1; then
@@ -841,38 +893,31 @@ jobs:
           echo "🔗 애플리케이션 접속 정보 확인 중..."
           echo "배포 방법: ${DEPLOYMENT_METHOD:-Unknown}"
 
-          if [ "${DEPLOYMENT_METHOD:-}" = "ExistingALB" ]; then
-            echo "🌐 기존 ALB (Terraform 생성)를 통해 배포됨"
-            echo "🔗 애플리케이션 접속 URL: http://${ALB_HOSTNAME:-확인불가}"
+          if [ "${DEPLOYMENT_METHOD:-}" = "Ingress" ]; then
+            echo "🔗 Ingress로 배포됨"
+            echo "🌐 애플리케이션 접속 URL: http://${ALB_HOSTNAME:-확인불가}"
             
-            # Target Group의 Healthy 상태 확인
-            echo "🔍 Target Group Health 상태 확인..."
-            if [ -n "${{ env.EXISTING_TARGET_GROUP_ARN }}" ]; then
-              HEALTHY_COUNT=$(aws elbv2 describe-target-health \
-                --target-group-arn "${{ env.EXISTING_TARGET_GROUP_ARN }}" \
-                --query 'TargetHealthDescriptions[?TargetHealth.State==`healthy`] | length(@)' \
-                --output text 2>/dev/null || echo "0")
-              TOTAL_COUNT=$(aws elbv2 describe-target-health \
-                --target-group-arn "${{ env.EXISTING_TARGET_GROUP_ARN }}" \
-                --query 'TargetHealthDescriptions | length(@)' \
-                --output text 2>/dev/null || echo "0")
-              
-              echo "Target Group 상태: ${HEALTHY_COUNT}/${TOTAL_COUNT} healthy"
-              
-              if [ "$HEALTHY_COUNT" -gt "0" ]; then
-                echo "✅ 애플리케이션이 정상적으로 연결되었습니다!"
-              else
-                echo "⚠️ Target이 아직 healthy 상태가 아닙니다. 잠시 후 다시 확인하세요."
-              fi
-            fi
+            echo "🔍 Ingress 상태:"
+            kubectl describe ingress ${{ env.PROJECT_NAME }}-ingress -n ${{ env.PROJECT_NAME }}
             
-            echo "🔍 LoadBalancer Service 상태:"
-            kubectl describe service ${{ env.PROJECT_NAME }}-service -n ${{ env.PROJECT_NAME }}
+          elif [ "${DEPLOYMENT_METHOD:-}" = "Ingress-Pending" ]; then
+            echo "⚠️ Ingress ALB 생성이 진행 중입니다"
+            echo "🔍 현재 Ingress 상태:"
+            kubectl get ingress ${{ env.PROJECT_NAME }}-ingress -n ${{ env.PROJECT_NAME }}
+            kubectl describe ingress ${{ env.PROJECT_NAME }}-ingress -n ${{ env.PROJECT_NAME }}
+            
+            echo "🔍 AWS Load Balancer Controller 로그:"
+            kubectl logs -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller --tail=20 || true
+            
+            echo "잠시 후 ALB가 생성되면 다음 명령어로 URL을 확인하세요:"
+            echo "kubectl get ingress ${{ env.PROJECT_NAME }}-ingress -n ${{ env.PROJECT_NAME }}"
             
           else
             echo "❓ 배포 방법을 확인할 수 없습니다."
             echo "사용 가능한 서비스 확인:"
             kubectl get services -n ${{ env.PROJECT_NAME }}
+            echo "사용 가능한 Ingress 확인:"
+            kubectl get ingress -n ${{ env.PROJECT_NAME }}
           fi
 
           # 공통 디버깅 정보

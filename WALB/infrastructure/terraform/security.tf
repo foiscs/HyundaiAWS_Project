@@ -61,18 +61,6 @@ data "aws_security_group" "rds_sg" {
   id = module.rds.security_group_id
 } 
 
-# Bastion에서 RDS로의 접근 허용 (관리 목적) - 항상 생성
-resource "aws_security_group_rule" "rds_from_bastion" {
-  type                     = "ingress"
-  from_port                = 5432
-  to_port                  = 5432
-  protocol                 = "tcp"
-  source_security_group_id = aws_security_group.bastion.id
-  security_group_id        = module.rds.security_group_id
-  description              = "Allow Bastion access to RDS for management"
-}
-
-
 # =========================================
 # Application Load Balancer 보안 그룹
 # =========================================
