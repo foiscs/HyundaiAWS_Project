@@ -2,6 +2,7 @@
 import boto3
 from botocore.exceptions import ClientError
 
+
 def check():
     """
     [4.9] RDS 로깅 설정 점검 - PostgreSQL 전용

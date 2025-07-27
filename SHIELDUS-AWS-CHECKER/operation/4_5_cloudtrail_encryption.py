@@ -51,19 +51,36 @@ def fix(not_kms_encrypted_trails):
     print("[FIX] 4.5 CloudTrail SSE-KMS 암호화 조치를 시작합니다.")
 
     try:
-        key_arn = input("  -> 사용할 KMS Key ARN을 입력하세요 (새로 생성하려면 'new' 입력): ").strip()
-        if not key_arn:
-            print("     [ERROR] KMS 키를 입력하지 않았습니다. 'new' 또는 alias/arn 형식으로 입력해야 합니다.")
-            return
         account_id = boto3.client('sts').get_caller_identity()['Account']
         region = boto3.session.Session().region_name
+        alias_name = "alias/cloudtrail-autokey"
+        key_arn = None
+
+        # 1. 먼저 기존 alias 존재 여부 확인
+        existing_aliases = kms.list_aliases()['Aliases']
+        alias_dict = {a['AliasName']: a['TargetKeyId'] for a in existing_aliases if 'AliasName' in a and 'TargetKeyId' in a}
+
+        if alias_name in alias_dict:
+            print(f"[INFO] KMS 별칭 '{alias_name}'이 이미 존재합니다.")
+            use = input("  → 해당 키를 사용하시겠습니까? (y/n): ").strip().lower()
+            if use == 'y':
+                key_id = alias_dict[alias_name]
+                key_arn = f"arn:aws:kms:{region}:{account_id}:key/{key_id}"
+                print(f"[INFO] 기존 키 ARN 사용: {key_arn}")
+            else:
+                key_arn = input("  -> 사용할 KMS Key ARN을 입력하세요 (새로 생성하려면 'new' 입력): ").strip()
+        else:
+            key_arn = input("  -> 사용할 KMS Key ARN을 입력하세요 (새로 생성하려면 'new' 입력): ").strip()
+
+        # 2. 입력된 값 처리
+        if not key_arn:
+            print("     [ERROR] KMS 키를 입력하지 않았습니다. fix()를 다시 실행해주세요.")
+            return
 
         if key_arn.lower() == 'new':
-            timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
-            alias_name = f"alias/cloudtrail-autokey-{timestamp}"
-
+            print(f"[INFO] 별칭 '{alias_name}'로 새 KMS 키를 생성합니다.")
             response = kms.create_key(
-                Description=f'CloudTrail 암호화를 위한 자동 생성 KMS 키 ({timestamp})',
+                Description='CloudTrail 암호화를 위한 자동 생성 KMS 키',
                 KeyUsage='ENCRYPT_DECRYPT',
                 Origin='AWS_KMS'
             )
@@ -98,25 +115,27 @@ def fix(not_kms_encrypted_trails):
             )
 
             kms.create_alias(AliasName=alias_name, TargetKeyId=key_id)
-            print(f"     [INFO] 새로운 KMS 키를 생성했습니다.")
-            print(f"     [INFO] 별칭: {alias_name}")
-            print(f"     [INFO] Key ARN: {key_arn}")
+            print(f"[SUCCESS] 새 KMS 키 생성 완료")
+            print(f"[INFO] 별칭: {alias_name}")
+            print(f"[INFO] Key ARN: {key_arn}")
 
-        else:
-            # 입력된 키가 실제 존재하는지 확인
-            aliases = kms.list_aliases()['Aliases']
-            alias_names = [a['AliasName'] for a in aliases if 'AliasName' in a]
-            if key_arn.startswith("alias/"):
-                if key_arn not in alias_names:
-                    print(f"     [ERROR] 입력한 KMS alias '{key_arn}'를 찾을 수 없습니다.")
-                    return
-            elif key_arn.startswith("arn:"):
-                try:
-                    kms.describe_key(KeyId=key_arn)
-                except ClientError:
-                    print(f"     [ERROR] 입력한 KMS 키 ARN '{key_arn}'를 찾을 수 없습니다.")
-                    return
+        elif key_arn.startswith("alias/"):
+            alias_match = [a for a in existing_aliases if a.get('AliasName') == key_arn]
+            if not alias_match:
+                print(f"[ERROR] 입력한 alias '{key_arn}'를 찾을 수 없습니다.")
+                return
+            key_id = alias_match[0]['TargetKeyId']
+            key_arn = f"arn:aws:kms:{region}:{account_id}:key/{key_id}"
+            print(f"[INFO] 입력한 별칭 alias를 기반으로 키 ARN 해석 완료: {key_arn}")
 
+        elif key_arn.startswith("arn:"):
+            try:
+                kms.describe_key(KeyId=key_arn)
+            except ClientError:
+                print(f"[ERROR] 입력한 KMS 키 ARN '{key_arn}'를 찾을 수 없습니다.")
+                return
+
+        # 3. 암호화 적용
         for trail_name in not_kms_encrypted_trails:
             if input(f"  -> Trail '{trail_name}'에 KMS 암호화를 적용하시겠습니까? (y/n): ").lower() == 'y':
                 try:
@@ -126,7 +145,7 @@ def fix(not_kms_encrypted_trails):
                     print(f"     [ERROR] Trail '{trail_name}' 암호화 적용 실패: {e}")
 
     except ClientError as e:
-        print(f"     [ERROR] KMS 키 생성 또는 설정 중 오류 발생: {e}")
+        print(f"[ERROR] KMS 키 생성 또는 설정 중 오류 발생: {e}")
 
 
 if __name__ == "__main__":

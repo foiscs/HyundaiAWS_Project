@@ -23,3 +23,4 @@ def fix(manual_check_required):
 if __name__ == "__main__":
     required = check()
     fix(required)
+    

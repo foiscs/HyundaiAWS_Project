@@ -4,7 +4,6 @@ from botocore.exceptions import ClientError
 from datetime import datetime, timezone
 import json
 
-
 def check():
     """
     [4.7] AWS 사용자 계정 접근 로깅 설정
