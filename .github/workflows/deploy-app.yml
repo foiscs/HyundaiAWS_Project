@@ -378,120 +378,196 @@ jobs:
             rm -f bastion_key.pem
             exit 1
           fi
-        else
-          echo "ℹ️ 테이블이 이미 존재합니다. 스키마 적용을 건너뜁니다."
-        fi
-        
-        # 정리 작업
-        echo "🧹 정리 작업 중..."
-        kill $SSH_PID 2>/dev/null
-        rm -f bastion_key.pem
-        
-        echo "✅ 데이터베이스 스키마 작업 완료"
-    
-    # ===============================================
-    # kubectl 설치 및 EKS 연결
-    # ===============================================
-    - name: Install kubectl
-      uses: azure/setup-kubectl@v3
-      with:
-        version: 'v1.28.0'
-    
-    - name: Update kubeconfig for EKS
-      run: |
-        echo "🔧 EKS 클러스터 kubeconfig 업데이트 중..."
-        
-        # 현재 AWS 자격 증명 확인
-        echo "🔍 현재 AWS 자격 증명 확인..."
-        aws sts get-caller-identity
-        
-        # EKS 클러스터 이름 조회 (여러 방법 시도)
-        echo "🔍 EKS 클러스터 조회 중..."
-        
-        # 방법 1: 클러스터 목록에서 첫 번째 조회
-        EKS_CLUSTER_NAME=$(aws eks list-clusters --query 'clusters[0]' --output text 2>/dev/null || echo "")
-        
-        # 방법 2: 특정 이름으로 조회
-        if [ -z "$EKS_CLUSTER_NAME" ] || [ "$EKS_CLUSTER_NAME" == "None" ]; then
-          EKS_CLUSTER_NAME="walb-eks-cluster"
-          echo "기본 클러스터 이름 사용: $EKS_CLUSTER_NAME"
-        fi
-        
-        # 클러스터 존재 확인
-        if ! aws eks describe-cluster --name "$EKS_CLUSTER_NAME" --region ${{ secrets.AWS_REGION }} >/dev/null 2>&1; then
-          echo "❌ EKS 클러스터 '$EKS_CLUSTER_NAME'를 찾을 수 없습니다."
-          echo "사용 가능한 클러스터 목록:"
-          aws eks list-clusters --region ${{ secrets.AWS_REGION }}
-          exit 1
-        fi
-        
-        echo "✅ EKS 클러스터: $EKS_CLUSTER_NAME"
-        echo "EKS_CLUSTER_NAME=$EKS_CLUSTER_NAME" >> $GITHUB_ENV
-        
-        # 클러스터 상태 확인
-        CLUSTER_STATUS=$(aws eks describe-cluster --name "$EKS_CLUSTER_NAME" --region ${{ secrets.AWS_REGION }} --query 'cluster.status' --output text)
-        echo "클러스터 상태: $CLUSTER_STATUS"
-        
-        if [ "$CLUSTER_STATUS" != "ACTIVE" ]; then
-          echo "❌ 클러스터가 ACTIVE 상태가 아닙니다: $CLUSTER_STATUS"
-          exit 1
-        fi
-        
-        # kubeconfig 업데이트 (상세 로그 포함)
-        echo "🔧 kubeconfig 업데이트 중..."
-        aws eks update-kubeconfig --region ${{ secrets.AWS_REGION }} --name "$EKS_CLUSTER_NAME" --verbose
-        
-        # kubeconfig 파일 확인
-        echo "📋 kubeconfig 파일 내용:"
-        cat ~/.kube/config
-        
-        # AWS CLI 버전 확인
-        echo "🔍 AWS CLI 버전:"
-        aws --version
-        
-        # kubectl 버전 확인
-        echo "🔍 kubectl 버전:"
-        kubectl version --client
-        
-        # 클러스터 연결 테스트 (자세한 오류 정보 포함)
-        echo "🔍 클러스터 연결 테스트..."
-        if ! kubectl cluster-info --request-timeout=30s; then
-          echo "❌ kubectl cluster-info 실패. 추가 진단 정보:"
+
+          echo "✅ 데이터베이스 연결 성공"
+
+          # 기존 테이블 확인
+          echo "🔍 기존 테이블 확인 중..."
+          EXISTING_TABLES=$(PGPASSWORD="${{ secrets.DB_PASSWORD }}" psql \
+            -h localhost \
+            -p 5432 \
+            -U "$DB_USER" \
+            -d "$DB_NAME" \
+            -t -c "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_name IN ('users', 'posts', 'images', 'files');" \
+            -v ON_ERROR_STOP=1 | tr -d ' ')
+
+          if [ "$EXISTING_TABLES" -eq "0" ]; then
+            echo "📝 스키마 파일 적용 중..."
+            if PGPASSWORD="${{ secrets.DB_PASSWORD }}" psql \
+              -h localhost \
+              -p 5432 \
+              -U "$DB_USER" \
+              -d "$DB_NAME" \
+              -f server/files/schema.sql \
+              -v ON_ERROR_STOP=1; then
+              echo "✅ 스키마 적용 완료"
+            else
+              echo "❌ 스키마 적용 실패"
+              kill $SSH_PID 2>/dev/null
+              rm -f bastion_key.pem
+              exit 1
+            fi
+          else
+            echo "ℹ️ 테이블이 이미 존재합니다. 스키마 적용을 건너뜁니다."
+          fi
+
+          # 정리 작업
+          echo "🧹 정리 작업 중..."
+          kill $SSH_PID 2>/dev/null
+          rm -f bastion_key.pem
+
+          echo "✅ 데이터베이스 스키마 작업 완료"
+
+      # ===============================================
+      # kubectl 및 Helm 설치
+      # ===============================================
+      - name: Install kubectl and Helm
+        run: |
+          echo "🔧 kubectl 및 Helm 설치 중..."
+
+          # kubectl 설치
+          curl -LO "https://dl.k8s.io/release/v1.28.0/bin/linux/amd64/kubectl"
+          chmod +x kubectl
+          sudo mv kubectl /usr/local/bin/
+
+          # Helm 설치
+          curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+
+          echo "✅ kubectl 및 Helm 설치 완료"
+          kubectl version --client
+          helm version
+
+      - name: Update kubeconfig for EKS
+        run: |
+          echo "🔧 EKS 클러스터 kubeconfig 업데이트 중..."
+
+          # 현재 AWS 자격 증명 확인
+          echo "🔍 현재 AWS 자격 증명 확인..."
+          aws sts get-caller-identity
+
+          # EKS 클러스터 이름 조회 (여러 방법 시도)
+          echo "🔍 EKS 클러스터 조회 중..."
+
+          # 방법 1: 클러스터 목록에서 첫 번째 조회
+          EKS_CLUSTER_NAME=$(aws eks list-clusters --query 'clusters[0]' --output text 2>/dev/null || echo "")
+
+          # 방법 2: 특정 이름으로 조회
+          if [ -z "$EKS_CLUSTER_NAME" ] || [ "$EKS_CLUSTER_NAME" == "None" ]; then
+            EKS_CLUSTER_NAME="walb-eks-cluster"
+            echo "기본 클러스터 이름 사용: $EKS_CLUSTER_NAME"
+          fi
+
+          # 클러스터 존재 확인
+          if ! aws eks describe-cluster --name "$EKS_CLUSTER_NAME" --region ${{ secrets.AWS_REGION }} >/dev/null 2>&1; then
+            echo "❌ EKS 클러스터 '$EKS_CLUSTER_NAME'를 찾을 수 없습니다."
+            echo "사용 가능한 클러스터 목록:"
+            aws eks list-clusters --region ${{ secrets.AWS_REGION }}
+            exit 1
+          fi
+
+          echo "✅ EKS 클러스터: $EKS_CLUSTER_NAME"
+          echo "EKS_CLUSTER_NAME=$EKS_CLUSTER_NAME" >> $GITHUB_ENV
+
+          # 클러스터 상태 확인
+          CLUSTER_STATUS=$(aws eks describe-cluster --name "$EKS_CLUSTER_NAME" --region ${{ secrets.AWS_REGION }} --query 'cluster.status' --output text)
+          echo "클러스터 상태: $CLUSTER_STATUS"
+
+          if [ "$CLUSTER_STATUS" != "ACTIVE" ]; then
+            echo "❌ 클러스터가 ACTIVE 상태가 아닙니다: $CLUSTER_STATUS"
+            exit 1
+          fi
+
+          # kubeconfig 업데이트 (상세 로그 포함)
+          echo "🔧 kubeconfig 업데이트 중..."
+          aws eks update-kubeconfig --region ${{ secrets.AWS_REGION }} --name "$EKS_CLUSTER_NAME" --verbose
+
+          # 클러스터 연결 테스트 (자세한 오류 정보 포함)
+          echo "🔍 클러스터 연결 테스트..."
+          if ! kubectl cluster-info --request-timeout=30s; then
+            echo "❌ kubectl cluster-info 실패. 추가 진단 정보:"
+            
+            # kubectl 설정 확인
+            echo "kubectl 설정 확인:"
+            kubectl config view
+            
+            # 현재 컨텍스트 확인
+            echo "현재 컨텍스트:"
+            kubectl config current-context
+            
+            # 클러스터 엔드포인트 직접 테스트
+            CLUSTER_ENDPOINT=$(aws eks describe-cluster --name "$EKS_CLUSTER_NAME" --region ${{ secrets.AWS_REGION }} --query 'cluster.endpoint' --output text)
+            echo "클러스터 엔드포인트: $CLUSTER_ENDPOINT"
+            
+            # IAM 역할과 RBAC 매핑 확인
+            echo "EKS 클러스터의 aws-auth ConfigMap 확인이 필요할 수 있습니다."
+            exit 1
+          fi
+
+          echo "🔍 노드 상태 확인..."
+          kubectl get nodes --show-labels
+
+      # ===============================================
+      # 기존 ALB 정보 조회 (Terraform으로 생성된 것 사용)
+      # ===============================================
+      - name: Get existing ALB information
+        run: |
+          echo "🔍 기존 ALB 정보 조회 중..."
           
-          # kubectl 설정 확인
-          echo "kubectl 설정 확인:"
-          kubectl config view
+          # Terraform으로 생성된 ALB 조회
+          ALB_ARN=$(aws elbv2 describe-load-balancers \
+            --names "walb-app-alb" \
+            --query 'LoadBalancers[0].LoadBalancerArn' \
+            --output text 2>/dev/null || echo "")
           
-          # 현재 컨텍스트 확인
-          echo "현재 컨텍스트:"
-          kubectl config current-context
+          if [ -z "$ALB_ARN" ] || [ "$ALB_ARN" == "None" ]; then
+            echo "❌ walb-app-alb를 찾을 수 없습니다. 사용 가능한 ALB 확인:"
+            aws elbv2 describe-load-balancers --query 'LoadBalancers[*].[LoadBalancerName,LoadBalancerArn]' --output table
+            exit 1
+          fi
           
-          # 클러스터 엔드포인트 직접 테스트
-          CLUSTER_ENDPOINT=$(aws eks describe-cluster --name "$EKS_CLUSTER_NAME" --region ${{ secrets.AWS_REGION }} --query 'cluster.endpoint' --output text)
-          echo "클러스터 엔드포인트: $CLUSTER_ENDPOINT"
+          # ALB DNS 이름 조회
+          ALB_DNS=$(aws elbv2 describe-load-balancers \
+            --names "walb-app-alb" \
+            --query 'LoadBalancers[0].DNSName' \
+            --output text)
           
-          # IAM 역할과 RBAC 매핑 확인
-          echo "EKS 클러스터의 aws-auth ConfigMap 확인이 필요할 수 있습니다."
-          exit 1
-        fi
-        
-        echo "🔍 노드 상태 확인..."
-        kubectl get nodes --show-labels
-    
-    # ===============================================
-    # Kubernetes 매니페스트 파일 생성
-    # ===============================================
-    - name: Generate Kubernetes manifests
-      run: |
-        echo "📝 Kubernetes 매니페스트 생성 중..."
-        
-        # Namespace 생성
-        cat <<EOF > namespace.yaml
-        apiVersion: v1
-        kind: Namespace
-        metadata:
-          name: ${{ env.PROJECT_NAME }}
-          labels:
+          # Target Group ARN 조회
+          TARGET_GROUP_ARN=$(aws elbv2 describe-target-groups \
+            --names "walb-app-eks-nodes-tg" \
+            --query 'TargetGroups[0].TargetGroupArn' \
+            --output text 2>/dev/null || echo "")
+          
+          if [ -z "$TARGET_GROUP_ARN" ] || [ "$TARGET_GROUP_ARN" == "None" ]; then
+            echo "❌ walb-app-eks-nodes-tg Target Group을 찾을 수 없습니다."
+            echo "사용 가능한 Target Group 확인:"
+            aws elbv2 describe-target-groups --query 'TargetGroups[*].[TargetGroupName,TargetGroupArn]' --output table
+            exit 1
+          fi
+          
+          echo "✅ 기존 ALB 정보:"
+          echo "  ALB ARN: $ALB_ARN"
+          echo "  ALB DNS: $ALB_DNS" 
+          echo "  Target Group ARN: $TARGET_GROUP_ARN"
+          
+          # 환경 변수로 저장
+          echo "EXISTING_ALB_ARN=$ALB_ARN" >> $GITHUB_ENV
+          echo "EXISTING_ALB_DNS=$ALB_DNS" >> $GITHUB_ENV
+          echo "EXISTING_TARGET_GROUP_ARN=$TARGET_GROUP_ARN" >> $GITHUB_ENV
+          
+          echo "✅ 기존 ALB 정보 확인 완료 - Terraform 생성 ALB 재사용"
+
+      # ===============================================
+      # Kubernetes 매니페스트 파일 생성
+      # ===============================================
+      - name: Generate Kubernetes manifests
+        run: |
+          echo "📝 Kubernetes 매니페스트 생성 중..."
+
+          # Namespace 생성
+          cat <<EOF > namespace.yaml
+          apiVersion: v1
+          kind: Namespace
+          metadata:
             name: ${{ env.PROJECT_NAME }}
         EOF
         
@@ -550,164 +626,274 @@ jobs:
             metadata:
               labels:
                 app: ${{ env.PROJECT_NAME }}-app
-            spec:
-              serviceAccountName: ${{ env.PROJECT_NAME }}-service-account
-              containers:
-              - name: php-app
-                image: ${{ steps.build-image.outputs.image }}
-                ports:
-                - containerPort: 80
-                  name: http
-                envFrom:
-                - configMapRef:
-                    name: ${{ env.PROJECT_NAME }}-config
-                - secretRef:
-                    name: ${{ env.PROJECT_NAME }}-secret
-                livenessProbe:
-                  httpGet:
-                    path: /healthcheck.php
-                    port: 80
-                  initialDelaySeconds: 60
-                  periodSeconds: 30
-                  timeoutSeconds: 10
-                readinessProbe:
-                  httpGet:
-                    path: /healthcheck.php
-                    port: 80
-                  initialDelaySeconds: 30
-                  periodSeconds: 10
-                  timeoutSeconds: 5
-                resources:
-                  requests:
-                    memory: "256Mi"
-                    cpu: "250m"
-                  limits:
-                    memory: "512Mi"
-                    cpu: "500m"
-                securityContext:
-                  runAsNonRoot: false
-                  allowPrivilegeEscalation: false
-                  readOnlyRootFilesystem: false
-        EOF
-        
-        # Service 생성
-        cat <<EOF > service.yaml
-        apiVersion: v1
-        kind: Service
-        metadata:
-          name: ${{ env.PROJECT_NAME }}-service
-          namespace: ${{ env.PROJECT_NAME }}
-          labels:
-            app: ${{ env.PROJECT_NAME }}-app
-        spec:
-          type: ClusterIP
-          ports:
-          - port: 80
-            targetPort: 80
-            protocol: TCP
-            name: http
-          selector:
-            app: ${{ env.PROJECT_NAME }}-app
-        EOF
-        
-        # ServiceAccount 생성 (IRSA용)
-        cat <<EOF > serviceaccount.yaml
-        apiVersion: v1
-        kind: ServiceAccount
-        metadata:
-          name: ${{ env.PROJECT_NAME }}-service-account
-          namespace: ${{ env.PROJECT_NAME }}
-          annotations:
-            eks.amazonaws.com/role-arn: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/walb-app-eks-app-role
-        EOF
-        
-        echo "✅ 매니페스트 파일 생성 완료"
-    
-    # ===============================================
-    # EKS에 애플리케이션 배포 (main 브랜치일 때만)
-    # ===============================================
-    - name: Deploy to EKS
-      if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-      run: |
-        echo "🚀 EKS에 애플리케이션 배포 중..."
-        
-        # Namespace 먼저 생성
-        kubectl apply -f namespace.yaml
-        
-        # 나머지 리소스 배포
-        kubectl apply -f serviceaccount.yaml
-        kubectl apply -f configmap.yaml
-        kubectl apply -f secret.yaml
-        kubectl apply -f deployment.yaml
-        kubectl apply -f service.yaml
-        
-        echo "⏳ 배포 완료 대기 중..."
-        kubectl rollout status deployment/${{ env.PROJECT_NAME }}-app -n ${{ env.PROJECT_NAME }} --timeout=300s
-    
-    # ===============================================
-    # 배포 결과 확인
-    # ===============================================
-    - name: Verify Deployment
-      run: |
-        kubectl get pods -n walb-app
-        kubectl get services -n walb-app
-        
-        # 로그 확인 (타임아웃 방지)
-        kubectl wait --for=condition=ready pod -l app=walb-app -n walb-app --timeout=300s
-        
-        # 직접 로그 대신 Pod 상태 확인
-        kubectl describe deployment walb-app-app -n walb-app
-        
-        # 로그는 선택적으로만 시도
-        if kubectl logs -n walb-app deployment/walb-app-app --tail=10 --timeout=30s; then
-          echo "Logs retrieved successfully"
-        else
-          echo "Log retrieval timed out, but deployment status checked above"
-        fi
-    
-    # ===============================================
-    # LoadBalancer 설정 확인 및 접속 URL 제공
-    # ===============================================
-    - name: Get Application URL
-      if: success() && github.ref == 'refs/heads/main' && github.event_name == 'push'
-      run: |
-        echo "🔗 애플리케이션 접속 정보 확인 중..."
-        
-        # ALB 정보 확인
-        ALB_DNS=$(aws elbv2 describe-load-balancers --query 'LoadBalancers[?contains(LoadBalancerName, `walb-app`)].DNSName' --output text 2>/dev/null || echo "")
-        
-        if [ -n "$ALB_DNS" ]; then
-          echo "🌐 애플리케이션 접속 URL: http://$ALB_DNS"
-        else
-          echo "ℹ️ LoadBalancer DNS를 찾을 수 없습니다. kubectl port-forward를 사용하세요:"
-          echo "kubectl port-forward -n ${{ env.PROJECT_NAME }} svc/${{ env.PROJECT_NAME }}-service 8080:80"
-        fi
-    
-    # ===============================================
-    # 배포 완료 알림
-    # ===============================================
-    - name: Application Deployment Notification
-      if: success() && github.ref == 'refs/heads/main' && github.event_name == 'push'
-      run: |
-        echo "🎉 PHP 애플리케이션 배포 완료!"
-        echo "프로젝트: ${{ env.PROJECT_NAME }}"
-        echo "이미지: ${{ steps.build-image.outputs.image }}"
-        echo "클러스터: ${{ env.EKS_CLUSTER_NAME }}"
-        echo "네임스페이스: ${{ env.PROJECT_NAME }}"
-        echo "데이터베이스: ${{ env.RDS_ENDPOINT }}"
-        echo "커밋: ${{ github.sha }}"
-        echo "배포 시간: $(date)"
-        
-        # 배포된 서비스 정보 출력
-        kubectl get all -n ${{ env.PROJECT_NAME }}
+            template:
+              metadata:
+                labels:
+                  app: ${{ env.PROJECT_NAME }}-app
+              spec:
+                serviceAccountName: ${{ env.PROJECT_NAME }}-service-account
+                containers:
+                - name: php-app
+                  image: ${{ steps.build-image.outputs.image }}
+                  ports:
+                  - containerPort: 80
+                    name: http
+                  envFrom:
+                  - configMapRef:
+                      name: ${{ env.PROJECT_NAME }}-config
+                  - secretRef:
+                      name: ${{ env.PROJECT_NAME }}-secret
+                  livenessProbe:
+                    httpGet:
+                      path: /healthcheck.php
+                      port: 80
+                    initialDelaySeconds: 60
+                    periodSeconds: 30
+                    timeoutSeconds: 10
+                  readinessProbe:
+                    httpGet:
+                      path: /healthcheck.php
+                      port: 80
+                    initialDelaySeconds: 30
+                    periodSeconds: 10
+                    timeoutSeconds: 5
+                  resources:
+                    requests:
+                      memory: "256Mi"
+                      cpu: "250m"
+                    limits:
+                      memory: "512Mi"
+                      cpu: "500m"
+                  securityContext:
+                    runAsNonRoot: false
+                    allowPrivilegeEscalation: false
+                    readOnlyRootFilesystem: false
+          EOF
 
-    # ===============================================
-    # 배포 실패 시 롤백
-    # ===============================================
-    - name: Rollback on failure
-      if: failure() && github.ref == 'refs/heads/main' && github.event_name == 'push'
-      run: |
-        echo "❌ 배포 실패 - 이전 버전으로 롤백 중..."
-        kubectl rollout undo deployment/${{ env.PROJECT_NAME }}-app -n ${{ env.PROJECT_NAME }} || true
-        kubectl rollout status deployment/${{ env.PROJECT_NAME }}-app -n ${{ env.PROJECT_NAME }} --timeout=300s || true
-        echo "✅ 롤백 시도 완료"
+          # Service 생성 (기존 ALB Target Group 연결용)
+          cat <<EOF > service.yaml
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: ${{ env.PROJECT_NAME }}-service
+            namespace: ${{ env.PROJECT_NAME }}
+            labels:
+              app: ${{ env.PROJECT_NAME }}-app
+            annotations:
+              # 기존 ALB Target Group 연결
+              service.beta.kubernetes.io/aws-load-balancer-target-group-arn: ${{ env.EXISTING_TARGET_GROUP_ARN }}
+              service.beta.kubernetes.io/aws-load-balancer-type: "external"
+              service.beta.kubernetes.io/aws-load-balancer-nlb-target-type: "ip"
+              service.beta.kubernetes.io/aws-load-balancer-scheme: "internet-facing"
+          spec:
+            type: LoadBalancer
+            ports:
+            - port: 80
+              targetPort: 80
+              protocol: TCP
+              name: http
+            selector:
+              app: ${{ env.PROJECT_NAME }}-app
+          EOF
+
+          echo "✅ 기존 ALB 재사용 방식으로 매니페스트 생성 완료"
+          echo "🔗 기존 ALB DNS: ${{ env.EXISTING_ALB_DNS }}"
+
+          # ServiceAccount 생성 (IRSA용)
+          cat <<EOF > serviceaccount.yaml
+          apiVersion: v1
+          kind: ServiceAccount
+          metadata:
+            name: ${{ env.PROJECT_NAME }}-service-account
+            namespace: ${{ env.PROJECT_NAME }}
+            annotations:
+              eks.amazonaws.com/role-arn: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/walb-app-eks-app-role
+          EOF
+
+          echo "✅ 매니페스트 파일 생성 완료"
+
+      # ===============================================
+      # EKS에 애플리케이션 배포 (main 브랜치일 때만)
+      # ===============================================
+      - name: Deploy to EKS
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        run: |
+          echo "🚀 EKS에 애플리케이션 배포 중..."
+
+          # Namespace 먼저 생성
+          kubectl apply -f namespace.yaml
+
+          # 나머지 리소스 배포
+          kubectl apply -f serviceaccount.yaml
+          kubectl apply -f configmap.yaml
+          kubectl apply -f secret.yaml
+          kubectl apply -f deployment.yaml
+          kubectl apply -f service.yaml
+
+          # 기존 ALB와 연결 (LoadBalancer Service 사용)
+          echo "🔗 기존 ALB와 Service 연결 중..."
+          
+          # LoadBalancer Service를 통한 기존 Target Group 연결 대기
+          echo "⏳ LoadBalancer Service와 기존 ALB 연결 대기 중..."
+          SERVICE_READY=false
+          for i in {1..15}; do
+            # Service의 LoadBalancer 상태 확인
+            LB_STATUS=$(kubectl get service ${{ env.PROJECT_NAME }}-service -n ${{ env.PROJECT_NAME }} -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "")
+            
+            if [ -n "$LB_STATUS" ]; then
+              echo "✅ LoadBalancer Service 연결 완료"
+              SERVICE_READY=true
+              break
+            fi
+            
+            # 진행 상황 확인
+            if [ $((i % 3)) -eq 0 ]; then
+              echo "🔍 Service 상태 확인 (${i}/15)..."
+              kubectl get service ${{ env.PROJECT_NAME }}-service -n ${{ env.PROJECT_NAME }} || true
+              kubectl describe service ${{ env.PROJECT_NAME }}-service -n ${{ env.PROJECT_NAME }} | grep -E "(Events|External|LoadBalancer)" || true
+            fi
+            
+            echo "LoadBalancer Service 연결 대기 중... ($i/15)"
+            sleep 20
+          done
+          
+          if [ "$SERVICE_READY" != "true" ]; then
+            echo "⚠️ LoadBalancer Service 연결이 지연되고 있습니다."
+            echo "🔍 Service 상세 상태:"
+            kubectl get service ${{ env.PROJECT_NAME }}-service -n ${{ env.PROJECT_NAME }} -o yaml || true
+            kubectl describe service ${{ env.PROJECT_NAME }}-service -n ${{ env.PROJECT_NAME }} || true
+            echo "기존 ALB는 여전히 사용 가능합니다: ${{ env.EXISTING_ALB_DNS }}"
+          fi
+          
+          # 기존 ALB 정보를 환경 변수에 저장
+          echo "ALB_HOSTNAME=${{ env.EXISTING_ALB_DNS }}" >> $GITHUB_ENV
+          echo "DEPLOYMENT_METHOD=ExistingALB" >> $GITHUB_ENV
+          
+          echo "✅ 기존 ALB 사용 방식으로 배포 완료"
+
+          echo "⏳ 배포 완료 대기 중..."
+          kubectl rollout status deployment/${{ env.PROJECT_NAME }}-app -n ${{ env.PROJECT_NAME }} --timeout=300s
+
+      # ===============================================
+      # 배포 결과 확인
+      # ===============================================
+      - name: Verify Deployment
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        run: |
+          echo "🔍 배포 상태 확인 중..."
+          echo "네임스페이스: ${{ env.PROJECT_NAME }}"
+          echo "앱 라벨: ${{ env.PROJECT_NAME }}-app"
+
+          # 네임스페이스 존재 확인
+          if ! kubectl get namespace ${{ env.PROJECT_NAME }} >/dev/null 2>&1; then
+            echo "❌ 네임스페이스 '${{ env.PROJECT_NAME }}'가 존재하지 않습니다."
+            kubectl get namespaces
+            exit 1
+          fi
+
+          # 기본 리소스 상태 확인
+          echo "📋 Pod 상태:"
+          kubectl get pods -n ${{ env.PROJECT_NAME }} -o wide || echo "Pod를 찾을 수 없습니다."
+
+          echo "📋 Service 상태:"
+          kubectl get services -n ${{ env.PROJECT_NAME }} || echo "Service를 찾을 수 없습니다."
+
+          echo "📋 Deployment 상태:"
+          kubectl get deployments -n ${{ env.PROJECT_NAME }} || echo "Deployment를 찾을 수 없습니다."
+
+          echo "📋 기존 ALB 연결 상태:"
+          echo "  ALB DNS: ${{ env.EXISTING_ALB_DNS }}"
+          echo "  Target Group: ${{ env.EXISTING_TARGET_GROUP_ARN }}"
+
+          # Deployment 존재 확인 후 대기
+          if kubectl get deployment ${{ env.PROJECT_NAME }}-app -n ${{ env.PROJECT_NAME }} >/dev/null 2>&1; then
+            echo "⏳ Pod 준비 상태 대기 중..."
+            kubectl wait --for=condition=ready pod -l app=${{ env.PROJECT_NAME }}-app -n ${{ env.PROJECT_NAME }} --timeout=300s || echo "Pod 준비 상태 대기 시간 초과"
+            
+            echo "📝 Deployment 상세 정보:"
+            kubectl describe deployment ${{ env.PROJECT_NAME }}-app -n ${{ env.PROJECT_NAME }}
+            
+          else
+            echo "❌ Deployment '${{ env.PROJECT_NAME }}-app'를 찾을 수 없습니다."
+            echo "사용 가능한 Deployment 목록:"
+            kubectl get deployments -n ${{ env.PROJECT_NAME }}
+            exit 1
+          fi
+
+      # ===============================================
+      # 배포 방법별 접속 URL 제공
+      # ===============================================
+      - name: Get Application URL
+        if: success() && github.ref == 'refs/heads/main' && github.event_name == 'push'
+        run: |
+          echo "🔗 애플리케이션 접속 정보 확인 중..."
+          echo "배포 방법: ${DEPLOYMENT_METHOD:-Unknown}"
+
+          if [ "${DEPLOYMENT_METHOD:-}" = "ExistingALB" ]; then
+            echo "🌐 기존 ALB (Terraform 생성)를 통해 배포됨"
+            echo "🔗 애플리케이션 접속 URL: http://${ALB_HOSTNAME:-확인불가}"
+            
+            # Target Group의 Healthy 상태 확인
+            echo "🔍 Target Group Health 상태 확인..."
+            if [ -n "${{ env.EXISTING_TARGET_GROUP_ARN }}" ]; then
+              HEALTHY_COUNT=$(aws elbv2 describe-target-health \
+                --target-group-arn "${{ env.EXISTING_TARGET_GROUP_ARN }}" \
+                --query 'TargetHealthDescriptions[?TargetHealth.State==`healthy`] | length(@)' \
+                --output text 2>/dev/null || echo "0")
+              TOTAL_COUNT=$(aws elbv2 describe-target-health \
+                --target-group-arn "${{ env.EXISTING_TARGET_GROUP_ARN }}" \
+                --query 'TargetHealthDescriptions | length(@)' \
+                --output text 2>/dev/null || echo "0")
+              
+              echo "Target Group 상태: ${HEALTHY_COUNT}/${TOTAL_COUNT} healthy"
+              
+              if [ "$HEALTHY_COUNT" -gt "0" ]; then
+                echo "✅ 애플리케이션이 정상적으로 연결되었습니다!"
+              else
+                echo "⚠️ Target이 아직 healthy 상태가 아닙니다. 잠시 후 다시 확인하세요."
+              fi
+            fi
+            
+            echo "🔍 LoadBalancer Service 상태:"
+            kubectl describe service ${{ env.PROJECT_NAME }}-service -n ${{ env.PROJECT_NAME }}
+            
+          else
+            echo "❓ 배포 방법을 확인할 수 없습니다."
+            echo "사용 가능한 서비스 확인:"
+            kubectl get services -n ${{ env.PROJECT_NAME }}
+          fi
+
+          # 공통 디버깅 정보
+          echo ""
+          echo "📋 전체 리소스 상태:"
+          kubectl get all -n ${{ env.PROJECT_NAME }}
+
+      # ===============================================
+      # 배포 완료 알림
+      # ===============================================
+      - name: Application Deployment Notification
+        if: success() && github.ref == 'refs/heads/main' && github.event_name == 'push'
+        run: |
+          echo "🎉 PHP 애플리케이션 배포 완료!"
+          echo "프로젝트: ${{ env.PROJECT_NAME }}"
+          echo "이미지: ${{ steps.build-image.outputs.image }}"
+          echo "클러스터: ${{ env.EKS_CLUSTER_NAME }}"
+          echo "네임스페이스: ${{ env.PROJECT_NAME }}"
+          echo "데이터베이스: ${{ env.RDS_ENDPOINT }}"
+          echo "커밋: ${{ github.sha }}"
+          echo "배포 시간: $(date)"
+
+          # 배포된 서비스 정보 출력
+          echo "📋 배포된 리소스 목록:"
+          kubectl get all -n ${{ env.PROJECT_NAME }} || echo "리소스 조회 실패"
+
+      # ===============================================
+      # 배포 실패 시 롤백
+      # ===============================================
+      - name: Rollback on failure
+        if: failure() && github.ref == 'refs/heads/main' && github.event_name == 'push'
+        run: |
+          echo "❌ 배포 실패 - 이전 버전으로 롤백 중..."
+          kubectl rollout undo deployment/${{ env.PROJECT_NAME }}-app -n ${{ env.PROJECT_NAME }} || true
+          kubectl rollout status deployment/${{ env.PROJECT_NAME }}-app -n ${{ env.PROJECT_NAME }} --timeout=300s || true
+          echo "✅ 롤백 시도 완료"
