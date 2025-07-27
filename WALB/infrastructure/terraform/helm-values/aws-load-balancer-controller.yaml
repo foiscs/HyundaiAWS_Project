@@ -8,8 +8,8 @@ clusterName: ${cluster_name}
 region: ${aws_region}
 vpcId: ${vpc_id}
 
-# 기본 설정
-replicaCount: 2
+# 기본 설정 - 안정성을 위해 복제본 수 증가
+replicaCount: 3
 image:
   repository: public.ecr.aws/eks/aws-load-balancer-controller
   tag: v2.8.1
@@ -26,14 +26,14 @@ enableCertManager: false
 createIngressClassResource: true
 defaultIngressClass: true
 
-# 리소스 설정
+# 리소스 설정 - 웹훅 성능 개선을 위해 리소스 증가
 resources:
   limits:
+    cpu: 500m
+    memory: 1Gi
+  requests:
     cpu: 200m
     memory: 500Mi
-  requests:
-    cpu: 100m
-    memory: 200Mi
 
 # 로깅 설정
 logLevel: info
@@ -81,8 +81,17 @@ commonLabels:
 serviceMonitor:
   enabled: false
 
-# 웹훅 설정 (자체 서명 인증서 사용)
+# 웹훅 설정 (자체 서명 인증서 사용) - 타임아웃 및 성능 최적화
 webhook:
   certManager:
     enabled: false
   port: 9443
+  timeoutSeconds: 30
+  # 웹훅 성능 최적화
+  resources:
+    limits:
+      cpu: 200m
+      memory: 256Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
