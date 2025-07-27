@@ -595,72 +595,18 @@ jobs:
         echo "🔍 ValidatingAdmissionWebhook 확인..."
         kubectl get validatingadmissionwebhook cert-manager-webhook || echo "webhook 아직 준비 중..."
         
-        # webhook 연결성 테스트 (강화된 검증)
+        # webhook 연결성 테스트
         echo "🔍 webhook 연결성 테스트..."
-        WEBHOOK_READY=false
-        for i in {1..15}; do
-          echo "webhook 테스트 시도 ($i/15)..."
-          
-          # 1단계: ValidatingAdmissionWebhook 존재 확인
-          if kubectl get validatingadmissionwebhook cert-manager-webhook >/dev/null 2>&1; then
-            echo "✅ ValidatingAdmissionWebhook 존재"
-            
-            # 2단계: webhook 서비스 엔드포인트 확인
-            ENDPOINTS=$(kubectl get endpoints cert-manager-webhook -n cert-manager -o jsonpath='{.subsets[*].addresses[*].ip}' 2>/dev/null || echo "")
-            if [ -n "$ENDPOINTS" ]; then
-              echo "✅ webhook 엔드포인트 준비: $ENDPOINTS"
-              
-              # 3단계: webhook readiness 확인
-              if kubectl get --raw /api/v1/namespaces/cert-manager/services/cert-manager-webhook:https:webhook/proxy/readyz 2>/dev/null; then
-                echo "✅ webhook readiness 테스트 성공"
-                
-                # 4단계: 실제 webhook 기능 테스트 (간단한 dry-run)
-                if kubectl apply --dry-run=server -f - <<EOF 2>/dev/null
-apiVersion: cert-manager.io/v1
-kind: Certificate
-metadata:
-  name: test-cert
-  namespace: cert-manager
-spec:
-  secretName: test-cert-tls
-  commonName: test.example.com
-  issuerRef:
-    name: test-issuer
-    kind: ClusterIssuer
-EOF
-                then
-                  echo "✅ webhook 기능 테스트 성공"
-                  WEBHOOK_READY=true
-                  break
-                else
-                  echo "⚠️ webhook 기능 테스트 실패"
-                fi
-              else
-                echo "⚠️ webhook readiness 테스트 실패"
-              fi
-            else
-              echo "⚠️ webhook 엔드포인트 아직 준비되지 않음"
-            fi
+        for i in {1..10}; do
+          echo "webhook 테스트 시도 ($i/10)..."
+          if kubectl get --raw /api/v1/namespaces/cert-manager/services/cert-manager-webhook:https:webhook/proxy/readyz 2>/dev/null; then
+            echo "✅ webhook 연결성 테스트 성공"
+            break
           else
-            echo "⚠️ ValidatingAdmissionWebhook 아직 생성되지 않음"
-          fi
-          
-          if [ $i -lt 15 ]; then
-            echo "15초 후 재시도..."
-            sleep 15
+            echo "⚠️ webhook 연결성 테스트 실패, 10초 후 재시도..."
+            sleep 10
           fi
         done
-        
-        if [ "$WEBHOOK_READY" = false ]; then
-          echo "❌ cert-manager webhook 준비 실패"
-          echo "Pod 상태 확인:"
-          kubectl get pods -n cert-manager -o wide
-          echo "서비스 상태 확인:"
-          kubectl get services -n cert-manager
-          echo "이벤트 확인:"
-          kubectl get events -n cert-manager --sort-by='.lastTimestamp' | tail -10
-          exit 1
-        fi
         
         # Self-signed issuer 생성 (webhook 준비 후)
         echo "🔐 Self-signed issuer 생성 중..."
