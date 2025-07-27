@@ -18,7 +18,7 @@ boto3를 이용한 실제 AWS API 호출 및 권한 테스트
   - validate_email: 이메일 주소 형식 검증
 - simulate_connection_test: 개발/데모용 연결 테스트 시뮬레이션
 """
-
+import streamlit as st
 import boto3
 import json
 import time
@@ -34,7 +34,7 @@ class AWSConnectionHandler:
         - 테스트할 서비스 목록 정의
         """
         # WALB 서비스 자체의 가상 계정 ID (Cross-Account Role에서만 사용)
-        self.walb_service_account_id = "292967571836"  # 실제로는 WALB 서비스가 배포된 계정 ID
+        self.walb_service_account_id = st.secrets.get("WALB_SERVICE_ACCOUNT_ID", "292967571836")
         self.test_services = [
             'ec2', 's3', 'iam', 'cloudtrail', 
             'cloudwatch', 'rds', 'eks'
@@ -64,6 +64,12 @@ class AWSConnectionHandler:
             """
             # 실제 WALB 서비스가 배포된 계정 ID 또는 기본값 사용
             account_id = walb_account_id or self.walb_service_account_id
+            print(f"Account ID: '{account_id}' (length: {len(account_id)})")
+            print(f"Trust Policy - Account ID: '{account_id}' (type: {type(account_id)}, length: {len(str(account_id))})")
+            
+            # ARN 문자열을 직접 구성해서 확인
+            arn_string = f"arn:aws:iam::{account_id}:user/walb-service-user"
+            print(f"Trust Policy - ARN: '{arn_string}'")
             
             return {
                 "Version": "2012-10-17",
@@ -71,7 +77,7 @@ class AWSConnectionHandler:
                     {
                         "Effect": "Allow",
                         "Principal": {
-                            "AWS": f"arn:aws:iam::{account_id}:root"
+                            "AWS": arn_string
                         },
                         "Action": "sts:AssumeRole",
                         "Condition": {
@@ -114,17 +120,31 @@ class AWSConnectionHandler:
             dict: 연결 테스트 결과
         """
         try:
-            # WALB 메인 계정에서 STS 클라이언트 생성
-            # AWS CLI 프로필 또는 환경변수에서 메인 계정 자격증명 사용
-            sts_client = boto3.client('sts', region_name=region)
-            
-            # 실제 환경에서는 WALB 서비스의 자격증명을 사용해야 함
-            # 현재는 로컬 환경 테스트를 위해 기본 자격증명 사용
-            sts_client = boto3.client('sts', region_name=region)
+            # Streamlit secrets에서 WALB 서비스 자격증명 가져오기
+            try:
+                walb_access_key = st.secrets["access_key_id"]
+                walb_secret_key = st.secrets["secret_access_key"]  
+                walb_region = st.secrets.get("region", region)
+                
+                # WALB 서비스 자격증명으로 STS 클라이언트 생성
+                sts_client = boto3.client(
+                    'sts',
+                    aws_access_key_id=walb_access_key,
+                    aws_secret_access_key=walb_secret_key,
+                    region_name=walb_region
+                )
+                
+                print(f"WALB 서비스 자격증명으로 STS 클라이언트 생성 성공")
+                
+            except KeyError as e:
+                return {
+                    'status': 'failed',
+                    'error_message': f'WALB 서비스 자격증명이 설정되지 않았습니다: {str(e)}'
+                }
             
             print(f"Role ARN으로 연결 시도: {role_arn}")
             print(f"External ID: {external_id}")
-            
+                        
             response = sts_client.assume_role(
                 RoleArn=role_arn,
                 RoleSessionName='walb-security-assessment',
@@ -184,6 +204,21 @@ class AWSConnectionHandler:
             dict: 연결 테스트 결과
         """
         try:
+            # 입력값 정리 (공백, 줄바꿈 제거)
+            access_key_id = access_key_id.strip()
+            secret_access_key = secret_access_key.strip()
+            
+            # 입력값 검증
+            if not access_key_id or not secret_access_key:
+                return {
+                    'status': 'failed',
+                    'error_message': 'Access Key ID 또는 Secret Access Key가 비어있습니다.'
+                }
+            
+            print(f"Access Key ID: {access_key_id}")
+            print(f"Secret Key 길이: {len(secret_access_key)}")
+            print(f"Secret Key 시작: {secret_access_key[:4]}...")
+            
             # 세션 생성
             session = boto3.Session(
                 aws_access_key_id=access_key_id,
@@ -195,13 +230,30 @@ class AWSConnectionHandler:
             sts_client = session.client('sts')
             identity = sts_client.get_caller_identity()
             print(f"연결된 계정 정보: {identity}")
+
+            # ARN에서 사용자 ID 추출
+            user_id = None
+            arn = identity.get('Arn', '')
+            if ':user/' in arn:
+                # IAM 사용자의 경우: arn:aws:iam::123456789012:user/username
+                user_id = arn.split(':user/')[-1]
+            elif ':assumed-role/' in arn:
+                # AssumeRole의 경우: arn:aws:sts::123456789012:assumed-role/role-name/session-name
+                parts = arn.split(':assumed-role/')[-1].split('/')
+                user_id = parts[0] if parts else None
+            elif ':root' in arn:
+                # Root 계정의 경우
+                user_id = 'root'
+
+            print(f"추출된 사용자 ID: {user_id}")
                     
             # 각 서비스별 권한 테스트
             test_results = self._test_service_permissions(session)
-            
+
             return {
                 'status': 'success',
                 'account_id': identity['Account'],
+                'user_id': identity['UserId'],
                 'user_arn': identity['Arn'],
                 'regions': self._count_available_regions(session),
                 'services': list(test_results.keys()),
@@ -209,10 +261,35 @@ class AWSConnectionHandler:
                 'connection_time': datetime.now().isoformat()
             }
             
-        except (ClientError, NoCredentialsError) as e:
+        except ClientError as e:
+            error_code = e.response['Error']['Code']
+            error_message = e.response['Error']['Message']
+            
+            if error_code == 'SignatureDoesNotMatch':
+                return {
+                    'status': 'failed',
+                    'error_code': error_code,
+                    'error_message': '🔑 AWS 자격증명 오류: Secret Access Key를 다시 확인해주세요.\n'
+                                '• 복사 시 공백이나 줄바꿈이 포함되지 않았는지 확인\n'
+                                '• 키가 올바른지 AWS 콘솔에서 재확인\n'
+                                '• 새로운 Access Key를 생성해보세요'
+                }
+            elif error_code == 'InvalidUserID.NotFound':
+                return {
+                    'status': 'failed',
+                    'error_code': error_code,
+                    'error_message': '🔍 Access Key ID가 존재하지 않습니다. AWS 콘솔에서 확인해주세요.'
+                }
+            else:
+                return {
+                    'status': 'failed',
+                    'error_code': error_code,
+                    'error_message': f'AWS API 오류: {error_message}'
+                }
+        except NoCredentialsError:
             return {
                 'status': 'failed',
-                'error_message': str(e)
+                'error_message': '🔐 AWS 자격증명이 제공되지 않았습니다.'
             }
         except Exception as e:
             return {
@@ -311,7 +388,50 @@ class AWSConnectionHandler:
             return len(regions['Regions'])
         except:
             return 0
+        
+    def create_session_from_role(self, role_arn, external_id, region='ap-northeast-2'):
+        """Cross-Account Role로 세션 생성"""
+        try:
+            sts_client = boto3.client('sts', region_name=region)
+            response = sts_client.assume_role(
+                RoleArn=role_arn,
+                RoleSessionName='walb-diagnosis-session',
+                ExternalId=external_id,
+                DurationSeconds=3600
+            )
+            
+            credentials = response['Credentials']
+            return boto3.Session(
+                aws_access_key_id=credentials['AccessKeyId'],
+                aws_secret_access_key=credentials['SecretAccessKey'],
+                aws_session_token=credentials['SessionToken'],
+                region_name=region
+            )
+        except Exception as e:
+            raise Exception(f"Role 세션 생성 실패: {str(e)}")
 
+    def create_session_from_keys(self, access_key_id, secret_access_key, region='ap-northeast-2'):
+        """Access Key로 세션 생성"""
+        try:
+            return boto3.Session(
+                aws_access_key_id=access_key_id,
+                aws_secret_access_key=secret_access_key,
+                region_name=region
+            )
+        except Exception as e:
+            raise Exception(f"Key 세션 생성 실패: {str(e)}")
+
+    def extract_account_id_from_role_arn(self, role_arn):
+        """Role ARN에서 계정 ID 추출"""
+        try:
+            # arn:aws:iam::123456789012:role/RoleName 형식에서 계정 ID 추출
+            parts = role_arn.split(':')
+            if len(parts) >= 5 and parts[0] == 'arn' and parts[1] == 'aws' and parts[2] == 'iam':
+                return parts[4]
+            return None
+        except:
+            return None
+    
 class InputValidator:
     """입력값 검증을 담당하는 클래스"""
     

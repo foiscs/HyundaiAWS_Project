@@ -12,6 +12,8 @@ Tailwind CSS 스타일을 Streamlit용 CSS로 변환
 - get_all_styles: 모든 CSS 스타일을 통합하여 한 번에 주입
 """
 
+import streamlit as st
+
 def get_main_styles():
     """
     메인 페이지 전체 스타일 정의
@@ -19,10 +21,6 @@ def get_main_styles():
     """
     return """
     <style>
-    /* 전체 페이지 배경 */
-    .stApp {
-        background-color: #F9FAFB;
-    }
     
     /* 메인 컨테이너 */
     .main-container {
@@ -39,6 +37,9 @@ def get_main_styles():
         display: flex;
         align-items: center;
         gap: 0.75rem;
+    }
+    .stMainBlockContainer {
+        padding-top: 5rem !important ;
     }
     </style>
     """
@@ -101,7 +102,7 @@ def get_step_indicator_styles():
         display: flex;
         justify-content: space-between;
         align-items: center;
-        margin: 2rem 0;
+        margin: 0;
         padding: 0 1rem;
     }
     
@@ -409,12 +410,134 @@ def get_loading_styles():
     </style>
     """
 
+def inject_custom_button_style():
+    css = """
+    <style>
+    /* secondary 버튼 (일반 + Tooltip 내부 포함) */
+    div.stTooltipIcon button[data-testid="stBaseButton-secondary"],
+    div.stButton > button[data-testid="stBaseButton-secondary"] {
+        background: linear-gradient(135deg, #e0f2fe 0%, #bae6fd 100%);
+        color: #0369a1;
+        border: none;
+        padding: 0.65rem 1.25rem;
+        border-radius: 8px;
+        font-weight: 600;
+        transition: all 0.2s ease;
+    }
+
+    div.stTooltipIcon button[data-testid="stBaseButton-secondary"]:hover,
+    div.stButton > button[data-testid="stBaseButton-secondary"]:hover {
+        box-shadow: 0 3px 6px rgba(14, 165, 233, 0.3);
+        transform: translateY(-1px);
+    }
+
+    /* primary 버튼 */
+    div.stButton > button[data-testid="stBaseButton-primary"] {
+        background: linear-gradient(135deg, #2563eb 0%, #3b82f6 100%);
+        color: white;
+        border: none;
+        font-weight: 700;
+        padding: 0.75rem 1.5rem;
+        border-radius: 10px;
+        transition: all 0.25s ease;
+    }
+
+    div.stButton > button[data-testid="stBaseButton-primary"]:hover {
+        box-shadow: 0 5px 10px rgba(59, 130, 246, 0.4);
+        transform: translateY(-2px) scale(1.02);
+    }
+    </style>
+    """
+    return css
+
+def inject_expander_style():
+    css = """
+    <style>
+    /* 전체 Expander 외곽 영역 */
+    [data-testid="stExpander"] {
+        border: 1px solid #cbd5e1;
+        border-radius: 10px;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+        margin: 0.5rem 0;
+        overflow: hidden;
+    }
+
+    /* 제목 summary 영역 */
+    [data-testid="stExpander"] > details > summary {
+        background-color: #f1f5f9;
+        color: #0f172a;
+        font-weight: 600;
+        padding: 0.75rem 1rem;
+        border-radius: 10px;
+        transition: background-color 0.2s ease;
+        list-style: none;
+    }
+
+    /* hover 효과 */
+    [data-testid="stExpander"] > details > summary:hover {
+        background-color: #e2e8f0;
+        cursor: pointer;
+    }
+
+    /* 펼쳐진 내용 영역 */
+    [data-testid="stExpanderDetails"] {
+        background-color: #ffffff;
+        padding: 1rem;
+        border-top: 1px solid #e2e8f0;
+    }
+    </style>
+    """
+    return css
+
+def inject_account_card_style():
+    css = """
+    <style>
+    .account-card {
+        border: 1px solid #e2e8f0 !important;
+        border-radius: 12px !important;
+        background-color: #f9fafb !important;
+        padding: 1.5rem !important;
+        margin: 1rem 0 !important;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.03) !important;
+    }
+    </style>
+    """
+    return css
+
+def inject_custom_font():
+    css = """
+        <style>
+        @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/variable/pretendardvariable.css');
+
+        html, body, [class*="st-"] {
+            font-family: 'Pretendard Variable', sans-serif !important;
+            font-weight: 400 !important;
+        }
+
+        h1, h2, h3, h4, h5, h6,
+        .stMarkdown, .stButton, .stTextInput > label,
+        .hero-title, .hero-subtitle, .hero-text,
+        .custom-card-title, .custom-subtitle {
+            font-family: 'Pretendard Variable', sans-serif !important;
+            font-weight: 600 !important;
+        }
+
+        p, span, div {
+            font-family: 'Pretendard Variable', sans-serif !important;
+        }
+        </style>
+    """
+    return css
+    
 def get_all_styles():
     """
     모든 스타일을 합쳐서 반환
     - 한 번에 모든 CSS를 주입하기 위한 함수
     """
     return (
+        inject_custom_font() +
+        inject_expander_style() +
+        inject_custom_button_style() +
         get_main_styles() +
         get_card_styles() +
         get_step_indicator_styles() +

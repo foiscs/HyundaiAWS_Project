@@ -1,558 +1,327 @@
-"""
-AWS 계정 연결 웹 인터페이스 메인 애플리케이션
-Streamlit을 사용한 4단계 온보딩 프로세스 구현
-
-함수 목록:
-- initialize_session_state: 사용자 진행 상태와 입력 데이터 세션 초기화
-- render_header: 페이지 제목과 단계 표시기 헤더 렌더링
-- render_step1: 1단계 - Cross-Account Role vs Access Key 연결 방식 선택
-- render_step2: 2단계 - IAM Role/User 설정 가이드와 JSON 정책 표시
-- render_step3: 3단계 - 계정 정보와 인증 정보 입력 폼 + 실시간 검증
-- render_step4: 4단계 - AWS 연결 테스트 실행 및 결과 표시
-- main: 메인 앱 함수 - CSS 주입, 세션 초기화, 페이지 라우팅
-"""
-
+import json
+import os
+from datetime import datetime
 import streamlit as st
-import time
-from components import *
-from aws_handler import AWSConnectionHandler, InputValidator, simulate_connection_test
-from styles import get_all_styles
+from components.session_manager import SessionManager
+import streamlit.components.v1 as components
+from components.connection_styles import get_all_styles
 
-# 페이지 설정
+# 페이지 설정 추가
 st.set_page_config(
-    page_title="AWS 계정 연결 - WALB",
-    page_icon="☁️",
-    layout="wide",
+    page_title="WALB - 통합 보안 관리 플랫폼",
+    page_icon="🛡️",
+    layout="wide",  # 이 부분이 중요
     initial_sidebar_state="expanded"
 )
 
-def initialize_session_state():
-    """
-    세션 상태 초기화
-    - 사용자의 진행 상태와 입력 데이터 관리
-    """
-    if 'current_step' not in st.session_state:
-        st.session_state.current_step = 1
+def load_connected_accounts():
+    """연결된 AWS 계정 목록 로드 (JSON 파일에서)"""
+    accounts = []
+    if os.path.exists("registered_accounts.json"):
+        try:
+            with open("registered_accounts.json", "r", encoding="utf-8") as f:
+                for line in f:
+                    if line.strip():
+                        account = json.loads(line.strip())
+                        accounts.append(account)
+        except Exception as e:
+            st.error(f"계정 데이터 로드 오류: {str(e)}")
     
-    if 'connection_type' not in st.session_state:
-        st.session_state.connection_type = 'cross-account-role'
+    # 중복 제거 (account_id + cloud_name 조합으로)
+    seen = set()
+    unique_accounts = []
+    for account in accounts:
+        key = f"{account.get('account_id', '')}_{account.get('cloud_name', '')}"
+        if key not in seen:
+            seen.add(key)
+            unique_accounts.append(account)
     
-    if 'account_data' not in st.session_state:
-        st.session_state.account_data = {
-            'cloud_name': '',
-            'account_id': '',
-            'role_arn': '',
-            'external_id': '',
-            'access_key_id': '',
-            'secret_access_key': '',
-            'primary_region': 'ap-northeast-2',
-            'contact_email': ''
-        }
+    return unique_accounts
 
-    if 'connection_status' not in st.session_state:
-        st.session_state.connection_status = 'idle'
+def render_account_card(account, index):
+    account_name = account.get("cloud_name", "Unknown")
+    account_id = account.get("account_id", "N/A")
+    region = account.get("primary_region", "N/A")
+    contact = account.get("contact_email", "N/A")
+    conn_type = "🛡️ Cross-Account Role" if account.get('role_arn') else "🔑 Access Key"
 
-    if 'test_results' not in st.session_state:
-        st.session_state.test_results = None
+    # 카드 렌더링
+    html = f"""
+    <div class="account-card">
+        <div class="card-header">
+            <span class="cloud">☁️ <strong>{account_name}</strong></span>
+            <span class="contact">담당자: <a href="mailto:{contact}">{contact}</a></span>
+        </div>
 
-    if 'aws_handler' not in st.session_state:
-        st.session_state.aws_handler = AWSConnectionHandler()
-
-def render_header():
-    """
-    페이지 헤더 렌더링
-    - 제목과 단계 표시기 포함
-    """
-    # 헤더 컨테이너
-    header_container = st.container()
-    with header_container:
-        st.markdown('''
-        <div class="main-container">
-            <div class="main-title">
-                ☁️ 새 AWS 계정 연결
+        <div class="info-grid">
+            <div class="info-item">
+                <div class="label">계정 ID</div>
+                <div class="value">{account_id}</div>
+            </div>
+            <div class="info-item">
+                <div class="label">리전</div>
+                <div class="value">{region}</div>
+            </div>
+            <div class="info-item">
+                <div class="label">연결 방식</div>
+                <div class="value">{conn_type}</div>
+            </div>
+            <div class="info-item">
+                <div class="label">상태</div>
+                <div class="value">🟢 연결됨</div>
             </div>
         </div>
-        ''', unsafe_allow_html=True)
-        
-        # 단계 표시기
-        step_indicator(st.session_state.current_step)
+    </div>
 
-def render_step1():
+    <style>
+    .account-card {{
+        border: 1px solid #e2e8f0;
+        border-radius: 12px;
+        background-color: #f9fafb;
+        padding: 1.2rem;
+        margin: 1rem 0 0.2rem 0;  /* 아래 마진 줄임 */
+        box-shadow: 0 2px 4px rgba(0,0,0,0.03);
+        font-family: 'Segoe UI', sans-serif;
+    }}
+    .card-header {{
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 0.8rem;
+    }}
+    .cloud {{
+        font-size: 1.15rem;
+        font-weight: 600;
+    }}
+    .contact {{
+        font-size: 0.95rem;
+        color: #1d4ed8;
+    }}
+    .info-grid {{
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 0.6rem 1.5rem;
+    }}
+    .info-item .label {{
+        font-weight: 600;
+        font-size: 0.88rem;
+        color: #475569;
+        margin-bottom: 0.2rem;
+    }}
+    .info-item .value {{
+        font-size: 1rem;
+        color: #0f172a;
+    }}
+    </style>
     """
-    1단계: 연결 방식 선택
-    - Cross-Account Role vs Access Key 선택
-    """
-    with st.container():
-        st.subheader("🔗 연결 방식을 선택하세요")
-        
-        st.write("AWS 계정 연결을 위한 인증 방식을 선택해주세요.")
-        
-        # Cross-Account Role 카드
-        role_selected = connection_type_card(
-            title="Cross-Account Role (권장)",
-            description="가장 안전한 방식입니다. AWS IAM Role을 통해 임시 권한을 부여받습니다.",
-            pros=["✓ 높은 보안성", "✓ 권한 제어 가능", "✓ 감사 추적"],
-            is_selected=(st.session_state.connection_type == 'cross-account-role'),
-            icon="🛡️",
-            card_type="role"
-        )
-        
-        if role_selected:
-            st.session_state.connection_type = 'cross-account-role'
-            st.rerun()
-        
-        # Access Key 카드
-        key_selected = connection_type_card(
-            title="Access Key & Secret Key",
-            description="간단하지만 보안 위험이 있습니다. 테스트 환경에서만 권장합니다.",
-            pros=["⚠ 보안 위험", "⚠ 키 관리 필요", "✓ 설정 간단"],
-            is_selected=(st.session_state.connection_type == 'access-key'),
-            icon="🔑",
-            card_type="key"
-        )
-        
-        if key_selected:
-            st.session_state.connection_type = 'access-key'
-            st.rerun()
-    
-    # 네비게이션 버튼
-    prev_clicked, next_clicked = navigation_buttons(
-        show_prev=False,
-        next_label="다음 단계"
-    )
-    
-    if next_clicked:
-        st.session_state.current_step = 2
-        st.rerun()
+    components.html(html, height=200)
 
-def render_step2():
-    """
-    2단계: 권한 설정 가이드
-    - IAM Role/User 설정 방법 안내
-    """
-    with st.container():
-        if st.session_state.connection_type == 'cross-account-role':
-            st.subheader("🛡️ IAM Role 설정 가이드")
-            
-            info_box(
-                "**🎯 간단한 3단계 설정으로 완료!**<br><br>"
-                "**1단계**: IAM 콘솔 → Roles → Create role<br>"
-                "**2단계**: 신뢰할 수 있는 엔터티 설정<br>"
-                "• **AWS 계정** 선택<br>"
-                "• **다른 AWS 계정** 선택<br>"
-                "• **계정 ID**: 292967571836<br>"
-                "• **외부 ID 필요** ✅ 체크<br>"
-                "• **외부 ID**: 아래 표시된 값 입력<br><br>"
-                "**3단계**: 권한 정책 연결<br>"
-                "• **AdministratorAccess** 검색해서 선택<br>"
-                "• **역할 이름**: WALB-CrossAccount-Role<br>"
-                "• **역할 생성** 완료",
-                box_type="success",
-                title="AWS 콘솔 설정 가이드"
-            )
-            
-            # External ID 생성 및 표시
-            if not st.session_state.account_data['external_id']:
-                st.session_state.account_data['external_id'] = st.session_state.aws_handler.generate_external_id()
-            
-            # External ID를 눈에 띄게 표시
-            st.markdown("### 🔑 외부 ID (External ID)")
-            st.code(st.session_state.account_data['external_id'], language=None)
-            st.info("💡 위 외부 ID를 AWS 콘솔의 **'외부 ID'** 필드에 복사해서 붙여넣으세요.")
-            
-            # Trust Policy 자동 생성 안내
-            info_box(
-                "✨ **Trust Policy는 AWS 콘솔이 자동으로 생성합니다**<br><br>"
-                "위 단계대로 설정하면 AWS가 올바른 신뢰 관계 정책을 자동으로 만들어줍니다.<br>"
-                "**JSON 코드를 직접 붙여넣을 필요가 없어요!**<br><br>"
-                "🎯 **완료 후**: 생성된 Role의 **ARN**을 복사해서 다음 단계에서 사용하세요.",
-                box_type="info",
-                title="자동 생성되는 Trust Policy"
-            )
-            
-            # External ID 안내
-            info_box(
-                f"External ID: <code>{st.session_state.account_data['external_id']}</code><br>"
-                "이 값을 Role 설정 시 사용하세요.",
-                box_type="warning",
-                title="중요한 정보"
-            )
-            
-        else:  # access-key
-            st.subheader("🔑 IAM 사용자 설정 가이드")
-            
-            info_box(
-                "대상 AWS 계정에서 수행할 작업:<br>"
-                "1. **IAM 콘솔 → Users → Create user**<br>"
-                "2. **사용자 이름** 입력 (예: walb-service-user)<br>"
-                "3. **권한 설정 → 직접 정책 연결** 선택<br>"
-                "4. **AdministratorAccess** 검색해서 체크박스 선택<br>"
-                "5. 사용자 생성 후 **Security credentials → Create access key**<br>"
-                "6. **Use case: Third-party service** 선택 후 Access Key 다운로드",
-                box_type="warning",
-                title="설정 순서"
-            )
-            
-            # AdministratorAccess 정책 안내 (JSON 불필요)
-            info_box(
-                "**권한 정책**: AWS 관리형 정책 **AdministratorAccess**를 연결하세요.<br>"
-                "• 'AdministratorAccess'를 검색해서 체크박스 선택<br>"
-                "• JSON 복붙 불필요 - 클릭 한 번이면 끝<br>"
-                "• 모든 AWS 서비스에 대한 완전한 관리자 권한",
-                box_type="success",
-                title="권한 설정 (매우 간단함)"
-            )
-        
-        # 네비게이션 버튼
-        prev_clicked, next_clicked = navigation_buttons(
-            prev_label="이전",
-            next_label="다음 단계"
-        )
-        
-        if prev_clicked:
-            st.session_state.current_step = 1
-            st.rerun()
-        
-        if next_clicked:
-            st.session_state.current_step = 3
-            st.rerun()
+    # 버튼: 하단에 촘촘히 붙임
+    col1, col2 = st.columns([1, 1], gap="small")
+    with col1:
+        if st.button("📡 모니터링", key=f"monitor_{index}", use_container_width=True):
+            st.info("모니터링 기능 (준비중)")
 
-def render_step3():
-    """
-    3단계: 연결 정보 입력
-    - 계정 정보와 인증 정보 입력 폼
-    """
-    with st.container():
-        st.subheader("📝 연결 정보를 입력하세요")
-        
-        # 기본 정보 입력
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            cloud_name = st.text_input(
-                "클라우드 환경 이름 *",
-                value=st.session_state.account_data['cloud_name'],
-                placeholder="예: 김청소 개인계정, 개발용 환경",
-                help="WALB에서 이 AWS 계정을 구분할 수 있는 별명을 입력하세요."
-            )
-            st.session_state.account_data['cloud_name'] = cloud_name
-        
-        with col2:
-            account_id = st.text_input(
-                "AWS 계정 ID *",
-                value=st.session_state.account_data['account_id'],
-                placeholder="123456789012",
-                help="12자리 숫자 계정 ID입니다. AWS 콘솔 우상단 → 계정명 클릭 → Account ID에서 확인하세요."
-            )
-            st.session_state.account_data['account_id'] = account_id
-                
-        # 계정 ID 검증
-        validate_and_show_error("account_id", account_id, InputValidator.validate_account_id)
-        
-        # 연결 방식별 입력 필드
-        if st.session_state.connection_type == 'cross-account-role':
-            role_arn = st.text_input(
-                "Role ARN *",
-                value=st.session_state.account_data['role_arn'],
-                placeholder="arn:aws:iam::123456789012:role/WALB-SecurityAssessment",
-                help="2단계에서 생성한 IAM Role의 ARN을 입력하세요."
-            )
-            st.session_state.account_data['role_arn'] = role_arn
-            
-            # Role ARN 검증
-            validate_and_show_error("role_arn", role_arn, InputValidator.validate_role_arn)
-        
-        else:  # access-key
-            col3, col4 = st.columns(2)
-            
-            with col3:
-                access_key_id = st.text_input(
-                    "Access Key ID *",
-                    value=st.session_state.account_data['access_key_id'],
-                    placeholder="AKIA...",
-                    help="AWS Access Key ID를 입력하세요."
-                )
-                st.session_state.account_data['access_key_id'] = access_key_id
-                
-                # Access Key 검증
-                validate_and_show_error("access_key", access_key_id, InputValidator.validate_access_key)
-            
-            with col4:
-                secret_access_key, show_secret, has_security_warning = input_field_with_toggle(
-                    "Secret Access Key *",
-                    is_password=True,
-                    help="AWS Secret Access Key를 입력하세요."
-                )
-                # 보안: Secret Key는 세션에 저장하지 않고 임시 변수로만 사용
-                st.session_state.account_data['secret_access_key'] = secret_access_key if secret_access_key else ''
-                
-                # Secret Key 검증
-                validate_and_show_error("secret_key", secret_access_key, InputValidator.validate_secret_key)
-        
-        # 추가 설정
-        col5, col6 = st.columns(2)
-        
-        with col5:
-            primary_region = st.selectbox(
-                "기본 리전 *",
-                options=[
-                    'ap-northeast-2',  # Seoul
-                    'us-east-1',       # N. Virginia
-                    'us-west-2',       # Oregon
-                    'eu-west-1',       # Ireland
-                    'ap-southeast-1',  # Singapore
-                    'ap-northeast-1',  # Tokyo
-                ],
-                format_func=lambda x: {
-                    'ap-northeast-2': 'Asia Pacific (Seoul)',
-                    'us-east-1': 'US East (N. Virginia)',
-                    'us-west-2': 'US West (Oregon)',
-                    'eu-west-1': 'Europe (Ireland)',
-                    'ap-southeast-1': 'Asia Pacific (Singapore)',
-                    'ap-northeast-1': 'Asia Pacific (Tokyo)'
-                }.get(x, x),
-                index=0,
-                help="AWS 리소스가 주로 위치한 리전을 선택하세요."
-            )
-            st.session_state.account_data['primary_region'] = primary_region
-        
-        with col6:
-            contact_email = st.text_input(
-                "담당자 이메일",
-                value=st.session_state.account_data['contact_email'],
-                placeholder="admin@company.com",
-                help="연락 가능한 담당자 이메일을 입력하세요. (선택사항)"
-            )
-            st.session_state.account_data['contact_email'] = contact_email
-            
-            # 이메일 검증
-            validate_and_show_error("email", contact_email, InputValidator.validate_email)
+    with col2:
+        if st.button("🛡️ 항목진단", key=f"diagnosis_{index}", use_container_width=True):
+            st.session_state.selected_account = account
+            st.switch_page("pages/diagnosis.py")
 
-        
-        # 수정 (new) - 위 블록을 아래로 교체
-        def check_required_fields():
-            """필수 입력 필드 완료 여부 확인"""
-            account = st.session_state.account_data
-            basic_filled = bool(account['cloud_name'] and account['account_id'])
-            
-            if st.session_state.connection_type == 'cross-account-role':
-                return basic_filled and bool(account['role_arn'])
-            else:
-                return basic_filled and bool(account['access_key_id'] and account['secret_access_key'])
 
-        # 입력 완료 여부 확인
-        required_fields_filled = check_required_fields()
-        
-        # 네비게이션 버튼
-        prev_clicked, next_clicked = navigation_buttons(
-            prev_label="이전",
-            next_label="연결 테스트",
-            next_disabled=not required_fields_filled
-        )
-        
-        if prev_clicked:
-            st.session_state.current_step = 2
-            st.rerun()
-        
-        if next_clicked:
-            st.session_state.current_step = 4
-            st.rerun()
-        
-def render_step4():
-    """
-    4단계: 연결 테스트
-    - AWS 연결 테스트 실행 및 결과 표시
-    """
-    with st.container():
-        st.subheader("🔍 연결 테스트")
-
-        def run_connection_test():
-            """연결 테스트 실행 함수"""
-            st.session_state.connection_status = 'testing'
-            st.session_state.test_results = None
-            
-            try:
-                if st.session_state.connection_type == 'cross-account-role':
-                    test_results = st.session_state.aws_handler.test_cross_account_connection(
-                        role_arn=st.session_state.account_data['role_arn'],
-                        external_id=st.session_state.account_data['external_id'],
-                        region=st.session_state.account_data['primary_region']
-                    )
-                else:
-                    test_results = st.session_state.aws_handler.test_access_key_connection(
-                        access_key_id=st.session_state.account_data['access_key_id'],
-                        secret_access_key=st.session_state.account_data['secret_access_key'],
-                        region=st.session_state.account_data['primary_region']
-                    )
-
-                st.session_state.test_results = test_results
-                st.session_state.connection_status = (
-                    'success' if test_results['status'] == 'success' else 'failed'
-                )
-            except Exception as e:
-                st.session_state.connection_status = 'failed'
-                st.session_state.test_results = {
-                    'status': 'failed',
-                    'error_message': str(e)
-                }
-
-        # 상태 분기
-        if st.session_state.connection_status == 'idle':
-            prev_clicked, test_clicked = connection_test_result(
-                st.session_state.test_results,
-                st.session_state.connection_status
-            )
-
-            if prev_clicked:
-                st.session_state.current_step = 3
-                st.rerun()
-
-            if test_clicked:
-                with st.spinner("연결 테스트를 수행하고 있습니다..."):
-                    # 개발/프로덕션 모드 분기
-                    if st.secrets.get("DEVELOPMENT_MODE", True):
-                        # 개발 모드: 시뮬레이션
-                        time.sleep(3)
-                        st.session_state.test_results = simulate_connection_test()
-                        st.session_state.connection_status = 'success'
-                    else:
-                        # 실제 AWS API 호출 모드
-                        try:
-                            run_connection_test()
-                        except Exception as e:
-                            st.error(f"연결 테스트 중 오류 발생: {str(e)}")
-                            st.session_state.connection_status = 'failed'
-                            st.session_state.test_results = {
-                                'status': 'failed',
-                                'error_message': str(e)
-                            }
-                st.rerun()
-
-        elif st.session_state.connection_status == 'success':
-            # 테스트 결과 출력
-            test_result_table(st.session_state.test_results)
-
-            # 계정 등록 완료 버튼만 출력 (다시 테스트 제거됨)
-            col1, col2 = st.columns([1, 2])
-            with col1:
-                if st.button("🔧 설정 수정", type="secondary", use_container_width=True):
-                    st.session_state.current_step = 3
-                    st.rerun()
-            with col2:
-                if st.button("✅ 계정 등록 완료", type="primary", use_container_width=True):
-                    account = st.session_state.account_data.copy()
-                    
-                    # 보안: 민감 정보는 파일에 저장하지 않음
-                    if 'secret_access_key' in account:
-                        account['secret_access_key'] = '[REDACTED_FOR_SECURITY]'
-                    
-                    try:
-                        with open("registered_accounts.json", "a", encoding="utf-8") as f:
-                            f.write(json.dumps(account, ensure_ascii=False) + "\n")
-                        
-                        # 🎈 먼저 벌룬 호출
-                        st.balloons()
-
-                        # ✅ Toast 메시지 출력 (components로)
-                        components.html("""
-                        <div id="toast" style="
-                            position: fixed;
-                            top: 20px;
-                            right: 20px;
-                            background-color: #10B981;
-                            color: white;
-                            padding: 16px 24px;
-                            border-radius: 8px;
-                            font-weight: bold;
-                            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-                            z-index: 10000;
-                            animation: fadein 0.5s, fadeout 0.5s 2.5s;
-                        ">
-                            🎉 AWS 계정이 성공적으로 등록되었습니다!
-                        </div>
-                        <style>
-                        @keyframes fadein {
-                            from { top: 0; opacity: 0; }
-                            to { top: 20px; opacity: 1; }
-                        }
-                        @keyframes fadeout {
-                            from { opacity: 1; }
-                            to { opacity: 0; }
-                        }
-                        </style>
-                        <script>
-                        setTimeout(function() {
-                            window.parent.location.reload();
-                        }, 3000);
-                        </script>
-                        """, height=100)
-
-                        # 리다이렉트 직전 상태 초기화 (단, JS에서 3초 뒤 리다이렉션 되므로 여기서 st.rerun() 제거)
-                        reset_session_state()
-
-                        st.stop()  # rerun 방지. toast 이후에 reload는 JS가 담당
-
-                    except Exception as e:
-                        st.error(f"파일 저장 중 오류 발생: {str(e)}")
-
-                    # 상태 초기화 후 1단계로 이동
-                    reset_session_state()
-                    st.rerun()
-
-        elif st.session_state.connection_status == 'failed':
-            prev_clicked, next_clicked = navigation_buttons(
-                prev_label="설정 수정",
-                next_label="다시 시도",
-                prev_callback=lambda: setattr(st.session_state, 'current_step', 3),
-                next_callback=lambda: [
-                    setattr(st.session_state, 'connection_status', 'idle'),
-                    setattr(st.session_state, 'test_results', None)
-                ]
-            )
-        
 def main():
+    st.markdown(get_all_styles(), unsafe_allow_html=True)
+            
+    # 세련된 헤더 렌더링
+    header_html = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <style>
+        body {{
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+        }}
+        .hero-header {{
+            background: linear-gradient(135deg, #ff6b6b 0%, #ee5a24 100%);
+            color: white;
+            padding-bottom: 0;
+            padding: 2.5rem 2rem;
+            border-radius: 16px;
+            margin: 1rem 0 2rem 0;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+            position: relative;
+            overflow: hidden;
+        }}
+        .hero-header::before {{
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><defs><pattern id="grid" width="10" height="10" patternUnits="userSpaceOnUse"><path d="M 10 0 L 0 0 0 10" fill="none" stroke="rgba(255,255,255,0.1)" stroke-width="0.5"/></pattern></defs><rect width="100" height="100" fill="url(%23grid)"/></svg>');
+            opacity: 0.3;
+        }}
+        .hero-content {{
+            position: relative;
+            z-index: 2;
+            display: flex;
+            align-items: center;
+            gap: 1.5rem;
+        }}
+        .hero-icon {{
+            font-size: 3.5rem;
+            filter: drop-shadow(0 4px 8px rgba(0,0,0,0.2));
+            animation: float 3s ease-in-out infinite;
+        }}
+        .hero-text {{
+            flex: 1;
+        }}
+        .hero-title {{
+            font-size: 2.25rem;
+            font-weight: 700;
+            margin: 0 0 0.5rem 0;
+            background: linear-gradient(45deg, #ffffff, #ffe0e0);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }}
+        .hero-subtitle {{
+            font-size: 1.1rem;
+            opacity: 0.9;
+            margin: 0;
+            font-weight: 400;
+        }}
+        .hero-badge {{
+            background: rgba(255, 255, 255, 0.2);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            border-radius: 20px;
+            padding: 0.5rem 1rem;
+            font-size: 0.875rem;
+            font-weight: 500;
+            display: inline-block;
+            margin-top: 0.75rem;
+        }}
+        .floating-elements {{
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            pointer-events: none;
+            overflow: hidden;
+        }}
+        .floating-circle {{
+            position: absolute;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 50%;
+            animation: float-circle 6s ease-in-out infinite;
+        }}
+        .circle-1 {{
+            width: 60px;
+            height: 60px;
+            top: 20%;
+            right: 10%;
+            animation-delay: 0s;
+        }}
+        .circle-2 {{
+            width: 40px;
+            height: 40px;
+            top: 60%;
+            right: 20%;
+            animation-delay: 2s;
+        }}
+        .circle-3 {{
+            width: 80px;
+            height: 80px;
+            top: 10%;
+            left: 15%;
+            animation-delay: 4s;
+        }}
+        @keyframes float {{
+            0%, 100% {{ transform: translateY(0px); }}
+            50% {{ transform: translateY(-10px); }}
+        }}
+        @keyframes float-circle {{
+            0%, 100% {{ transform: translateY(0px) scale(1); opacity: 0.3; }}
+            50% {{ transform: translateY(-20px) scale(1.1); opacity: 0.6; }}
+        }}
+        </style>
+    </head>
+    <body>
+        <div class="hero-header">
+            <div class="floating-elements">
+                <div class="floating-circle circle-1"></div>
+                <div class="floating-circle circle-2"></div>
+                <div class="floating-circle circle-3"></div>
+            </div>
+            <div class="hero-content">
+                <div class="hero-icon">🛡️</div>
+                <div class="hero-text">
+                    <h1 class="hero-title">WALB 통합 보안 관리 솔루션</h1>
+                    <p class="hero-subtitle">멀티 클라우드 환경의 보안을 하나로 통합 관리하세요.</p>
+                </div>
+            </div>
+        </div>
+    </body>
+    </html>
     """
-    메인 애플리케이션 함수
-    - 세션 상태 초기화 및 페이지 라우팅
-    """
-    try:
-        # CSS 스타일 주입
-        st.markdown(get_all_styles(), unsafe_allow_html=True)
-        
-        # 세션 상태 초기화
-        initialize_session_state()
-        
-        # 헤더 렌더링
-        render_header()
-        
-        # 메인 컨텐츠 컨테이너
-        main_container = st.container()
-        with main_container:
-            # 현재 단계에 따른 페이지 렌더링
-            if st.session_state.current_step == 1:
-                render_step1()
-            elif st.session_state.current_step == 2:
-                render_step2()
-            elif st.session_state.current_step == 3:
-                render_step3()
-            elif st.session_state.current_step == 4:
-                render_step4()
-            else:
-                # 예외 상황 처리
-                st.error("잘못된 단계입니다. 다시 시작해주세요.")
-                if st.button("🔄 처음부터 시작"):
-                    st.session_state.current_step = 1
-                    st.rerun()
-        
-        # 사이드바 패널 렌더링
-        sidebar_panel()
-        
-    except Exception as e:
-        st.error(f"애플리케이션 오류가 발생했습니다: {str(e)}")
-        st.write("페이지를 새로고침하거나 아래 버튼을 클릭하여 다시 시도해주세요.")
-        if st.button("🔄 다시 시작"):
-            reset_session_state(keep_aws_handler=False)
+    
+    # Components로 렌더링
+    components.html(header_html, height=200)
+    
+    # 연결된 계정 섹션 + 버튼 라인
+    col_title, col_refresh, col_add = st.columns([2, 1, 1])
+
+    with col_title:
+        st.subheader("☁️ 연결된 AWS 계정")
+
+    with col_refresh:
+        if st.button("🔄 새로고침", type="secondary", use_container_width=True):
             st.rerun()
 
+    with col_add:
+        if st.button("➕ 새 AWS 계정 추가", type="primary", use_container_width=True):
+            SessionManager.reset_connection_data()
+            st.switch_page("pages/connection.py")
+
+    # 계정 로드
+    accounts = load_connected_accounts()
+
+    if accounts:
+        st.info(f"총 **{len(accounts)}개**의 AWS 계정이 연결되어 있습니다.")
+        
+        # 계정 카드들 표시
+        for index, account in enumerate(accounts):
+            with st.container():
+                render_account_card(account, index)
+                
+    else:
+        st.warning("연결된 AWS 계정이 없습니다.")
+        st.markdown("### 🚀 시작하기")
+        st.write("WALB 보안 관리를 시작하려면 AWS 계정을 먼저 연결해주세요.")
+        
+        if st.button("➕ 첫 번째 계정 연결", type="primary", use_container_width=True):
+            SessionManager.reset_connection_data()
+            st.switch_page("pages/connection.py")
+    
+    # 구분선
+    st.markdown("---")
+    
+    # 안전한 클라우드 구축 (별도 기능)
+    st.subheader("🏗️ 안전한 클라우드 구축")
+    st.markdown("""
+    **Shift-Left Security 적용** - 사전 보안이 내장된 새로운 AWS 환경을 자동 구축합니다.
+    - 🛡️ 사전 보안 내장 인프라
+    - 📋 IaC 기반 Terraform 템플릿  
+    - ✅ ISMS-P 컴플라이언스 자동 적용
+    """)
+    
+    if st.button("🚀 새 환경 구축 시작", type="primary", use_container_width=True):
+        st.info("안전한 클라우드 구축 기능 (준비중)")
+        
 if __name__ == "__main__":
     main()
