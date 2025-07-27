@@ -607,9 +607,10 @@ jobs:
           helm repo add eks https://aws.github.io/eks-charts
           helm repo update
 
-          # AWS Load Balancer Controller 설치 (cert-manager 완전 비활성화)
-          echo "🚀 AWS Load Balancer Controller 설치 시작 (cert-manager 없이)..."
+          # AWS Load Balancer Controller 설치 (웹훅 비활성화)
+          echo "🚀 AWS Load Balancer Controller 설치 시작 (웹훅 비활성화)..."
           
+          # 웹훅 없이 설치하여 인증서 문제 완전 회피
           helm install aws-load-balancer-controller eks/aws-load-balancer-controller \
             -n kube-system \
             --set clusterName=${{ env.EKS_CLUSTER_NAME }} \
@@ -620,8 +621,8 @@ jobs:
             --set enableShield=false \
             --set enableWaf=false \
             --set enableWafv2=false \
-            --set webhook.certManager.enabled=false \
-            --set webhook.selfSigned.enabled=true \
+            --set webhook.enabled=false \
+            --set certManager.enabled=false \
             --set replicaCount=1 \
             --set resources.limits.cpu=200m \
             --set resources.limits.memory=500Mi \
@@ -634,21 +635,12 @@ jobs:
           echo "⏳ AWS Load Balancer Controller Pod 시작 대기 중..."
           kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=aws-load-balancer-controller -n kube-system --timeout=300s
 
-          # ValidatingAdmissionWebhook 확인 (간소화)
-          echo "🔍 ValidatingAdmissionWebhook 확인 중..."
-          for i in {1..10}; do
-            if kubectl get validatingadmissionwebhook aws-load-balancer-webhook >/dev/null 2>&1; then
-              echo "✅ ValidatingAdmissionWebhook 준비 완료"
-              break
-            fi
-            echo "ValidatingAdmissionWebhook 대기 중... ($i/10)"
-            sleep 15
-          done
-
-          # 최종 상태 확인
-          echo "✅ AWS Load Balancer Controller 설치 완료"
+          # Controller 상태 확인 (웹훅 없이 동작)
+          echo "🔍 AWS Load Balancer Controller 상태 확인 중..."
           kubectl get pods -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller
-          kubectl get validatingadmissionwebhook aws-load-balancer-webhook 2>/dev/null || echo "ValidatingAdmissionWebhook 아직 생성 중..."
+          
+          # 웹훅 없이 동작하므로 ValidatingAdmissionWebhook 검사 단계 생략
+          echo "✅ AWS Load Balancer Controller 설치 완료 (웹훅 비활성화 모드)"
 
       # ===============================================
       # Kubernetes 매니페스트 파일 생성
@@ -796,7 +788,19 @@ jobs:
 
           echo "사용할 서브넷: $PUBLIC_SUBNETS"
 
-          # Ingress 생성 (AWS Load Balancer Controller 사용) - 강화된 설정
+          # IngressClass 생성 (웹훅 비활성화 모드용)
+          cat <<EOF > ingressclass.yaml
+          apiVersion: networking.k8s.io/v1
+          kind: IngressClass
+          metadata:
+            name: alb
+            annotations:
+              ingressclass.kubernetes.io/is-default-class: "true"
+          spec:
+            controller: ingress.k8s.aws/alb
+          EOF
+
+          # Ingress 생성 (AWS Load Balancer Controller 사용) - 웹훅 비활성화 모드
           cat <<EOF > ingress.yaml
           apiVersion: networking.k8s.io/v1
           kind: Ingress
@@ -804,10 +808,10 @@ jobs:
             name: ${{ env.PROJECT_NAME }}-ingress
             namespace: ${{ env.PROJECT_NAME }}
             annotations:
-              # 기본 ALB 설정
-              kubernetes.io/ingress.class: alb
+              # ALB 기본 설정 (웹훅 비활성화 모드)
               alb.ingress.kubernetes.io/scheme: internet-facing
               alb.ingress.kubernetes.io/target-type: ip
+              alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}]'
               
               # Health Check 설정
               alb.ingress.kubernetes.io/healthcheck-path: /healthcheck.php
@@ -825,8 +829,11 @@ jobs:
                 Project=${{ env.PROJECT_NAME }},
                 ManagedBy=Kubernetes
                 
-              # 로드밸런서 타입
+              # 로드밸런서 이름
               alb.ingress.kubernetes.io/load-balancer-name: ${{ env.PROJECT_NAME }}-alb
+              
+              # 서브넷 설정 (공개 서브넷 사용)
+              alb.ingress.kubernetes.io/subnets: $PUBLIC_SUBNETS
           spec:
             ingressClassName: alb
             rules:
@@ -872,41 +879,47 @@ jobs:
           kubectl apply -f deployment.yaml
           kubectl apply -f service.yaml
 
-          # Ingress 배포 전 웹훅 빠른 확인
-          echo "🔗 Ingress 배포 전 웹훅 상태 확인..."
-          if ! kubectl get validatingadmissionwebhook aws-load-balancer-webhook >/dev/null 2>&1; then
-            echo "❌ ValidatingAdmissionWebhook이 존재하지 않습니다 - Ingress 배포 중단"
-            kubectl get validatingadmissionwebhook 2>/dev/null || echo "웹훅 목록 조회 실패"
+          # AWS Load Balancer Controller 상태 확인 (웹훅 비활성화 모드)
+          echo "🔗 Ingress 배포 전 AWS Load Balancer Controller 상태 확인..."
+          
+          # Controller Pod가 정상 동작하는지 확인
+          if ! kubectl get pods -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller --field-selector=status.phase=Running | grep -q aws-load-balancer-controller; then
+            echo "❌ AWS Load Balancer Controller Pod가 정상 동작하지 않습니다."
+            kubectl get pods -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller
+            kubectl describe pods -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller
             exit 1
           fi
-          echo "✅ ValidatingAdmissionWebhook 확인됨"
+          
+          echo "✅ AWS Load Balancer Controller 정상 동작 확인 (웹훅 비활성화 모드)"
 
-          # Ingress 배포 (간소화된 재시도 로직)
-          echo "🔗 Ingress 리소스 배포 중..."
-          for i in {1..5}; do
-            echo "Ingress 배포 시도 ($i/5)..."
+          # IngressClass 배포 (선행 조건)
+          echo "🔗 IngressClass 배포 중..."
+          kubectl apply -f ingressclass.yaml || true
+          
+          # Ingress 배포 (웹훅 비활성화 모드에서 직접 배포)
+          echo "🔗 Ingress 리소스 배포 중 (웹훅 비활성화 모드)..."
+          
+          if kubectl apply -f ingress.yaml; then
+            echo "✅ Ingress 배포 성공"
             
-            if timeout 60s kubectl apply -f ingress.yaml; then
-              echo "✅ Ingress 배포 성공"
-              # 간단한 존재 확인
-              sleep 5
-              if kubectl get ingress ${{ env.PROJECT_NAME }}-ingress -n ${{ env.PROJECT_NAME }} >/dev/null 2>&1; then
-                echo "✅ Ingress 리소스 확인 완료"
-                break
-              fi
+            # Ingress 리소스 생성 확인
+            sleep 10
+            if kubectl get ingress ${{ env.PROJECT_NAME }}-ingress -n ${{ env.PROJECT_NAME }} >/dev/null 2>&1; then
+              echo "✅ Ingress 리소스 생성 확인"
+              kubectl describe ingress ${{ env.PROJECT_NAME }}-ingress -n ${{ env.PROJECT_NAME }}
             else
-              echo "⚠️ Ingress 배포 실패 ($i/5)"
-              if [ $i -lt 5 ]; then
-                echo "30초 후 재시도..."
-                sleep 30
-              else
-                echo "❌ Ingress 배포 최종 실패"
-                kubectl get pods -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller || true
-                kubectl describe validatingadmissionwebhook aws-load-balancer-webhook || true
-                exit 1
-              fi
+              echo "⚠️ Ingress 리소스 생성 대기 중..."
             fi
-          done
+          else
+            echo "❌ Ingress 배포 실패"
+            echo "오류 상세 정보:"
+            kubectl get pods -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller
+            kubectl logs -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller --tail=50 || true
+            echo ""
+            echo "현재 IngressClass 목록:"
+            kubectl get ingressclass
+            exit 1
+          fi
 
           echo "⏳ 배포 완료 대기 중..."
           kubectl rollout status deployment/${{ env.PROJECT_NAME }}-app -n ${{ env.PROJECT_NAME }} --timeout=300s
