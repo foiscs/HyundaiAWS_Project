@@ -5,1496 +5,1662 @@ name: Deploy PHP Application
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
     paths:
-      - 'WALB/server/**'
+      - "WALB/server/**"
   pull_request:
-    branches: [ main ]
+    branches: [main]
     paths:
-      - 'WALB/server/**'
+      - "WALB/server/**"
 
 env:
   PROJECT_NAME: "walb-app"
-  
+
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
-    
+
     # 워킹 디렉토리를 WALB로 설정
     defaults:
       run:
         working-directory: ./WALB
-    
+
     permissions:
       id-token: write
       contents: read
-    
+
     steps:
-    # ===============================================
-    # 소스코드 체크아웃
-    # ===============================================
-    - name: Checkout code
-      uses: actions/checkout@v4
-    
-    # ===============================================
-    # PHP 및 Composer 환경 설정
-    # ===============================================
-    - name: Set up PHP
-      uses: shivammathur/setup-php@v2
-      with:
-        php-version: '8.1'
-        extensions: pdo, pdo_pgsql, mbstring, xml, zip, gd
-        coverage: none
-    
-    - name: Validate Composer
-      run: |
-        echo "🔍 PHP 애플리케이션 검증 중..."
-        if [ -f "server/composer.json" ]; then
+      # ===============================================
+      # 소스코드 체크아웃
+      # ===============================================
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # ===============================================
+      # PHP 및 Composer 환경 설정
+      # ===============================================
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.1"
+          extensions: pdo, pdo_pgsql, mbstring, xml, zip, gd
+          coverage: none
+
+      - name: Validate Composer
+        run: |
+          echo "🔍 PHP 애플리케이션 검증 중..."
+          if [ -f "server/composer.json" ]; then
+            cd server
+            composer validate --no-check-publish
+            composer install --no-dev --optimize-autoloader --no-interaction
+            echo "✅ Composer 검증 완료"
+          else
+            echo "ℹ️ Composer 파일이 없습니다. Docker 빌드만 실행합니다."
+          fi
+
+      # ===============================================
+      # AWS 인증 (OIDC 방식)
+      # ===============================================
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN_APP }}
+          aws-region: ${{ secrets.AWS_REGION }}
+          role-session-name: GitHubActions-Application-${{ github.run_id }}
+
+      # ===============================================
+      # 기존 인프라 정보 조회
+      # ===============================================
+      - name: Get Infrastructure Resources
+        run: |
+          echo "🔍 기존 인프라 리소스 정보 조회 중..."
+
+          # ECR 리포지토리 URI 조회
+          ECR_REPO=$(aws ecr describe-repositories --repository-names ${PROJECT_NAME}-ecr --query 'repositories[0].repositoryUri' --output text 2>/dev/null || echo "")
+          if [ -z "$ECR_REPO" ]; then
+            echo "❌ ECR 리포지토리를 찾을 수 없습니다: ${PROJECT_NAME}-ecr"
+            echo "먼저 인프라 배포가 필요합니다."
+            exit 1
+          fi
+          echo "ECR_REPOSITORY=$ECR_REPO" >> $GITHUB_ENV
+          echo "✅ ECR Repository: $ECR_REPO"
+
+          # EKS 클러스터 이름 조회
+          EKS_CLUSTER=$(aws eks describe-cluster --name walb-eks-cluster --query 'cluster.name' --output text 2>/dev/null || echo "")
+          if [ -z "$EKS_CLUSTER" ] || [ "$EKS_CLUSTER" == "None" ]; then
+            echo "❌ EKS 클러스터를 찾을 수 없습니다: ${PROJECT_NAME}-eks"
+            echo "먼저 인프라 배포가 필요합니다."
+            exit 1
+          fi
+          echo "EKS_CLUSTER_NAME=$EKS_CLUSTER" >> $GITHUB_ENV
+          echo "✅ EKS Cluster: $EKS_CLUSTER"
+
+          # RDS 엔드포인트 조회
+          RDS_ENDPOINT=$(aws rds describe-db-instances --query 'DBInstances[?DBName==`mydb`].Endpoint.Address' --output text 2>/dev/null || echo "")
+          if [ -z "$RDS_ENDPOINT" ] || [ "$RDS_ENDPOINT" == "None" ]; then
+            echo "❌ RDS 인스턴스를 찾을 수 없습니다"
+            echo "먼저 인프라 배포가 필요합니다."
+            exit 1
+          fi
+          echo "RDS_ENDPOINT=$RDS_ENDPOINT" >> $GITHUB_ENV
+          echo "✅ RDS Endpoint: $RDS_ENDPOINT"
+
+          # EKS 클러스터 상태 확인
+          EKS_STATUS=$(aws eks describe-cluster --name $EKS_CLUSTER --query 'cluster.status' --output text)
+          if [ "$EKS_STATUS" != "ACTIVE" ]; then
+            echo "❌ EKS 클러스터가 활성 상태가 아닙니다: $EKS_STATUS"
+            exit 1
+          fi
+          echo "✅ EKS Cluster Status: $EKS_STATUS"
+
+      # ===============================================
+      # ECR 로그인
+      # ===============================================
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      # ===============================================
+      # Docker 이미지 빌드 및 푸시
+      # ===============================================
+      - name: Build and push Docker image
+        id: build-image
+        run: |
+          echo "🐳 Docker 이미지 빌드 중..."
+
+          # Git 커밋 해시를 태그로 사용
+          IMAGE_TAG=${{ github.sha }}
+          IMAGE_URI=${{ env.ECR_REPOSITORY }}:$IMAGE_TAG
+
+          # server 폴더로 이동해서 Docker 빌드
           cd server
-          composer validate --no-check-publish
-          composer install --no-dev --optimize-autoloader --no-interaction
-          echo "✅ Composer 검증 완료"
-        else
-          echo "ℹ️ Composer 파일이 없습니다. Docker 빌드만 실행합니다."
-        fi
-    
-    # ===============================================
-    # AWS 인증 (OIDC 방식)
-    # ===============================================
-    - name: Configure AWS credentials
-      uses: aws-actions/configure-aws-credentials@v4
-      with:
-        role-to-assume: ${{ secrets.AWS_ROLE_ARN_APP }}
-        aws-region: ${{ secrets.AWS_REGION }}
-        role-session-name: GitHubActions-Application-${{ github.run_id }}
+          docker build -t $IMAGE_URI .
+          docker tag $IMAGE_URI ${{ env.ECR_REPOSITORY }}:latest
 
-    # ===============================================
-    # 기존 인프라 정보 조회
-    # ===============================================
-    - name: Get Infrastructure Resources
-      run: |
-        echo "🔍 기존 인프라 리소스 정보 조회 중..."
-        
-        # ECR 리포지토리 URI 조회
-        ECR_REPO=$(aws ecr describe-repositories --repository-names ${PROJECT_NAME}-ecr --query 'repositories[0].repositoryUri' --output text 2>/dev/null || echo "")
-        if [ -z "$ECR_REPO" ]; then
-          echo "❌ ECR 리포지토리를 찾을 수 없습니다: ${PROJECT_NAME}-ecr"
-          echo "먼저 인프라 배포가 필요합니다."
-          exit 1
-        fi
-        echo "ECR_REPOSITORY=$ECR_REPO" >> $GITHUB_ENV
-        echo "✅ ECR Repository: $ECR_REPO"
-        
-        # EKS 클러스터 이름 조회
-        EKS_CLUSTER=$(aws eks describe-cluster --name walb-eks-cluster --query 'cluster.name' --output text 2>/dev/null || echo "")
-        if [ -z "$EKS_CLUSTER" ] || [ "$EKS_CLUSTER" == "None" ]; then
-          echo "❌ EKS 클러스터를 찾을 수 없습니다: ${PROJECT_NAME}-eks"
-          echo "먼저 인프라 배포가 필요합니다."
-          exit 1
-        fi
-        echo "EKS_CLUSTER_NAME=$EKS_CLUSTER" >> $GITHUB_ENV
-        echo "✅ EKS Cluster: $EKS_CLUSTER"
-        
-        # RDS 엔드포인트 조회
-        RDS_ENDPOINT=$(aws rds describe-db-instances --query 'DBInstances[?DBName==`mydb`].Endpoint.Address' --output text 2>/dev/null || echo "")
-        if [ -z "$RDS_ENDPOINT" ] || [ "$RDS_ENDPOINT" == "None" ]; then
-          echo "❌ RDS 인스턴스를 찾을 수 없습니다"
-          echo "먼저 인프라 배포가 필요합니다."
-          exit 1
-        fi
-        echo "RDS_ENDPOINT=$RDS_ENDPOINT" >> $GITHUB_ENV
-        echo "✅ RDS Endpoint: $RDS_ENDPOINT"
-        
-        # EKS 클러스터 상태 확인
-        EKS_STATUS=$(aws eks describe-cluster --name $EKS_CLUSTER --query 'cluster.status' --output text)
-        if [ "$EKS_STATUS" != "ACTIVE" ]; then
-          echo "❌ EKS 클러스터가 활성 상태가 아닙니다: $EKS_STATUS"
-          exit 1
-        fi
-        echo "✅ EKS Cluster Status: $EKS_STATUS"
-    
-    # ===============================================
-    # ECR 로그인
-    # ===============================================
-    - name: Login to Amazon ECR
-      id: login-ecr
-      uses: aws-actions/amazon-ecr-login@v2
-    
-    # ===============================================
-    # Docker 이미지 빌드 및 푸시
-    # ===============================================
-    - name: Build and push Docker image
-      id: build-image
-      run: |
-        echo "🐳 Docker 이미지 빌드 중..."
-        
-        # Git 커밋 해시를 태그로 사용
-        IMAGE_TAG=${{ github.sha }}
-        IMAGE_URI=${{ env.ECR_REPOSITORY }}:$IMAGE_TAG
-        
-        # server 폴더로 이동해서 Docker 빌드
-        cd server
-        docker build -t $IMAGE_URI .
-        docker tag $IMAGE_URI ${{ env.ECR_REPOSITORY }}:latest
-        
-        echo "📤 ECR에 이미지 푸시 중..."
-        docker push $IMAGE_URI
-        docker push ${{ env.ECR_REPOSITORY }}:latest
-        
-        echo "✅ 이미지 푸시 완료: $IMAGE_URI"
-        echo "image=$IMAGE_URI" >> $GITHUB_OUTPUT
+          echo "📤 ECR에 이미지 푸시 중..."
+          docker push $IMAGE_URI
+          docker push ${{ env.ECR_REPOSITORY }}:latest
 
-    - name: Database Connection and Schema Setup
-      run: |
-        # AWS CLI를 사용해서 리소스 정보 직접 조회
-        PROJECT_NAME="walb-app"
-        
-        # RDS 엔드포인트 조회 (태그 기반)
-        echo "🔍 RDS 인스턴스 조회 중..."
-        DB_HOST=$(aws rds describe-db-instances \
-          --query "DBInstances[?contains(keys(TagList[?Key=='Project']), 'Project') && TagList[?Key=='Project'].Value[0]=='${PROJECT_NAME}'].Endpoint.Address" \
-          --output text 2>/dev/null || echo "")
-        
-        if [ -z "$DB_HOST" ]; then
-          # 태그 조회가 안 되면 DB 이름으로 조회
+          echo "✅ 이미지 푸시 완료: $IMAGE_URI"
+          echo "image=$IMAGE_URI" >> $GITHUB_OUTPUT
+
+      - name: Database Connection and Schema Setup
+        run: |
+          # AWS CLI를 사용해서 리소스 정보 직접 조회
+          PROJECT_NAME="walb-app"
+
+          # RDS 엔드포인트 조회 (태그 기반)
+          echo "🔍 RDS 인스턴스 조회 중..."
           DB_HOST=$(aws rds describe-db-instances \
-            --query "DBInstances[?DBName=='mydb'].Endpoint.Address" \
+            --query "DBInstances[?contains(keys(TagList[?Key=='Project']), 'Project') && TagList[?Key=='Project'].Value[0]=='${PROJECT_NAME}'].Endpoint.Address" \
             --output text 2>/dev/null || echo "")
-        fi
-        
-        # Bastion Host IP 조회 (태그 기반)
-        echo "🔍 Bastion Host 조회 중..."
-        BASTION_IP=$(aws ec2 describe-instances \
-          --filters "Name=tag:Name,Values=${PROJECT_NAME}-bastion-host" "Name=instance-state-name,Values=running" \
-          --query "Reservations[0].Instances[0].PublicIpAddress" \
-          --output text 2>/dev/null || echo "")
-        
-        if [ -z "$BASTION_IP" ] || [ "$BASTION_IP" == "None" ]; then
-          # 태그로 안 되면 보안그룹으로 조회
+
+          if [ -z "$DB_HOST" ]; then
+            # 태그 조회가 안 되면 DB 이름으로 조회
+            DB_HOST=$(aws rds describe-db-instances \
+              --query "DBInstances[?DBName=='mydb'].Endpoint.Address" \
+              --output text 2>/dev/null || echo "")
+          fi
+
+          # Bastion Host IP 조회 (태그 기반)
+          echo "🔍 Bastion Host 조회 중..."
           BASTION_IP=$(aws ec2 describe-instances \
-            --filters "Name=tag:Component,Values=Bastion" "Name=instance-state-name,Values=running" \
+            --filters "Name=tag:Name,Values=${PROJECT_NAME}-bastion-host" "Name=instance-state-name,Values=running" \
             --query "Reservations[0].Instances[0].PublicIpAddress" \
             --output text 2>/dev/null || echo "")
-        fi
-        
-        # DB 사용자명과 DB 이름 (하드코딩된 값 사용)
-        DB_NAME="mydb"
-        DB_USER="dbadmin"
-        
-        # Parameter Store에서 DB 패스워드 조회
-        echo "🔍 DB 패스워드 조회 중..."
-        DB_PASSWORD=$(aws ssm get-parameter \
-          --name "/${PROJECT_NAME}/rds/master-password" \
-          --with-decryption \
-          --query 'Parameter.Value' \
-          --output text 2>/dev/null || echo "")
-        
-        # 값 검증
-        if [ -z "$DB_HOST" ] || [ "$DB_HOST" == "None" ]; then
-          echo "❌ RDS 엔드포인트를 찾을 수 없습니다."
-          echo "사용 가능한 RDS 인스턴스:"
-          aws rds describe-db-instances --query "DBInstances[*].[DBInstanceIdentifier,Endpoint.Address,DBName]" --output table
-          exit 1
-        fi
-        
-        if [ -z "$BASTION_IP" ] || [ "$BASTION_IP" == "None" ]; then
-          echo "❌ Bastion Host를 찾을 수 없습니다."
-          echo "실행 중인 EC2 인스턴스:"
-          aws ec2 describe-instances \
-            --filters "Name=instance-state-name,Values=running" \
-            --query "Reservations[*].Instances[*].[InstanceId,PublicIpAddress,Tags[?Key=='Name'].Value[0]]" \
-            --output table
-          exit 1
-        fi
-        
-        if [ -z "$DB_PASSWORD" ]; then
-          echo "❌ DB 패스워드를 Parameter Store에서 찾을 수 없습니다."
-          exit 1
-        fi
-        
-        echo "✅ DB Host: '$DB_HOST'"
-        echo "✅ Bastion IP: '$BASTION_IP'"
-        echo "✅ DB User: '$DB_USER'"
-        echo "✅ DB Name: '$DB_NAME'"
-        
-        # SSH 키를 Parameter Store에서 가져오기
-        echo "🔑 SSH 키 조회 중..."
-        aws ssm get-parameter \
-          --name "/${PROJECT_NAME}/bastion/ssh-private-key" \
-          --with-decryption \
-          --query 'Parameter.Value' \
-          --output text > bastion_key.pem
-        chmod 600 bastion_key.pem
-        
-        echo "🔍 SSH 연결 테스트 중..."
-        # SSH 연결 테스트 (타임아웃 설정)
-        if ! ssh -i bastion_key.pem -o StrictHostKeyChecking=no -o ConnectTimeout=10 -o BatchMode=yes ec2-user@$BASTION_IP "echo 'SSH connection successful'" 2>/dev/null; then
-          echo "❌ SSH 연결 실패. Bastion Host 상태 확인:"
-          aws ec2 describe-instances \
-            --filters "Name=tag:Component,Values=Bastion" \
-            --query "Reservations[*].Instances[*].[InstanceId,State.Name,PublicIpAddress,PrivateIpAddress]" \
-            --output table
-          exit 1
-        fi
-        
-        echo "🔗 SSH 터널을 통한 PostgreSQL 연결 테스트 중..."
-        
-        # Bastion Host에서 RDS 연결 테스트 먼저 수행
-        echo "🔍 Bastion Host에서 RDS 직접 연결 테스트 중..."
-        echo "  DB Host: $DB_HOST"
-        echo "  DB Port: 5432"
-        
-        # netcat 설치 및 연결 테스트
-        ssh -i bastion_key.pem -o StrictHostKeyChecking=no -o ConnectTimeout=10 -o BatchMode=yes ec2-user@$BASTION_IP \
-          "command -v nc >/dev/null 2>&1 || sudo yum install -y nc; echo 'Testing connection...'; timeout 10 nc -zv $DB_HOST 5432" || {
-          echo "⚠️ Bastion에서 RDS 직접 연결 실패"
-          echo "대체 연결 테스트 시도 중..."
-          
-          # telnet 대체 테스트
-          ssh -i bastion_key.pem -o StrictHostKeyChecking=no -o ConnectTimeout=10 -o BatchMode=yes ec2-user@$BASTION_IP \
-            "timeout 10 bash -c 'exec 3<>/dev/tcp/$DB_HOST/5432' && echo 'Raw socket connection successful' || echo 'Raw socket connection failed'"
-        }
-        
-        # 보안 그룹 정보 확인
-        echo "🔍 보안 그룹 정보 확인 중..."
-        BASTION_SG=$(aws ec2 describe-instances \
-          --filters "Name=tag:Name,Values=${PROJECT_NAME}-bastion-host" "Name=instance-state-name,Values=running" \
-          --query "Reservations[0].Instances[0].SecurityGroups[0].GroupId" --output text)
-        
-        RDS_SG=$(aws rds describe-db-instances \
-          --query "DBInstances[?DBName=='mydb'].VpcSecurityGroups[0].VpcSecurityGroupId" --output text)
-        
-        echo "Bastion Security Group: $BASTION_SG"
-        echo "RDS Security Group: $RDS_SG"
-        
-        # 보안 그룹 규칙 확인 (권한이 있는 경우에만)
-        if [ -n "$RDS_SG" ]; then
-          echo "🔍 RDS 보안 그룹 인바운드 규칙 확인 시도..."
-          if aws ec2 describe-security-groups --group-ids "$RDS_SG" \
-            --query "SecurityGroups[0].IpPermissions[?FromPort==\`5432\`]" --output table 2>/dev/null; then
-            echo "✅ 보안 그룹 규칙 조회 성공"
-          else
-            echo "⚠️ 보안 그룹 규칙 조회 권한 없음 (정상 - 보안상 제한)"
-            echo "RDS Security Group ID: $RDS_SG"
-            echo "Bastion Security Group ID: $BASTION_SG"
+
+          if [ -z "$BASTION_IP" ] || [ "$BASTION_IP" == "None" ]; then
+            # 태그로 안 되면 보안그룹으로 조회
+            BASTION_IP=$(aws ec2 describe-instances \
+              --filters "Name=tag:Component,Values=Bastion" "Name=instance-state-name,Values=running" \
+              --query "Reservations[0].Instances[0].PublicIpAddress" \
+              --output text 2>/dev/null || echo "")
           fi
-        fi
-        
-        # SSH 터널을 통한 PostgreSQL 연결 테스트
-        echo "🔗 SSH 터널 생성 중..."
-        ssh -i bastion_key.pem -o StrictHostKeyChecking=no -o ExitOnForwardFailure=yes -L 5432:$DB_HOST:5432 ec2-user@$BASTION_IP -N &
-        SSH_PID=$!
-        
-        # 터널 설정 대기
-        sleep 15
-        
-        # PostgreSQL 클라이언트 설치 (필요한 경우)
-        if ! command -v psql &> /dev/null; then
-          echo "📦 PostgreSQL 클라이언트 설치 중..."
-          sudo apt-get update && sudo apt-get install -y postgresql-client
-        fi
-        
-        # 로컬 포트를 통해 RDS 연결 테스트
-        if PGPASSWORD=$DB_PASSWORD psql -h localhost -p 5432 -U $DB_USER -d $DB_NAME -c "SELECT 1;" 2>/dev/null; then
-          echo "✅ 데이터베이스 연결 성공"
-        else
-          echo "❌ 데이터베이스 연결 실패"
-          kill $SSH_PID 2>/dev/null
-          rm -f bastion_key.pem
-          exit 1
-        fi
-        
-        # SSH 터널 종료 및 정리
-        kill $SSH_PID 2>/dev/null
-        rm -f bastion_key.pem
-        
-        echo "✅ 데이터베이스 연결 테스트 완료"
-      env:
-        PROJECT_NAME: "walb-app"
-        
-    # ===============================================
-    # PostgreSQL 클라이언트 설치 및 스키마 적용
-    # ===============================================
-    - name: Apply Database Schema
-      if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-      run: |
-        echo "🗄️ 데이터베이스 스키마 적용 중..."
-        
-        # PostgreSQL 클라이언트 설치
-        sudo apt-get update && sudo apt-get install -y postgresql-client
-        
-        # 환경 변수 설정
-        PROJECT_NAME="walb-app"
-        DB_HOST="${{ env.RDS_ENDPOINT }}"
-        DB_NAME="mydb"
-        DB_USER="dbadmin"
-        
-        # Bastion Host IP 조회
-        BASTION_IP=$(aws ec2 describe-instances \
-          --filters "Name=tag:Name,Values=${PROJECT_NAME}-bastion-host" "Name=instance-state-name,Values=running" \
-          --query "Reservations[0].Instances[0].PublicIpAddress" \
-          --output text 2>/dev/null || echo "")
-        
-        if [ -z "$BASTION_IP" ] || [ "$BASTION_IP" == "None" ]; then
-          echo "❌ Bastion Host를 찾을 수 없습니다."
-          exit 1
-        fi
-        
-        echo "🔍 연결 정보:"
-        echo "  RDS 엔드포인트: $DB_HOST"
-        echo "  Bastion IP: $BASTION_IP"
-        echo "  DB 이름: $DB_NAME"
-        echo "  DB 사용자: $DB_USER"
-        
-        # SSH 키를 Parameter Store에서 가져오기
-        echo "🔑 SSH 키 가져오는 중..."
-        aws ssm get-parameter \
-          --name "/${PROJECT_NAME}/bastion/ssh-private-key" \
-          --with-decryption \
-          --query 'Parameter.Value' \
-          --output text > bastion_key.pem
-        chmod 600 bastion_key.pem
-        
-        # SSH 터널 생성 (백그라운드에서 실행)
-        echo "🔗 SSH 터널 생성 중..."
-        ssh -i bastion_key.pem \
-            -o StrictHostKeyChecking=no \
-            -o ExitOnForwardFailure=yes \
-            -L 5432:$DB_HOST:5432 \
-            ec2-user@$BASTION_IP \
-            -N &
-        SSH_PID=$!
-        
-        # 터널 설정 대기
-        echo "⏳ SSH 터널 설정 대기 중..."
-        sleep 15
-        
-        # SSH 터널 상태 확인
-        if ! kill -0 $SSH_PID 2>/dev/null; then
-          echo "❌ SSH 터널 생성 실패"
-          rm -f bastion_key.pem
-          exit 1
-        fi
-        
-        echo "✅ SSH 터널 생성 완료"
-        
-        # 로컬 포트를 통해 RDS 연결 테스트
-        echo "🔍 데이터베이스 연결 테스트 중..."
-        if ! PGPASSWORD="${{ secrets.DB_PASSWORD }}" psql \
-          -h localhost \
-          -p 5432 \
-          -U "$DB_USER" \
-          -d "$DB_NAME" \
-          -c "SELECT version();" \
-          -v ON_ERROR_STOP=1 >/dev/null 2>&1; then
-          echo "❌ 데이터베이스 연결 실패"
-          kill $SSH_PID 2>/dev/null
-          rm -f bastion_key.pem
-          exit 1
-        fi
-        
-        echo "✅ 데이터베이스 연결 성공"
-        
-        # 기존 테이블 확인
-        echo "🔍 기존 테이블 확인 중..."
-        EXISTING_TABLES=$(PGPASSWORD="${{ secrets.DB_PASSWORD }}" psql \
-          -h localhost \
-          -p 5432 \
-          -U "$DB_USER" \
-          -d "$DB_NAME" \
-          -t -c "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_name IN ('users', 'posts', 'images', 'files');" \
-          -v ON_ERROR_STOP=1 | tr -d ' ')
-        
-        if [ "$EXISTING_TABLES" -eq "0" ]; then
-          echo "📝 스키마 파일 적용 중..."
-          if PGPASSWORD="${{ secrets.DB_PASSWORD }}" psql \
-            -h localhost \
-            -p 5432 \
-            -U "$DB_USER" \
-            -d "$DB_NAME" \
-            -f server/files/schema.sql \
-            -v ON_ERROR_STOP=1; then
-            echo "✅ 스키마 적용 완료"
+
+          # DB 사용자명과 DB 이름 (하드코딩된 값 사용)
+          DB_NAME="mydb"
+          DB_USER="dbadmin"
+
+          # Parameter Store에서 DB 패스워드 조회
+          echo "🔍 DB 패스워드 조회 중..."
+          DB_PASSWORD=$(aws ssm get-parameter \
+            --name "/${PROJECT_NAME}/rds/master-password" \
+            --with-decryption \
+            --query 'Parameter.Value' \
+            --output text 2>/dev/null || echo "")
+
+          # 값 검증
+          if [ -z "$DB_HOST" ] || [ "$DB_HOST" == "None" ]; then
+            echo "❌ RDS 엔드포인트를 찾을 수 없습니다."
+            echo "사용 가능한 RDS 인스턴스:"
+            aws rds describe-db-instances --query "DBInstances[*].[DBInstanceIdentifier,Endpoint.Address,DBName]" --output table
+            exit 1
+          fi
+
+          if [ -z "$BASTION_IP" ] || [ "$BASTION_IP" == "None" ]; then
+            echo "❌ Bastion Host를 찾을 수 없습니다."
+            echo "실행 중인 EC2 인스턴스:"
+            aws ec2 describe-instances \
+              --filters "Name=instance-state-name,Values=running" \
+              --query "Reservations[*].Instances[*].[InstanceId,PublicIpAddress,Tags[?Key=='Name'].Value[0]]" \
+              --output table
+            exit 1
+          fi
+
+          if [ -z "$DB_PASSWORD" ]; then
+            echo "❌ DB 패스워드를 Parameter Store에서 찾을 수 없습니다."
+            exit 1
+          fi
+
+          echo "✅ DB Host: '$DB_HOST'"
+          echo "✅ Bastion IP: '$BASTION_IP'"
+          echo "✅ DB User: '$DB_USER'"
+          echo "✅ DB Name: '$DB_NAME'"
+
+          # SSH 키를 Parameter Store에서 가져오기
+          echo "🔑 SSH 키 조회 중..."
+          aws ssm get-parameter \
+            --name "/${PROJECT_NAME}/bastion/ssh-private-key" \
+            --with-decryption \
+            --query 'Parameter.Value' \
+            --output text > bastion_key.pem
+          chmod 600 bastion_key.pem
+
+          echo "🔍 SSH 연결 테스트 중..."
+          # SSH 연결 테스트 (타임아웃 설정)
+          if ! ssh -i bastion_key.pem -o StrictHostKeyChecking=no -o ConnectTimeout=10 -o BatchMode=yes ec2-user@$BASTION_IP "echo 'SSH connection successful'" 2>/dev/null; then
+            echo "❌ SSH 연결 실패. Bastion Host 상태 확인:"
+            aws ec2 describe-instances \
+              --filters "Name=tag:Component,Values=Bastion" \
+              --query "Reservations[*].Instances[*].[InstanceId,State.Name,PublicIpAddress,PrivateIpAddress]" \
+              --output table
+            exit 1
+          fi
+
+          echo "🔗 SSH 터널을 통한 PostgreSQL 연결 테스트 중..."
+
+          # Bastion Host에서 RDS 연결 테스트 먼저 수행
+          echo "🔍 Bastion Host에서 RDS 직접 연결 테스트 중..."
+          echo "  DB Host: $DB_HOST"
+          echo "  DB Port: 5432"
+
+          # netcat 설치 및 연결 테스트
+          ssh -i bastion_key.pem -o StrictHostKeyChecking=no -o ConnectTimeout=10 -o BatchMode=yes ec2-user@$BASTION_IP \
+            "command -v nc >/dev/null 2>&1 || sudo yum install -y nc; echo 'Testing connection...'; timeout 10 nc -zv $DB_HOST 5432" || {
+            echo "⚠️ Bastion에서 RDS 직접 연결 실패"
+            echo "대체 연결 테스트 시도 중..."
+            
+            # telnet 대체 테스트
+            ssh -i bastion_key.pem -o StrictHostKeyChecking=no -o ConnectTimeout=10 -o BatchMode=yes ec2-user@$BASTION_IP \
+              "timeout 10 bash -c 'exec 3<>/dev/tcp/$DB_HOST/5432' && echo 'Raw socket connection successful' || echo 'Raw socket connection failed'"
+          }
+
+          # 보안 그룹 정보 확인
+          echo "🔍 보안 그룹 정보 확인 중..."
+          BASTION_SG=$(aws ec2 describe-instances \
+            --filters "Name=tag:Name,Values=${PROJECT_NAME}-bastion-host" "Name=instance-state-name,Values=running" \
+            --query "Reservations[0].Instances[0].SecurityGroups[0].GroupId" --output text)
+
+          RDS_SG=$(aws rds describe-db-instances \
+            --query "DBInstances[?DBName=='mydb'].VpcSecurityGroups[0].VpcSecurityGroupId" --output text)
+
+          echo "Bastion Security Group: $BASTION_SG"
+          echo "RDS Security Group: $RDS_SG"
+
+          # 보안 그룹 규칙 확인 (권한이 있는 경우에만)
+          if [ -n "$RDS_SG" ]; then
+            echo "🔍 RDS 보안 그룹 인바운드 규칙 확인 시도..."
+            if aws ec2 describe-security-groups --group-ids "$RDS_SG" \
+              --query "SecurityGroups[0].IpPermissions[?FromPort==\`5432\`]" --output table 2>/dev/null; then
+              echo "✅ 보안 그룹 규칙 조회 성공"
+            else
+              echo "⚠️ 보안 그룹 규칙 조회 권한 없음 (정상 - 보안상 제한)"
+              echo "RDS Security Group ID: $RDS_SG"
+              echo "Bastion Security Group ID: $BASTION_SG"
+            fi
+          fi
+
+          # SSH 터널을 통한 PostgreSQL 연결 테스트
+          echo "🔗 SSH 터널 생성 중..."
+          ssh -i bastion_key.pem -o StrictHostKeyChecking=no -o ExitOnForwardFailure=yes -L 5432:$DB_HOST:5432 ec2-user@$BASTION_IP -N &
+          SSH_PID=$!
+
+          # 터널 설정 대기
+          sleep 15
+
+          # PostgreSQL 클라이언트 설치 (필요한 경우)
+          if ! command -v psql &> /dev/null; then
+            echo "📦 PostgreSQL 클라이언트 설치 중..."
+            sudo apt-get update && sudo apt-get install -y postgresql-client
+          fi
+
+          # 로컬 포트를 통해 RDS 연결 테스트
+          if PGPASSWORD=$DB_PASSWORD psql -h localhost -p 5432 -U $DB_USER -d $DB_NAME -c "SELECT 1;" 2>/dev/null; then
+            echo "✅ 데이터베이스 연결 성공"
           else
-            echo "❌ 스키마 적용 실패"
+            echo "❌ 데이터베이스 연결 실패"
             kill $SSH_PID 2>/dev/null
             rm -f bastion_key.pem
             exit 1
           fi
-        else
-          echo "ℹ️ 테이블이 이미 존재합니다. 스키마 적용을 건너뜁니다."
-        fi
-        
-        # 정리 작업
-        echo "🧹 정리 작업 중..."
-        kill $SSH_PID 2>/dev/null
-        rm -f bastion_key.pem
-        
-        echo "✅ 데이터베이스 스키마 작업 완료"
-    
-    # ===============================================
-    # kubectl 및 Helm 설치
-    # ===============================================
-    - name: Install kubectl and Helm
-      run: |
-        echo "🔧 kubectl 및 Helm 설치 중..."
-        
-        # kubectl 설치
-        curl -LO "https://dl.k8s.io/release/v1.28.0/bin/linux/amd64/kubectl"
-        chmod +x kubectl
-        sudo mv kubectl /usr/local/bin/
-        
-        # Helm 설치
-        curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
-        
-        echo "✅ kubectl 및 Helm 설치 완료"
-        kubectl version --client
-        helm version
-    
-    - name: Update kubeconfig for EKS
-      run: |
-        echo "🔧 EKS 클러스터 kubeconfig 업데이트 중..."
-        
-        # 현재 AWS 자격 증명 확인
-        echo "🔍 현재 AWS 자격 증명 확인..."
-        aws sts get-caller-identity
-        
-        # EKS 클러스터 이름 조회 (여러 방법 시도)
-        echo "🔍 EKS 클러스터 조회 중..."
-        
-        # 방법 1: 클러스터 목록에서 첫 번째 조회
-        EKS_CLUSTER_NAME=$(aws eks list-clusters --query 'clusters[0]' --output text 2>/dev/null || echo "")
-        
-        # 방법 2: 특정 이름으로 조회
-        if [ -z "$EKS_CLUSTER_NAME" ] || [ "$EKS_CLUSTER_NAME" == "None" ]; then
-          EKS_CLUSTER_NAME="walb-eks-cluster"
-          echo "기본 클러스터 이름 사용: $EKS_CLUSTER_NAME"
-        fi
-        
-        # 클러스터 존재 확인
-        if ! aws eks describe-cluster --name "$EKS_CLUSTER_NAME" --region ${{ secrets.AWS_REGION }} >/dev/null 2>&1; then
-          echo "❌ EKS 클러스터 '$EKS_CLUSTER_NAME'를 찾을 수 없습니다."
-          echo "사용 가능한 클러스터 목록:"
-          aws eks list-clusters --region ${{ secrets.AWS_REGION }}
-          exit 1
-        fi
-        
-        echo "✅ EKS 클러스터: $EKS_CLUSTER_NAME"
-        echo "EKS_CLUSTER_NAME=$EKS_CLUSTER_NAME" >> $GITHUB_ENV
-        
-        # 클러스터 상태 확인
-        CLUSTER_STATUS=$(aws eks describe-cluster --name "$EKS_CLUSTER_NAME" --region ${{ secrets.AWS_REGION }} --query 'cluster.status' --output text)
-        echo "클러스터 상태: $CLUSTER_STATUS"
-        
-        if [ "$CLUSTER_STATUS" != "ACTIVE" ]; then
-          echo "❌ 클러스터가 ACTIVE 상태가 아닙니다: $CLUSTER_STATUS"
-          exit 1
-        fi
-        
-        # kubeconfig 업데이트 (상세 로그 포함)
-        echo "🔧 kubeconfig 업데이트 중..."
-        aws eks update-kubeconfig --region ${{ secrets.AWS_REGION }} --name "$EKS_CLUSTER_NAME" --verbose
-        
-        # 클러스터 연결 테스트 (자세한 오류 정보 포함)
-        echo "🔍 클러스터 연결 테스트..."
-        if ! kubectl cluster-info --request-timeout=30s; then
-          echo "❌ kubectl cluster-info 실패. 추가 진단 정보:"
-          
-          # kubectl 설정 확인
-          echo "kubectl 설정 확인:"
-          kubectl config view
-          
-          # 현재 컨텍스트 확인
-          echo "현재 컨텍스트:"
-          kubectl config current-context
-          
-          # 클러스터 엔드포인트 직접 테스트
-          CLUSTER_ENDPOINT=$(aws eks describe-cluster --name "$EKS_CLUSTER_NAME" --region ${{ secrets.AWS_REGION }} --query 'cluster.endpoint' --output text)
-          echo "클러스터 엔드포인트: $CLUSTER_ENDPOINT"
-          
-          # IAM 역할과 RBAC 매핑 확인
-          echo "EKS 클러스터의 aws-auth ConfigMap 확인이 필요할 수 있습니다."
-          exit 1
-        fi
-        
-        echo "🔍 노드 상태 확인..."
-        kubectl get nodes --show-labels
-    
-    # ===============================================
-    # cert-manager 설치 (webhook TLS 인증서 문제 해결)
-    # ===============================================
-    - name: Install cert-manager
-      run: |
-        echo "🔧 cert-manager 설치 중..."
-        
-        # 기존 AWS Load Balancer Controller webhook 정리 (cert-manager 설치 간섭 방지)
-        echo "🧹 기존 AWS Load Balancer Controller webhook 정리 중..."
-        kubectl delete validatingadmissionwebhook aws-load-balancer-webhook 2>/dev/null || echo "ValidatingAdmissionWebhook 없음"
-        kubectl delete mutatingadmissionwebhook aws-load-balancer-webhook 2>/dev/null || echo "MutatingAdmissionWebhook 없음"
-        kubectl delete service aws-load-balancer-webhook-service -n kube-system 2>/dev/null || echo "웹훅 서비스 없음"
-        
-        # AWS Load Balancer Controller 제거 (재설치를 위해)
-        if helm list -n kube-system | grep -q aws-load-balancer-controller; then
-          echo "기존 AWS Load Balancer Controller 제거 중..."
-          helm uninstall aws-load-balancer-controller -n kube-system || true
-          sleep 10
-        fi
-        
-        echo "✅ webhook 정리 완료"
-        
-        # cert-manager 네임스페이스 생성
-        kubectl create namespace cert-manager --dry-run=client -o yaml | kubectl apply -f -
-        
-        # cert-manager Helm 리포지토리 추가
-        helm repo add jetstack https://charts.jetstack.io
-        helm repo update
-        
-        # 기존 cert-manager 완전 제거
-        if helm list -n cert-manager | grep -q cert-manager; then
-          echo "기존 cert-manager 제거 중..."
-          helm uninstall cert-manager -n cert-manager || true
-        fi
-        
-        # cert-manager CRDs 제거 (완전 초기화)
-        kubectl delete crd certificaterequests.cert-manager.io 2>/dev/null || true
-        kubectl delete crd certificates.cert-manager.io 2>/dev/null || true
-        kubectl delete crd challenges.acme.cert-manager.io 2>/dev/null || true
-        kubectl delete crd clusterissuers.cert-manager.io 2>/dev/null || true
-        kubectl delete crd issuers.cert-manager.io 2>/dev/null || true
-        kubectl delete crd orders.acme.cert-manager.io 2>/dev/null || true
-        
-        # 네임스페이스 완전 정리
-        kubectl delete namespace cert-manager 2>/dev/null || true
-        sleep 20
-        
-        # cert-manager 네임스페이스 재생성
-        kubectl create namespace cert-manager
-        
-        # cert-manager kubectl 직접 설치 (더 안정적)
-        echo "📦 cert-manager kubectl 직접 설치 중..."
-        kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.13.0/cert-manager.yaml
-        
-        echo "✅ cert-manager 설치 완료"
-        
-        # cert-manager Pod 준비 상태 대기 (충분한 시간)
-        echo "⏳ cert-manager Pod 준비 대기 중..."
-        kubectl wait --for=condition=ready pod -l app=cert-manager -n cert-manager --timeout=600s
-        kubectl wait --for=condition=ready pod -l app=webhook -n cert-manager --timeout=600s  
-        kubectl wait --for=condition=ready pod -l app=cainjector -n cert-manager --timeout=600s
-        
-        # cert-manager 완전 안정화 대기
-        echo "⏳ cert-manager 완전 안정화 대기 (60초)..."
-        sleep 60
-        
-        # cert-manager webhook 서비스 확인
-        echo "🔍 cert-manager webhook 서비스 확인..."
-        kubectl get service cert-manager-webhook -n cert-manager
-        kubectl get endpoints cert-manager-webhook -n cert-manager
-        
-        # ValidatingAdmissionWebhook 확인
-        echo "🔍 ValidatingAdmissionWebhook 확인..."
-        kubectl get validatingadmissionwebhook cert-manager-webhook || echo "webhook 아직 준비 중..."
-        
-        # webhook 연결성 테스트
-        echo "🔍 webhook 연결성 테스트..."
-        for i in {1..10}; do
-          echo "webhook 테스트 시도 ($i/10)..."
-          if kubectl get --raw /api/v1/namespaces/cert-manager/services/cert-manager-webhook:https:webhook/proxy/readyz 2>/dev/null; then
-            echo "✅ webhook 연결성 테스트 성공"
-            break
-          else
-            echo "⚠️ webhook 연결성 테스트 실패, 10초 후 재시도..."
-            sleep 10
-          fi
-        done
-        
-        # Self-signed issuer 생성 (webhook 준비 후)
-        echo "🔐 Self-signed issuer 생성 중..."
-        for i in {1..5}; do
-          echo "ClusterIssuer 생성 시도 ($i/5)..."
-          if cat <<'EOF' | kubectl apply -f -
-        apiVersion: cert-manager.io/v1
-        kind: ClusterIssuer
-        metadata:
-          name: selfsigned-issuer
-        spec:
-          selfSigned: {}
-        EOF
-          then
-            echo "✅ ClusterIssuer 생성 성공"
-            break
-          else
-            echo "⚠️ ClusterIssuer 생성 실패, 30초 후 재시도..."
-            sleep 30
-          fi
-        done
-        
-        # ClusterIssuer 준비 대기
-        echo "⏳ ClusterIssuer 준비 대기..."
-        kubectl wait --for=condition=ready clusterissuer selfsigned-issuer --timeout=300s || echo "ClusterIssuer 대기 시간 초과"
-        
-        echo "✅ cert-manager 설치 완료"
-        kubectl get pods -n cert-manager
-        kubectl get certificates -n cert-manager
-    
-    # ===============================================
-    # AWS Load Balancer Controller 설치
-    # ===============================================
-    - name: Install AWS Load Balancer Controller
-      run: |
-        echo "🔧 AWS Load Balancer Controller 설치 중..."
-        
-        # IAM Role과 ServiceAccount 존재 확인
-        echo "🔍 IAM Role 확인 중..."
-        
-        # EKS 클러스터 이름 기반으로 정확한 Role 이름 구성
-        PRIMARY_ROLE_NAME="${{ env.EKS_CLUSTER_NAME }}-aws-load-balancer-controller"
-        
-        echo "🔍 예상되는 IAM Role: $PRIMARY_ROLE_NAME"
-        
-        # 먼저 예상되는 Role 이름으로 직접 확인
-        if aws iam get-role --role-name "$PRIMARY_ROLE_NAME" >/dev/null 2>&1; then
-          echo "✅ IAM Role 발견: $PRIMARY_ROLE_NAME"
-          IAM_ROLE_ARN="arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/$PRIMARY_ROLE_NAME"
-          FOUND_ROLE="$PRIMARY_ROLE_NAME"
-        else
-          echo "⚠️ 예상 Role 없음, 다른 패턴 확인 중..."
-          
-          # 백업 패턴들 확인
-          BACKUP_PATTERNS=(
-            "walb-eks-cluster-aws-load-balancer-controller"
-            "walb-app-aws-load-balancer-controller"
-          )
-          
-          FOUND_ROLE=""
-          for ROLE_NAME in "${BACKUP_PATTERNS[@]}"; do
-            echo "🔍 백업 패턴 확인: $ROLE_NAME"
-            if aws iam get-role --role-name "$ROLE_NAME" >/dev/null 2>&1; then
-              echo "✅ IAM Role 발견: $ROLE_NAME"
-              IAM_ROLE_ARN="arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/$ROLE_NAME"
-              FOUND_ROLE="$ROLE_NAME"
-              break
-            fi
-          done
-          
-          # 모든 패턴에서 찾지 못한 경우
-          if [ -z "$FOUND_ROLE" ]; then
-            echo "❌ AWS Load Balancer Controller IAM Role을 찾을 수 없습니다."
-            echo ""
-            echo "🔍 Load Balancer 관련 IAM Role 검색 중..."
-            if aws iam list-roles --query 'Roles[?contains(RoleName, `load-balancer`) || contains(RoleName, `alb`)].{RoleName:RoleName,CreateDate:CreateDate}' --output table 2>/dev/null; then
-              echo "위 Role들을 확인했지만 예상 패턴과 일치하지 않습니다."
-            else
-              echo "IAM Role 목록 조회 권한이 없습니다."
-            fi
-            echo ""
-            echo "해결 방법:"
-            echo "1. Terraform에서 enable_load_balancer = true로 설정"
-            echo "2. terraform apply로 인프라 재배포"
-            echo "3. 예상 Role 이름: $PRIMARY_ROLE_NAME"
+
+          # SSH 터널 종료 및 정리
+          kill $SSH_PID 2>/dev/null
+          rm -f bastion_key.pem
+
+          echo "✅ 데이터베이스 연결 테스트 완료"
+        env:
+          PROJECT_NAME: "walb-app"
+
+      # ===============================================
+      # PostgreSQL 클라이언트 설치 및 스키마 적용
+      # ===============================================
+      - name: Apply Database Schema
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        run: |
+          echo "🗄️ 데이터베이스 스키마 적용 중..."
+
+          # PostgreSQL 클라이언트 설치
+          sudo apt-get update && sudo apt-get install -y postgresql-client
+
+          # 환경 변수 설정
+          PROJECT_NAME="walb-app"
+          DB_HOST="${{ env.RDS_ENDPOINT }}"
+          DB_NAME="mydb"
+          DB_USER="dbadmin"
+
+          # Bastion Host IP 조회
+          BASTION_IP=$(aws ec2 describe-instances \
+            --filters "Name=tag:Name,Values=${PROJECT_NAME}-bastion-host" "Name=instance-state-name,Values=running" \
+            --query "Reservations[0].Instances[0].PublicIpAddress" \
+            --output text 2>/dev/null || echo "")
+
+          if [ -z "$BASTION_IP" ] || [ "$BASTION_IP" == "None" ]; then
+            echo "❌ Bastion Host를 찾을 수 없습니다."
             exit 1
           fi
-        fi
-        
-        echo "✅ 사용할 IAM Role: $IAM_ROLE_ARN"
-        
-        # 기존 ServiceAccount 확인 및 삭제 (재생성을 위해)
-        if kubectl get serviceaccount aws-load-balancer-controller -n kube-system >/dev/null 2>&1; then
-          echo "기존 ServiceAccount 삭제 중..."
-          kubectl delete serviceaccount aws-load-balancer-controller -n kube-system || true
-        fi
-        
-        # AWS Load Balancer Controller ServiceAccount 생성
-        echo "🔧 ServiceAccount 생성 중..."
-        kubectl apply -f - <<EOF
-        apiVersion: v1
-        kind: ServiceAccount
-        metadata:
-          name: aws-load-balancer-controller
-          namespace: kube-system
-          annotations:
-            eks.amazonaws.com/role-arn: $IAM_ROLE_ARN
-        EOF
-        
-        # VPC ID 조회
-        VPC_ID=$(aws eks describe-cluster --name ${{ env.EKS_CLUSTER_NAME }} --query "cluster.resourcesVpcConfig.vpcId" --output text)
-        echo "VPC ID: $VPC_ID"
-        
-        # AWS Load Balancer Controller Helm chart 설치
-        helm repo add eks https://aws.github.io/eks-charts
-        helm repo update
-        
-        # 기존 설치 확인 및 처리
-        if helm list -n kube-system | grep -q aws-load-balancer-controller; then
-          echo "기존 AWS Load Balancer Controller 발견 - 상태 확인 중..."
-          
-          # 기존 설치 상태 확인
-          EXISTING_STATUS=$(helm status aws-load-balancer-controller -n kube-system -o json 2>/dev/null | jq -r '.info.status' || echo "unknown")
-          echo "기존 설치 상태: $EXISTING_STATUS"
-          
-          if [ "$EXISTING_STATUS" != "deployed" ]; then
-            echo "기존 설치가 불완전합니다. 제거 후 재설치..."
-            helm uninstall aws-load-balancer-controller -n kube-system || true
-            
-            # 관련 리소스 정리
-            kubectl delete validatingadmissionwebhook aws-load-balancer-webhook 2>/dev/null || true
-            kubectl delete mutatingadmissionwebhook aws-load-balancer-webhook 2>/dev/null || true
-            
-            # 정리 대기
-            sleep 30
-          else
-            echo "기존 설치가 정상입니다. 업그레이드 시도..."
-            if helm upgrade aws-load-balancer-controller eks/aws-load-balancer-controller \
-              -n kube-system \
-              --set clusterName=${{ env.EKS_CLUSTER_NAME }} \
-              --set serviceAccount.create=false \
-              --set serviceAccount.name=aws-load-balancer-controller \
-              --set region=${{ secrets.AWS_REGION }} \
-              --set vpcId=$VPC_ID \
-              --set enableShield=false \
-              --set enableWaf=false \
-              --set enableWafv2=false \
-              --timeout=600s \
-              --wait; then
-              echo "✅ 업그레이드 성공"
-              INSTALL_NEEDED=false
+
+          echo "🔍 연결 정보:"
+          echo "  RDS 엔드포인트: $DB_HOST"
+          echo "  Bastion IP: $BASTION_IP"
+          echo "  DB 이름: $DB_NAME"
+          echo "  DB 사용자: $DB_USER"
+
+          # SSH 키를 Parameter Store에서 가져오기
+          echo "🔑 SSH 키 가져오는 중..."
+          aws ssm get-parameter \
+            --name "/${PROJECT_NAME}/bastion/ssh-private-key" \
+            --with-decryption \
+            --query 'Parameter.Value' \
+            --output text > bastion_key.pem
+          chmod 600 bastion_key.pem
+
+          # SSH 터널 생성 (백그라운드에서 실행)
+          echo "🔗 SSH 터널 생성 중..."
+          ssh -i bastion_key.pem \
+              -o StrictHostKeyChecking=no \
+              -o ExitOnForwardFailure=yes \
+              -L 5432:$DB_HOST:5432 \
+              ec2-user@$BASTION_IP \
+              -N &
+          SSH_PID=$!
+
+          # 터널 설정 대기
+          echo "⏳ SSH 터널 설정 대기 중..."
+          sleep 15
+
+          # SSH 터널 상태 확인
+          if ! kill -0 $SSH_PID 2>/dev/null; then
+            echo "❌ SSH 터널 생성 실패"
+            rm -f bastion_key.pem
+            exit 1
+          fi
+
+          echo "✅ SSH 터널 생성 완료"
+
+          # 로컬 포트를 통해 RDS 연결 테스트
+          echo "🔍 데이터베이스 연결 테스트 중..."
+          if ! PGPASSWORD="${{ secrets.DB_PASSWORD }}" psql \
+            -h localhost \
+            -p 5432 \
+            -U "$DB_USER" \
+            -d "$DB_NAME" \
+            -c "SELECT version();" \
+            -v ON_ERROR_STOP=1 >/dev/null 2>&1; then
+            echo "❌ 데이터베이스 연결 실패"
+            kill $SSH_PID 2>/dev/null
+            rm -f bastion_key.pem
+            exit 1
+          fi
+
+          echo "✅ 데이터베이스 연결 성공"
+
+          # 기존 테이블 확인
+          echo "🔍 기존 테이블 확인 중..."
+          EXISTING_TABLES=$(PGPASSWORD="${{ secrets.DB_PASSWORD }}" psql \
+            -h localhost \
+            -p 5432 \
+            -U "$DB_USER" \
+            -d "$DB_NAME" \
+            -t -c "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_name IN ('users', 'posts', 'images', 'files');" \
+            -v ON_ERROR_STOP=1 | tr -d ' ')
+
+          if [ "$EXISTING_TABLES" -eq "0" ]; then
+            echo "📝 스키마 파일 적용 중..."
+            if PGPASSWORD="${{ secrets.DB_PASSWORD }}" psql \
+              -h localhost \
+              -p 5432 \
+              -U "$DB_USER" \
+              -d "$DB_NAME" \
+              -f server/files/schema.sql \
+              -v ON_ERROR_STOP=1; then
+              echo "✅ 스키마 적용 완료"
             else
-              echo "❌ 업그레이드 실패 - 제거 후 재설치..."
-              helm uninstall aws-load-balancer-controller -n kube-system || true
-              kubectl delete validatingadmissionwebhook aws-load-balancer-webhook 2>/dev/null || true
-              kubectl delete mutatingadmissionwebhook aws-load-balancer-webhook 2>/dev/null || true
-              sleep 30
-              INSTALL_NEEDED=true
+              echo "❌ 스키마 적용 실패"
+              kill $SSH_PID 2>/dev/null
+              rm -f bastion_key.pem
+              exit 1
+            fi
+          else
+            echo "ℹ️ 테이블이 이미 존재합니다. 스키마 적용을 건너뜁니다."
+          fi
+
+          # 정리 작업
+          echo "🧹 정리 작업 중..."
+          kill $SSH_PID 2>/dev/null
+          rm -f bastion_key.pem
+
+          echo "✅ 데이터베이스 스키마 작업 완료"
+
+      # ===============================================
+      # kubectl 및 Helm 설치
+      # ===============================================
+      - name: Install kubectl and Helm
+        run: |
+          echo "🔧 kubectl 및 Helm 설치 중..."
+
+          # kubectl 설치
+          curl -LO "https://dl.k8s.io/release/v1.28.0/bin/linux/amd64/kubectl"
+          chmod +x kubectl
+          sudo mv kubectl /usr/local/bin/
+
+          # Helm 설치
+          curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+
+          echo "✅ kubectl 및 Helm 설치 완료"
+          kubectl version --client
+          helm version
+
+      - name: Update kubeconfig for EKS
+        run: |
+          echo "🔧 EKS 클러스터 kubeconfig 업데이트 중..."
+
+          # 현재 AWS 자격 증명 확인
+          echo "🔍 현재 AWS 자격 증명 확인..."
+          aws sts get-caller-identity
+
+          # EKS 클러스터 이름 조회 (여러 방법 시도)
+          echo "🔍 EKS 클러스터 조회 중..."
+
+          # 방법 1: 클러스터 목록에서 첫 번째 조회
+          EKS_CLUSTER_NAME=$(aws eks list-clusters --query 'clusters[0]' --output text 2>/dev/null || echo "")
+
+          # 방법 2: 특정 이름으로 조회
+          if [ -z "$EKS_CLUSTER_NAME" ] || [ "$EKS_CLUSTER_NAME" == "None" ]; then
+            EKS_CLUSTER_NAME="walb-eks-cluster"
+            echo "기본 클러스터 이름 사용: $EKS_CLUSTER_NAME"
+          fi
+
+          # 클러스터 존재 확인
+          if ! aws eks describe-cluster --name "$EKS_CLUSTER_NAME" --region ${{ secrets.AWS_REGION }} >/dev/null 2>&1; then
+            echo "❌ EKS 클러스터 '$EKS_CLUSTER_NAME'를 찾을 수 없습니다."
+            echo "사용 가능한 클러스터 목록:"
+            aws eks list-clusters --region ${{ secrets.AWS_REGION }}
+            exit 1
+          fi
+
+          echo "✅ EKS 클러스터: $EKS_CLUSTER_NAME"
+          echo "EKS_CLUSTER_NAME=$EKS_CLUSTER_NAME" >> $GITHUB_ENV
+
+          # 클러스터 상태 확인
+          CLUSTER_STATUS=$(aws eks describe-cluster --name "$EKS_CLUSTER_NAME" --region ${{ secrets.AWS_REGION }} --query 'cluster.status' --output text)
+          echo "클러스터 상태: $CLUSTER_STATUS"
+
+          if [ "$CLUSTER_STATUS" != "ACTIVE" ]; then
+            echo "❌ 클러스터가 ACTIVE 상태가 아닙니다: $CLUSTER_STATUS"
+            exit 1
+          fi
+
+          # kubeconfig 업데이트 (상세 로그 포함)
+          echo "🔧 kubeconfig 업데이트 중..."
+          aws eks update-kubeconfig --region ${{ secrets.AWS_REGION }} --name "$EKS_CLUSTER_NAME" --verbose
+
+          # 클러스터 연결 테스트 (자세한 오류 정보 포함)
+          echo "🔍 클러스터 연결 테스트..."
+          if ! kubectl cluster-info --request-timeout=30s; then
+            echo "❌ kubectl cluster-info 실패. 추가 진단 정보:"
+            
+            # kubectl 설정 확인
+            echo "kubectl 설정 확인:"
+            kubectl config view
+            
+            # 현재 컨텍스트 확인
+            echo "현재 컨텍스트:"
+            kubectl config current-context
+            
+            # 클러스터 엔드포인트 직접 테스트
+            CLUSTER_ENDPOINT=$(aws eks describe-cluster --name "$EKS_CLUSTER_NAME" --region ${{ secrets.AWS_REGION }} --query 'cluster.endpoint' --output text)
+            echo "클러스터 엔드포인트: $CLUSTER_ENDPOINT"
+            
+            # IAM 역할과 RBAC 매핑 확인
+            echo "EKS 클러스터의 aws-auth ConfigMap 확인이 필요할 수 있습니다."
+            exit 1
+          fi
+
+          echo "🔍 노드 상태 확인..."
+          kubectl get nodes --show-labels
+
+      # ===============================================
+      # cert-manager 설치 (webhook TLS 인증서 문제 해결)
+      # ===============================================
+      - name: Install cert-manager
+        run: |
+          echo "🔧 cert-manager 설치 중..."
+
+          # 기존 AWS Load Balancer Controller webhook 정리 (cert-manager 설치 간섭 방지)
+          echo "🧹 기존 AWS Load Balancer Controller webhook 정리 중..."
+          kubectl delete validatingadmissionwebhook aws-load-balancer-webhook 2>/dev/null || echo "ValidatingAdmissionWebhook 없음"
+          kubectl delete mutatingadmissionwebhook aws-load-balancer-webhook 2>/dev/null || echo "MutatingAdmissionWebhook 없음"
+          kubectl delete service aws-load-balancer-webhook-service -n kube-system 2>/dev/null || echo "웹훅 서비스 없음"
+
+          # AWS Load Balancer Controller 제거 (재설치를 위해)
+          if helm list -n kube-system | grep -q aws-load-balancer-controller; then
+            echo "기존 AWS Load Balancer Controller 제거 중..."
+            helm uninstall aws-load-balancer-controller -n kube-system || true
+            sleep 10
+          fi
+
+          echo "✅ webhook 정리 완료"
+
+          # cert-manager 네임스페이스 생성
+          kubectl create namespace cert-manager --dry-run=client -o yaml | kubectl apply -f -
+
+          # cert-manager Helm 리포지토리 추가
+          helm repo add jetstack https://charts.jetstack.io
+          helm repo update
+
+          # 기존 cert-manager 완전 제거
+          if helm list -n cert-manager | grep -q cert-manager; then
+            echo "기존 cert-manager 제거 중..."
+            helm uninstall cert-manager -n cert-manager || true
+          fi
+
+          # cert-manager CRDs 제거 (완전 초기화)
+          kubectl delete crd certificaterequests.cert-manager.io 2>/dev/null || true
+          kubectl delete crd certificates.cert-manager.io 2>/dev/null || true
+          kubectl delete crd challenges.acme.cert-manager.io 2>/dev/null || true
+          kubectl delete crd clusterissuers.cert-manager.io 2>/dev/null || true
+          kubectl delete crd issuers.cert-manager.io 2>/dev/null || true
+          kubectl delete crd orders.acme.cert-manager.io 2>/dev/null || true
+
+          # 네임스페이스 완전 정리
+          kubectl delete namespace cert-manager 2>/dev/null || true
+          sleep 20
+
+          # cert-manager 네임스페이스 재생성
+          kubectl create namespace cert-manager
+
+          # cert-manager 단계적 설치 (webhook 문제 근본 해결)
+          echo "📦 cert-manager 단계적 설치 중..."
+
+          # 1단계: CRDs만 먼저 설치
+          echo "1️⃣ cert-manager CRDs 설치 중..."
+          kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.13.0/cert-manager.crds.yaml
+          sleep 10
+
+          # 2단계: webhook 없이 cert-manager 컨트롤러만 설치
+          echo "2️⃣ cert-manager 컨트롤러 설치 중 (webhook 제외)..."
+          cat <<'EOF' | kubectl apply -f -
+          apiVersion: v1
+          kind: Namespace
+          metadata:
+            name: cert-manager
+          ---
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: cert-manager-controller
+            namespace: cert-manager
+          spec:
+            replicas: 1
+            selector:
+              matchLabels:
+                app: cert-manager
+                app.kubernetes.io/name: cert-manager
+                app.kubernetes.io/instance: cert-manager
+            template:
+              metadata:
+                labels:
+                  app: cert-manager
+                  app.kubernetes.io/name: cert-manager
+                  app.kubernetes.io/instance: cert-manager
+              spec:
+                serviceAccountName: cert-manager
+                containers:
+                - name: cert-manager-controller
+                  image: quay.io/jetstack/cert-manager-controller:v1.13.0
+                  args:
+                  - --v=2
+                  - --cluster-resource-namespace=$(POD_NAMESPACE)
+                  - --leader-election-namespace=kube-system
+                  - --acme-http01-solver-image=quay.io/jetstack/cert-manager-acmesolver:v1.13.0
+                  - --max-concurrent-challenges=60
+                  env:
+                  - name: POD_NAMESPACE
+                    valueFrom:
+                      fieldRef:
+                        fieldPath: metadata.namespace
+                  ports:
+                  - containerPort: 9402
+                    name: http-metrics
+                    protocol: TCP
+                  resources:
+                    limits:
+                      cpu: 100m
+                      memory: 128Mi
+                    requests:
+                      cpu: 10m
+                      memory: 32Mi
+          ---
+          apiVersion: v1
+          kind: ServiceAccount
+          metadata:
+            name: cert-manager
+            namespace: cert-manager
+          ---
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: ClusterRole
+          metadata:
+            name: cert-manager-controller-issuers
+          rules:
+          - apiGroups: ["cert-manager.io"]
+            resources: ["issuers", "issuers/status"]
+            verbs: ["update", "patch"]
+          - apiGroups: ["cert-manager.io"]
+            resources: ["issuers"]
+            verbs: ["get", "list", "watch"]
+          - apiGroups: [""]
+            resources: ["secrets"]
+            verbs: ["get", "list", "watch", "create", "update", "delete"]
+          - apiGroups: [""]
+            resources: ["events"]
+            verbs: ["create", "patch"]
+          ---
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: ClusterRole
+          metadata:
+            name: cert-manager-controller-clusterissuers
+          rules:
+          - apiGroups: ["cert-manager.io"]
+            resources: ["clusterissuers", "clusterissuers/status"]
+            verbs: ["update", "patch"]
+          - apiGroups: ["cert-manager.io"]
+            resources: ["clusterissuers"]
+            verbs: ["get", "list", "watch"]
+          - apiGroups: [""]
+            resources: ["secrets"]
+            verbs: ["get", "list", "watch", "create", "update", "delete"]
+          - apiGroups: [""]
+            resources: ["events"]
+            verbs: ["create", "patch"]
+          ---
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: ClusterRoleBinding
+          metadata:
+            name: cert-manager-controller-issuers
+          roleRef:
+            apiGroup: rbac.authorization.k8s.io
+            kind: ClusterRole
+            name: cert-manager-controller-issuers
+          subjects:
+          - kind: ServiceAccount
+            name: cert-manager
+            namespace: cert-manager
+          ---
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: ClusterRoleBinding
+          metadata:
+            name: cert-manager-controller-clusterissuers
+          roleRef:
+            apiGroup: rbac.authorization.k8s.io
+            kind: ClusterRole
+            name: cert-manager-controller-clusterissuers
+          subjects:
+          - kind: ServiceAccount
+            name: cert-manager
+            namespace: cert-manager
+          EOF
+
+          # 3단계: cert-manager 컨트롤러 준비 대기
+          echo "3️⃣ cert-manager 컨트롤러 준비 대기 중..."
+          kubectl wait --for=condition=ready pod -l app=cert-manager -n cert-manager --timeout=300s
+
+          echo "✅ cert-manager 기본 설치 완료 (webhook 없이)"
+
+          # 4단계: ClusterIssuer 생성 (이제 webhook 없이 가능)
+          echo "4️⃣ Self-signed ClusterIssuer 생성 중..."
+          cat <<'EOF' | kubectl apply -f -
+          apiVersion: cert-manager.io/v1
+          kind: ClusterIssuer
+          metadata:
+            name: selfsigned-issuer
+          spec:
+            selfSigned: {}
+          EOF
+
+          # ClusterIssuer 준비 대기
+          echo "⏳ ClusterIssuer 준비 대기..."
+          sleep 10
+          kubectl get clusterissuer selfsigned-issuer
+
+          # 5단계: 이제 전체 cert-manager 설치 (webhook 포함)
+          echo "5️⃣ 전체 cert-manager 설치 중 (webhook 포함)..."
+          kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.13.0/cert-manager.yaml
+
+          # 모든 Pod 준비 대기
+          echo "⏳ 모든 cert-manager Pod 준비 대기 중..."
+          kubectl wait --for=condition=ready pod -l app=cert-manager -n cert-manager --timeout=600s
+          kubectl wait --for=condition=ready pod -l app=webhook -n cert-manager --timeout=600s  
+          kubectl wait --for=condition=ready pod -l app=cainjector -n cert-manager --timeout=600s
+
+          # 최종 안정화 대기
+          echo "⏳ cert-manager 최종 안정화 대기 (60초)..."
+          sleep 60
+
+          # 6단계: webhook 기능 검증 및 ClusterIssuer 업데이트
+          echo "6️⃣ cert-manager webhook 기능 검증 중..."
+
+          # ValidatingAdmissionWebhook이 생성될 때까지 대기
+          WEBHOOK_READY=false
+          for i in {1..20}; do
+            echo "webhook 검증 시도 ($i/20)..."
+            
+            if kubectl get validatingadmissionwebhook cert-manager-webhook >/dev/null 2>&1; then
+              echo "✅ ValidatingAdmissionWebhook 존재"
+              
+              # webhook 엔드포인트 확인
+              ENDPOINTS=$(kubectl get endpoints cert-manager-webhook -n cert-manager -o jsonpath='{.subsets[*].addresses[*].ip}' 2>/dev/null || echo "")
+              if [ -n "$ENDPOINTS" ]; then
+                echo "✅ webhook 엔드포인트 준비: $ENDPOINTS"
+                
+                # 실제 webhook 기능 테스트 (간단한 dry-run)
+                if timeout 30s kubectl apply --dry-run=server -f - <<'EOF' 2>/dev/null
+          apiVersion: cert-manager.io/v1
+          kind: Certificate
+          metadata:
+            name: test-webhook-cert
+            namespace: cert-manager
+          spec:
+            secretName: test-webhook-cert-tls
+            commonName: test.example.com
+            issuerRef:
+              name: selfsigned-issuer
+              kind: ClusterIssuer
+          EOF
+                    then
+                      echo "✅ webhook 기능 테스트 성공"
+                      WEBHOOK_READY=true
+                      break
+                    else
+                      echo "⚠️ webhook 기능 테스트 실패"
+                    fi
+                  else
+                    echo "⚠️ webhook 엔드포인트 아직 준비되지 않음"
+                  fi
+                else
+                  echo "⚠️ ValidatingAdmissionWebhook 아직 생성되지 않음"
+                fi
+                
+                if [ $i -lt 20 ]; then
+                  echo "15초 후 재시도..."
+                  sleep 15
+                fi
+              done
+              
+              if [ "$WEBHOOK_READY" = false ]; then
+                echo "⚠️ cert-manager webhook 완전 준비 실패, 하지만 계속 진행..."
+                echo "Pod 상태:"
+                kubectl get pods -n cert-manager -o wide
+                echo "서비스 상태:"
+                kubectl get services -n cert-manager
+                echo "이벤트 확인:"
+                kubectl get events -n cert-manager --sort-by='.lastTimestamp' | tail -10
+              else
+                echo "✅ cert-manager webhook 완전 준비 완료"
+              fi
+              
+              echo "✅ cert-manager 설치 완료"
+              kubectl get pods -n cert-manager
+              kubectl get certificates -n cert-manager
+
+      # ===============================================
+      # AWS Load Balancer Controller 설치
+      # ===============================================
+      - name: Install AWS Load Balancer Controller
+        run: |
+          echo "🔧 AWS Load Balancer Controller 설치 중..."
+
+          # IAM Role과 ServiceAccount 존재 확인
+          echo "🔍 IAM Role 확인 중..."
+
+          # EKS 클러스터 이름 기반으로 정확한 Role 이름 구성
+          PRIMARY_ROLE_NAME="${{ env.EKS_CLUSTER_NAME }}-aws-load-balancer-controller"
+
+          echo "🔍 예상되는 IAM Role: $PRIMARY_ROLE_NAME"
+
+          # 먼저 예상되는 Role 이름으로 직접 확인
+          if aws iam get-role --role-name "$PRIMARY_ROLE_NAME" >/dev/null 2>&1; then
+            echo "✅ IAM Role 발견: $PRIMARY_ROLE_NAME"
+            IAM_ROLE_ARN="arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/$PRIMARY_ROLE_NAME"
+            FOUND_ROLE="$PRIMARY_ROLE_NAME"
+          else
+            echo "⚠️ 예상 Role 없음, 다른 패턴 확인 중..."
+            
+            # 백업 패턴들 확인
+            BACKUP_PATTERNS=(
+              "walb-eks-cluster-aws-load-balancer-controller"
+              "walb-app-aws-load-balancer-controller"
+            )
+            
+            FOUND_ROLE=""
+            for ROLE_NAME in "${BACKUP_PATTERNS[@]}"; do
+              echo "🔍 백업 패턴 확인: $ROLE_NAME"
+              if aws iam get-role --role-name "$ROLE_NAME" >/dev/null 2>&1; then
+                echo "✅ IAM Role 발견: $ROLE_NAME"
+                IAM_ROLE_ARN="arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/$ROLE_NAME"
+                FOUND_ROLE="$ROLE_NAME"
+                break
+              fi
+            done
+            
+            # 모든 패턴에서 찾지 못한 경우
+            if [ -z "$FOUND_ROLE" ]; then
+              echo "❌ AWS Load Balancer Controller IAM Role을 찾을 수 없습니다."
+              echo ""
+              echo "🔍 Load Balancer 관련 IAM Role 검색 중..."
+              if aws iam list-roles --query 'Roles[?contains(RoleName, `load-balancer`) || contains(RoleName, `alb`)].{RoleName:RoleName,CreateDate:CreateDate}' --output table 2>/dev/null; then
+                echo "위 Role들을 확인했지만 예상 패턴과 일치하지 않습니다."
+              else
+                echo "IAM Role 목록 조회 권한이 없습니다."
+              fi
+              echo ""
+              echo "해결 방법:"
+              echo "1. Terraform에서 enable_load_balancer = true로 설정"
+              echo "2. terraform apply로 인프라 재배포"
+              echo "3. 예상 Role 이름: $PRIMARY_ROLE_NAME"
+              exit 1
             fi
           fi
-        else
-          INSTALL_NEEDED=true
-        fi
-        
-        # 새로운 설치 (필요한 경우)
-        if [ "${INSTALL_NEEDED:-true}" = "true" ]; then
-          echo "새로운 AWS Load Balancer Controller 설치 중..."
-          
-          # cert-manager 완전 준비 대기 (webhook 포함)
-          echo "⏳ cert-manager 완전 준비 대기 중..."
-          for i in {1..15}; do
-            CERT_MANAGER_READY=false
-            WEBHOOK_READY=false
+
+          echo "✅ 사용할 IAM Role: $IAM_ROLE_ARN"
+
+          # 기존 ServiceAccount 확인 및 삭제 (재생성을 위해)
+          if kubectl get serviceaccount aws-load-balancer-controller -n kube-system >/dev/null 2>&1; then
+            echo "기존 ServiceAccount 삭제 중..."
+            kubectl delete serviceaccount aws-load-balancer-controller -n kube-system || true
+          fi
+
+          # AWS Load Balancer Controller ServiceAccount 생성
+          echo "🔧 ServiceAccount 생성 중..."
+          kubectl apply -f - <<EOF
+          apiVersion: v1
+          kind: ServiceAccount
+          metadata:
+            name: aws-load-balancer-controller
+            namespace: kube-system
+            annotations:
+              eks.amazonaws.com/role-arn: $IAM_ROLE_ARN
+          EOF
+
+          # VPC ID 조회
+          VPC_ID=$(aws eks describe-cluster --name ${{ env.EKS_CLUSTER_NAME }} --query "cluster.resourcesVpcConfig.vpcId" --output text)
+          echo "VPC ID: $VPC_ID"
+
+          # AWS Load Balancer Controller Helm chart 설치
+          helm repo add eks https://aws.github.io/eks-charts
+          helm repo update
+
+          # 기존 설치 확인 및 처리
+          if helm list -n kube-system | grep -q aws-load-balancer-controller; then
+            echo "기존 AWS Load Balancer Controller 발견 - 상태 확인 중..."
             
-            # cert-manager Pod 상태 확인
-            if kubectl get pods -n cert-manager -l app=cert-manager --field-selector=status.phase=Running | grep -q cert-manager; then
-              CERT_MANAGER_READY=true
-            fi
+            # 기존 설치 상태 확인
+            EXISTING_STATUS=$(helm status aws-load-balancer-controller -n kube-system -o json 2>/dev/null | jq -r '.info.status' || echo "unknown")
+            echo "기존 설치 상태: $EXISTING_STATUS"
             
-            # cert-manager webhook 상태 확인
-            if kubectl get validatingadmissionwebhook cert-manager-webhook >/dev/null 2>&1; then
-              WEBHOOK_READY=true
-            fi
-            
-            if [ "$CERT_MANAGER_READY" = "true" ] && [ "$WEBHOOK_READY" = "true" ]; then
-              echo "✅ cert-manager와 webhook 모두 준비 완료"
-              break
-            fi
-            
-            echo "cert-manager 대기 중... ($i/15) [cert-manager: $CERT_MANAGER_READY, webhook: $WEBHOOK_READY]"
-            sleep 20
-          done
-          
-          # ClusterIssuer 생성 (AWS Load Balancer Controller webhook용)
-          echo "🔐 AWS Load Balancer Controller용 ClusterIssuer 생성 중..."
-          cat <<'EOF' | kubectl apply -f -
-        apiVersion: cert-manager.io/v1
-        kind: ClusterIssuer
-        metadata:
-          name: aws-load-balancer-webhook-issuer
-        spec:
-          selfSigned: {}
-        EOF
-          
-          # AWS Load Balancer Controller webhook용 TLS 인증서 미리 생성
-          echo "📜 AWS Load Balancer Controller webhook TLS 인증서 미리 생성 중..."
-          cat <<'EOF' | kubectl apply -f -
-        apiVersion: cert-manager.io/v1
-        kind: Certificate
-        metadata:
-          name: aws-load-balancer-webhook-tls
-          namespace: kube-system
-        spec:
-          secretName: aws-load-balancer-webhook-tls
-          issuerRef:
-            name: aws-load-balancer-webhook-issuer
-            kind: ClusterIssuer
-          dnsNames:
-          - aws-load-balancer-webhook-service
-          - aws-load-balancer-webhook-service.kube-system
-          - aws-load-balancer-webhook-service.kube-system.svc
-          - aws-load-balancer-webhook-service.kube-system.svc.cluster.local
-        EOF
-          
-          # 인증서 생성 대기
-          echo "⏳ AWS Load Balancer Controller webhook TLS 인증서 생성 대기 중..."
-          kubectl wait --for=condition=ready certificate aws-load-balancer-webhook-tls -n kube-system --timeout=300s || {
-            echo "⚠️ 인증서 생성 실패, 계속 진행..."
-          }
-          
-          # 재시도 로직으로 설치
-          for i in {1..3}; do
-            echo "설치 시도 $i/3..."
-            
-            # 혹시 남은 webhook 정리
-            kubectl delete validatingadmissionwebhook aws-load-balancer-webhook 2>/dev/null || true
-            kubectl delete mutatingadmissionwebhook aws-load-balancer-webhook 2>/dev/null || true
-            
-            if helm install aws-load-balancer-controller eks/aws-load-balancer-controller \
-              -n kube-system \
-              --set clusterName=${{ env.EKS_CLUSTER_NAME }} \
-              --set serviceAccount.create=false \
-              --set serviceAccount.name=aws-load-balancer-controller \
-              --set region=${{ secrets.AWS_REGION }} \
-              --set vpcId=$VPC_ID \
-              --set enableShield=false \
-              --set enableWaf=false \
-              --set enableWafv2=false \
-              --set replicaCount=2 \
-              --set resources.limits.cpu=200m \
-              --set resources.limits.memory=500Mi \
-              --set resources.requests.cpu=100m \
-              --set resources.requests.memory=200Mi \
-              --set webhook.port=9443 \
-              --set webhook.certManager.enabled=true \
-              --set webhook.certManager.issuerRef.name=aws-load-balancer-webhook-issuer \
-              --set webhook.certManager.issuerRef.kind=ClusterIssuer \
-              --timeout=600s \
-              --wait; then
-              echo "✅ 설치 성공"
-              break
+            if [ "$EXISTING_STATUS" != "deployed" ]; then
+              echo "기존 설치가 불완전합니다. 제거 후 재설치..."
+              helm uninstall aws-load-balancer-controller -n kube-system || true
+              
+              # 관련 리소스 정리
+              kubectl delete validatingadmissionwebhook aws-load-balancer-webhook 2>/dev/null || true
+              kubectl delete mutatingadmissionwebhook aws-load-balancer-webhook 2>/dev/null || true
+              
+              # 정리 대기
+              sleep 30
             else
-              echo "❌ 설치 실패 ($i/3)"
-              if [ $i -lt 3 ]; then
-                echo "60초 후 재시도..."
-                sleep 60
-                # 실패한 설치 정리
-                helm uninstall aws-load-balancer-controller -n kube-system 2>/dev/null || true
+              echo "기존 설치가 정상입니다. 업그레이드 시도..."
+              if helm upgrade aws-load-balancer-controller eks/aws-load-balancer-controller \
+                -n kube-system \
+                --set clusterName=${{ env.EKS_CLUSTER_NAME }} \
+                --set serviceAccount.create=false \
+                --set serviceAccount.name=aws-load-balancer-controller \
+                --set region=${{ secrets.AWS_REGION }} \
+                --set vpcId=$VPC_ID \
+                --set enableShield=false \
+                --set enableWaf=false \
+                --set enableWafv2=false \
+                --timeout=600s \
+                --wait; then
+                echo "✅ 업그레이드 성공"
+                INSTALL_NEEDED=false
+              else
+                echo "❌ 업그레이드 실패 - 제거 후 재설치..."
+                helm uninstall aws-load-balancer-controller -n kube-system || true
                 kubectl delete validatingadmissionwebhook aws-load-balancer-webhook 2>/dev/null || true
                 kubectl delete mutatingadmissionwebhook aws-load-balancer-webhook 2>/dev/null || true
-                # 인증서 재생성 시도
-                kubectl delete certificate aws-load-balancer-webhook-tls -n kube-system 2>/dev/null || true
-                cat <<'EOF' | kubectl apply -f -
-        apiVersion: cert-manager.io/v1
-        kind: Certificate
-        metadata:
-          name: aws-load-balancer-webhook-tls
-          namespace: kube-system
-        spec:
-          secretName: aws-load-balancer-webhook-tls
-          issuerRef:
+                sleep 30
+                INSTALL_NEEDED=true
+              fi
+            fi
+          else
+            INSTALL_NEEDED=true
+          fi
+
+          # 새로운 설치 (필요한 경우)
+          if [ "${INSTALL_NEEDED:-true}" = "true" ]; then
+            echo "새로운 AWS Load Balancer Controller 설치 중..."
+            
+            # cert-manager 완전 준비 대기 (webhook 포함)
+            echo "⏳ cert-manager 완전 준비 대기 중..."
+            for i in {1..15}; do
+              CERT_MANAGER_READY=false
+              WEBHOOK_READY=false
+              
+              # cert-manager Pod 상태 확인
+              if kubectl get pods -n cert-manager -l app=cert-manager --field-selector=status.phase=Running | grep -q cert-manager; then
+                CERT_MANAGER_READY=true
+              fi
+              
+              # cert-manager webhook 상태 확인
+              if kubectl get validatingadmissionwebhook cert-manager-webhook >/dev/null 2>&1; then
+                WEBHOOK_READY=true
+              fi
+              
+              if [ "$CERT_MANAGER_READY" = "true" ] && [ "$WEBHOOK_READY" = "true" ]; then
+                echo "✅ cert-manager와 webhook 모두 준비 완료"
+                break
+              fi
+              
+              echo "cert-manager 대기 중... ($i/15) [cert-manager: $CERT_MANAGER_READY, webhook: $WEBHOOK_READY]"
+              sleep 20
+            done
+            
+            # ClusterIssuer 생성 (AWS Load Balancer Controller webhook용)
+            echo "🔐 AWS Load Balancer Controller용 ClusterIssuer 생성 중..."
+            cat <<'EOF' | kubectl apply -f -
+          apiVersion: cert-manager.io/v1
+          kind: ClusterIssuer
+          metadata:
             name: aws-load-balancer-webhook-issuer
-            kind: ClusterIssuer
-          dnsNames:
-          - aws-load-balancer-webhook-service
-          - aws-load-balancer-webhook-service.kube-system
-          - aws-load-balancer-webhook-service.kube-system.svc
-          - aws-load-balancer-webhook-service.kube-system.svc.cluster.local
-        EOF
+          spec:
+            selfSigned: {}
+          EOF
+            
+            # AWS Load Balancer Controller webhook용 TLS 인증서 미리 생성
+            echo "📜 AWS Load Balancer Controller webhook TLS 인증서 미리 생성 중..."
+            cat <<'EOF' | kubectl apply -f -
+          apiVersion: cert-manager.io/v1
+          kind: Certificate
+          metadata:
+            name: aws-load-balancer-webhook-tls
+            namespace: kube-system
+          spec:
+            secretName: aws-load-balancer-webhook-tls
+            issuerRef:
+              name: aws-load-balancer-webhook-issuer
+              kind: ClusterIssuer
+            dnsNames:
+            - aws-load-balancer-webhook-service
+            - aws-load-balancer-webhook-service.kube-system
+            - aws-load-balancer-webhook-service.kube-system.svc
+            - aws-load-balancer-webhook-service.kube-system.svc.cluster.local
+          EOF
+            
+            # 인증서 생성 대기
+            echo "⏳ AWS Load Balancer Controller webhook TLS 인증서 생성 대기 중..."
+            kubectl wait --for=condition=ready certificate aws-load-balancer-webhook-tls -n kube-system --timeout=300s || {
+              echo "⚠️ 인증서 생성 실패, 계속 진행..."
+            }
+            
+            # 재시도 로직으로 설치
+            for i in {1..3}; do
+              echo "설치 시도 $i/3..."
+              
+              # 혹시 남은 webhook 정리
+              kubectl delete validatingadmissionwebhook aws-load-balancer-webhook 2>/dev/null || true
+              kubectl delete mutatingadmissionwebhook aws-load-balancer-webhook 2>/dev/null || true
+              
+              if helm install aws-load-balancer-controller eks/aws-load-balancer-controller \
+                -n kube-system \
+                --set clusterName=${{ env.EKS_CLUSTER_NAME }} \
+                --set serviceAccount.create=false \
+                --set serviceAccount.name=aws-load-balancer-controller \
+                --set region=${{ secrets.AWS_REGION }} \
+                --set vpcId=$VPC_ID \
+                --set enableShield=false \
+                --set enableWaf=false \
+                --set enableWafv2=false \
+                --set replicaCount=2 \
+                --set resources.limits.cpu=200m \
+                --set resources.limits.memory=500Mi \
+                --set resources.requests.cpu=100m \
+                --set resources.requests.memory=200Mi \
+                --set webhook.port=9443 \
+                --set webhook.certManager.enabled=true \
+                --set webhook.certManager.issuerRef.name=aws-load-balancer-webhook-issuer \
+                --set webhook.certManager.issuerRef.kind=ClusterIssuer \
+                --timeout=600s \
+                --wait; then
+                echo "✅ 설치 성공"
+                break
+              else
+                echo "❌ 설치 실패 ($i/3)"
+                if [ $i -lt 3 ]; then
+                  echo "60초 후 재시도..."
+                  sleep 60
+                  # 실패한 설치 정리
+                  helm uninstall aws-load-balancer-controller -n kube-system 2>/dev/null || true
+                  kubectl delete validatingadmissionwebhook aws-load-balancer-webhook 2>/dev/null || true
+                  kubectl delete mutatingadmissionwebhook aws-load-balancer-webhook 2>/dev/null || true
+                  # 인증서 재생성 시도
+                  kubectl delete certificate aws-load-balancer-webhook-tls -n kube-system 2>/dev/null || true
+                  cat <<'EOF' | kubectl apply -f -
+          apiVersion: cert-manager.io/v1
+          kind: Certificate
+          metadata:
+            name: aws-load-balancer-webhook-tls
+            namespace: kube-system
+          spec:
+            secretName: aws-load-balancer-webhook-tls
+            issuerRef:
+              name: aws-load-balancer-webhook-issuer
+              kind: ClusterIssuer
+            dnsNames:
+            - aws-load-balancer-webhook-service
+            - aws-load-balancer-webhook-service.kube-system
+            - aws-load-balancer-webhook-service.kube-system.svc
+            - aws-load-balancer-webhook-service.kube-system.svc.cluster.local
+          EOF
+                  sleep 30
+                else
+                  echo "❌ 모든 설치 시도 실패"
+                  exit 1
+                fi
+              fi
+            done
+          fi
+
+          # Controller Pod 상태 확인
+          echo "⏳ AWS Load Balancer Controller Pod 시작 대기 중..."
+          kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=aws-load-balancer-controller -n kube-system --timeout=300s
+
+          # 웹훅 서비스 기본 확인
+          echo "🔍 웹훅 서비스 기본 상태 확인..."
+          if kubectl get service aws-load-balancer-webhook-service -n kube-system >/dev/null 2>&1; then
+            echo "✅ 웹훅 서비스 존재"
+            kubectl get endpoints aws-load-balancer-webhook-service -n kube-system
+          else
+            echo "⚠️ 웹훅 서비스 아직 생성되지 않음"
+          fi
+
+          # ValidatingAdmissionWebhook 생성 대기 및 확인 강화
+          echo "🔍 ValidatingAdmissionWebhook 생성 대기 중..."
+          WEBHOOK_READY=false
+
+          # cert-manager가 인증서를 생성할 시간을 기다림
+          echo "⏳ TLS 인증서 생성 대기 중 (30초)..."
+          sleep 30
+
+          for i in {1..15}; do
+            echo "ValidatingAdmissionWebhook 확인 시도 ($i/15)..."
+            
+            # 1단계: ValidatingAdmissionWebhook 존재 확인
+            if kubectl get validatingadmissionwebhook aws-load-balancer-webhook >/dev/null 2>&1; then
+              echo "✅ ValidatingAdmissionWebhook 존재"
+              
+              # 2단계: Webhook 상세 정보 출력
+              echo "웹훅 상세 정보:"
+              kubectl get validatingadmissionwebhook aws-load-balancer-webhook -o yaml | head -50
+              
+              # 3단계: ClientConfig 서비스 확인
+              WEBHOOK_SERVICE=$(kubectl get validatingadmissionwebhook aws-load-balancer-webhook -o jsonpath='{.webhooks[0].clientConfig.service.name}' 2>/dev/null || echo "")
+              WEBHOOK_NAMESPACE=$(kubectl get validatingadmissionwebhook aws-load-balancer-webhook -o jsonpath='{.webhooks[0].clientConfig.service.namespace}' 2>/dev/null || echo "")
+              
+              if [ -n "$WEBHOOK_SERVICE" ] && [ -n "$WEBHOOK_NAMESPACE" ]; then
+                echo "웹훅 서비스: $WEBHOOK_SERVICE (네임스페이스: $WEBHOOK_NAMESPACE)"
+                
+                # 4단계: 서비스 존재 및 엔드포인트 확인
+                if kubectl get service "$WEBHOOK_SERVICE" -n "$WEBHOOK_NAMESPACE" >/dev/null 2>&1; then
+                  echo "✅ 웹훅 서비스 존재"
+                  
+                  # 5단계: 엔드포인트 확인
+                  ENDPOINT_IPS=$(kubectl get endpoints "$WEBHOOK_SERVICE" -n "$WEBHOOK_NAMESPACE" -o jsonpath='{.subsets[*].addresses[*].ip}' 2>/dev/null || echo "")
+                  if [ -n "$ENDPOINT_IPS" ]; then
+                    echo "✅ 웹훅 엔드포인트 준비 완료: $ENDPOINT_IPS"
+                    
+                    # 6단계: TLS 인증서 확인
+                    TLS_SECRET=$(kubectl get validatingadmissionwebhook aws-load-balancer-webhook -o jsonpath='{.webhooks[0].clientConfig.caBundle}' 2>/dev/null || echo "")
+                    if [ -n "$TLS_SECRET" ]; then
+                      echo "✅ TLS 인증서 확인됨"
+                      WEBHOOK_READY=true
+                      break
+                    else
+                      echo "⚠️ TLS 인증서 대기 중..."
+                    fi
+                  else
+                    echo "⚠️ 웹훅 엔드포인트 대기 중..."
+                  fi
+                else
+                  echo "❌ 웹훅 서비스 없음"
+                fi
+              else
+                echo "⚠️ 웹훅 ClientConfig 정보 불완전"
+              fi
+            else
+              echo "⚠️ ValidatingAdmissionWebhook 생성 대기 중..."
+              
+              # cert-manager와 AWS Load Balancer Controller 상태 확인
+              echo "🔍 cert-manager 상태:"
+              kubectl get pods -n cert-manager --no-headers | grep -E "(cert-manager|webhook|cainjector)" || echo "cert-manager 정보 없음"
+              
+              echo "🔍 AWS Load Balancer Controller 상태:"
+              kubectl get pods -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller --no-headers || echo "Controller 정보 없음"
+              
+              # Certificate 리소스 확인 (있다면)
+              echo "🔍 Certificate 리소스 확인:"
+              kubectl get certificates -n kube-system 2>/dev/null || echo "Certificate 리소스 없음"
+            fi
+            
+            if [ $i -lt 15 ]; then
+              echo "20초 후 재시도..."
+              sleep 20
+            fi
+          done
+
+          if [ "$WEBHOOK_READY" = false ]; then
+            echo "❌ ValidatingAdmissionWebhook이 준비되지 않았습니다"
+            
+            # 더 상세한 진단 정보 수집
+            echo ""
+            echo "🔍 AWS Load Balancer Controller 진단 정보:"
+            
+            # Pod 상태 확인
+            echo "Pod 상태:"
+            kubectl get pods -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller -o wide || true
+            
+            # Pod 이벤트 확인
+            echo ""
+            echo "Pod 이벤트:"
+            kubectl get events -n kube-system --field-selector involvedObject.kind=Pod --sort-by='.lastTimestamp' | grep aws-load-balancer-controller || true
+            
+            # Deployment 상태 확인
+            echo ""
+            echo "Deployment 상태:"
+            kubectl describe deployment -n kube-system aws-load-balancer-controller || true
+            
+            # ReplicaSet 상태 확인
+            echo ""
+            echo "ReplicaSet 상태:"
+            kubectl get replicasets -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller || true
+            
+            # ServiceAccount 확인
+            echo ""
+            echo "ServiceAccount 상태:"
+            kubectl get serviceaccount aws-load-balancer-controller -n kube-system -o yaml || true
+            
+            # 로그 조회 시도 (여러 방법)
+            echo ""
+            echo "Controller Pod 로그 조회 시도:"
+            
+            # 방법 1: 간단한 로그 조회
+            if kubectl logs -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller --tail=50 --since=10m 2>/dev/null; then
+              echo "✅ 로그 조회 성공"
+            else
+              echo "⚠️ 방법 1 실패, 다른 방법 시도 중..."
+              
+              # 방법 2: Pod 이름으로 직접 조회
+              POD_NAME=$(kubectl get pods -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
+              if [ -n "$POD_NAME" ]; then
+                echo "Pod 이름: $POD_NAME"
+                if kubectl logs -n kube-system "$POD_NAME" --tail=50 --since=10m 2>/dev/null; then
+                  echo "✅ Pod별 로그 조회 성공"
+                else
+                  echo "⚠️ Pod별 로그 조회도 실패"
+                  
+                  # 방법 3: Pod 상세 정보
+                  echo "Pod 상세 정보:"
+                  kubectl describe pod -n kube-system "$POD_NAME" 2>/dev/null || echo "Pod 상세 정보 조회 실패"
+                fi
+              else
+                echo "❌ Controller Pod를 찾을 수 없습니다"
+              fi
+            fi
+            
+            # ValidatingAdmissionWebhook 상세 확인
+            echo ""
+            echo "ValidatingAdmissionWebhook 진단:"
+            if kubectl get validatingadmissionwebhook 2>/dev/null | grep aws-load-balancer; then
+              kubectl describe validatingadmissionwebhook aws-load-balancer-webhook 2>/dev/null || echo "웹훅 상세 정보 조회 실패"
+            else
+              echo "❌ ValidatingAdmissionWebhook이 존재하지 않습니다"
+              echo "사용 가능한 웹훅 목록:"
+              kubectl get validatingadmissionwebhook 2>/dev/null || echo "웹훅 목록 조회 실패"
+            fi
+            
+            exit 1
+          fi
+
+          # 웹훅 인증서 생성 및 상태 확인 강화
+          echo "🔍 웹훅 인증서 생성 및 상태 확인 중..."
+
+          # cert-manager가 생성하는 다양한 인증서 패턴 확인
+          TLS_SECRET_PATTERNS=(
+            "aws-load-balancer-webhook-tls"
+            "aws-load-balancer-webhook-ca"
+            "aws-load-balancer-controller-webhook-tls"
+          )
+
+          FOUND_TLS_SECRET=""
+          for TLS_SECRET_NAME in "${TLS_SECRET_PATTERNS[@]}"; do
+            if kubectl get secret -n kube-system "$TLS_SECRET_NAME" >/dev/null 2>&1; then
+              echo "✅ TLS 인증서 발견: $TLS_SECRET_NAME"
+              FOUND_TLS_SECRET="$TLS_SECRET_NAME"
+              
+              # 인증서 상세 정보 확인
+              echo "인증서 상세 정보:"
+              kubectl get secret -n kube-system "$TLS_SECRET_NAME" -o yaml | head -20
+              
+              # 인증서 만료일 확인
+              CERT_DATA=$(kubectl get secret -n kube-system "$TLS_SECRET_NAME" -o jsonpath='{.data.tls\.crt}' 2>/dev/null || echo "")
+              if [ -n "$CERT_DATA" ]; then
+                echo "인증서 정보:"
+                echo "$CERT_DATA" | base64 -d | openssl x509 -noout -subject -dates 2>/dev/null || echo "인증서 정보 파싱 실패"
+              fi
+              break
+            fi
+          done
+
+          if [ -z "$FOUND_TLS_SECRET" ]; then
+            echo "⚠️ 웹훅 TLS 인증서를 찾을 수 없습니다"
+            echo ""
+            echo "🔍 사용 가능한 secrets 목록:"
+            kubectl get secrets -n kube-system | grep -E "(tls|cert|webhook)" || echo "관련 secrets 없음"
+            
+            echo ""
+            echo "🔍 cert-manager 이벤트 확인:"
+            kubectl get events -n cert-manager --sort-by='.lastTimestamp' | tail -10 || echo "cert-manager 이벤트 조회 실패"
+            
+            echo ""
+            echo "🔍 kube-system 이벤트 확인:"
+            kubectl get events -n kube-system --sort-by='.lastTimestamp' | grep -i cert | tail -10 || echo "인증서 관련 이벤트 없음"
+          fi
+
+          # 웹훅 연결 테스트
+          echo "🔍 웹훅 연결 테스트 수행 중..."
+          WEBHOOK_PORT=$(kubectl get validatingadmissionwebhook aws-load-balancer-webhook -o jsonpath='{.webhooks[0].clientConfig.service.port}' 2>/dev/null || echo "443")
+          if kubectl exec -n kube-system $(kubectl get pods -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller -o jsonpath='{.items[0].metadata.name}') -- sh -c "nc -zv aws-load-balancer-webhook-service.kube-system.svc.cluster.local $WEBHOOK_PORT" 2>/dev/null; then
+            echo "✅ 웹훅 포트 연결 테스트 성공"
+          else
+            echo "⚠️ 웹훅 포트 연결 테스트 실패 (일반적인 현상일 수 있음)"
+          fi
+
+          # Controller 안정화 대기
+          echo "⏳ Controller 안정화 대기 중 (30초)..."
+          sleep 30
+
+          echo "✅ AWS Load Balancer Controller 설치 완료"
+          kubectl get pods -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller
+          kubectl get service aws-load-balancer-webhook-service -n kube-system
+          kubectl get endpoints aws-load-balancer-webhook-service -n kube-system
+
+      # ===============================================
+      # Kubernetes 매니페스트 파일 생성
+      # ===============================================
+      - name: Generate Kubernetes manifests
+        run: |
+          echo "📝 Kubernetes 매니페스트 생성 중..."
+
+          # Namespace 생성
+          cat <<EOF > namespace.yaml
+          apiVersion: v1
+          kind: Namespace
+          metadata:
+            name: ${{ env.PROJECT_NAME }}
+            labels:
+              name: ${{ env.PROJECT_NAME }}
+          EOF
+
+          # ConfigMap 생성 (환경변수)
+          cat <<EOF > configmap.yaml
+          apiVersion: v1
+          kind: ConfigMap
+          metadata:
+            name: ${{ env.PROJECT_NAME }}-config
+            namespace: ${{ env.PROJECT_NAME }}
+          data:
+            DB_HOST: "${{ env.RDS_ENDPOINT }}"
+            DB_PORT: "5432"
+            DB_NAME: "mydb"
+            DB_USER: "dbadmin"
+            AWS_REGION: "${{ secrets.AWS_REGION }}"
+            AWS_S3_BUCKET: "walb-app-files"
+            AWS_S3_REGION: "${{ secrets.AWS_REGION }}"
+            STORAGE_TYPE: "s3"
+            APP_ENV: "production"
+            APP_DEBUG: "false"
+            PHP_MEMORY_LIMIT: "256M"
+            PHP_MAX_EXECUTION_TIME: "30"
+            PHP_TIMEZONE: "Asia/Seoul"
+            UPLOAD_MAX_SIZE: "10M"
+            SESSION_LIFETIME: "7200"
+          EOF
+
+          # Secret 생성 (DB 패스워드)
+          cat <<EOF > secret.yaml
+          apiVersion: v1
+          kind: Secret
+          metadata:
+            name: ${{ env.PROJECT_NAME }}-secret
+            namespace: ${{ env.PROJECT_NAME }}
+          type: Opaque
+          data:
+            DB_PASSWORD: $(echo -n "${{ secrets.DB_PASSWORD }}" | base64)
+          EOF
+
+          # Deployment 생성
+          cat <<EOF > deployment.yaml
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: ${{ env.PROJECT_NAME }}-app
+            namespace: ${{ env.PROJECT_NAME }}
+            labels:
+              app: ${{ env.PROJECT_NAME }}-app
+          spec:
+            replicas: 2
+            selector:
+              matchLabels:
+                app: ${{ env.PROJECT_NAME }}-app
+            template:
+              metadata:
+                labels:
+                  app: ${{ env.PROJECT_NAME }}-app
+              spec:
+                serviceAccountName: ${{ env.PROJECT_NAME }}-service-account
+                containers:
+                - name: php-app
+                  image: ${{ steps.build-image.outputs.image }}
+                  ports:
+                  - containerPort: 80
+                    name: http
+                  envFrom:
+                  - configMapRef:
+                      name: ${{ env.PROJECT_NAME }}-config
+                  - secretRef:
+                      name: ${{ env.PROJECT_NAME }}-secret
+                  livenessProbe:
+                    httpGet:
+                      path: /healthcheck.php
+                      port: 80
+                    initialDelaySeconds: 60
+                    periodSeconds: 30
+                    timeoutSeconds: 10
+                  readinessProbe:
+                    httpGet:
+                      path: /healthcheck.php
+                      port: 80
+                    initialDelaySeconds: 30
+                    periodSeconds: 10
+                    timeoutSeconds: 5
+                  resources:
+                    requests:
+                      memory: "256Mi"
+                      cpu: "250m"
+                    limits:
+                      memory: "512Mi"
+                      cpu: "500m"
+                  securityContext:
+                    runAsNonRoot: false
+                    allowPrivilegeEscalation: false
+                    readOnlyRootFilesystem: false
+          EOF
+
+          # Service 생성 (ClusterIP로 유지 - Ingress가 사용)
+          cat <<EOF > service.yaml
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: ${{ env.PROJECT_NAME }}-service
+            namespace: ${{ env.PROJECT_NAME }}
+            labels:
+              app: ${{ env.PROJECT_NAME }}-app
+          spec:
+            type: ClusterIP
+            ports:
+            - port: 80
+              targetPort: 80
+              protocol: TCP
+              name: http
+            selector:
+              app: ${{ env.PROJECT_NAME }}-app
+          EOF
+
+          # VPC 서브넷 정보 조회
+          echo "🔍 VPC 서브넷 정보 조회 중..."
+          PUBLIC_SUBNETS=$(aws ec2 describe-subnets \
+            --filters "Name=vpc-id,Values=$(aws eks describe-cluster --name ${{ env.EKS_CLUSTER_NAME }} --query "cluster.resourcesVpcConfig.vpcId" --output text)" \
+                      "Name=tag:Name,Values=*public*" \
+            --query "Subnets[*].SubnetId" --output text | tr '\t' ',')
+
+          if [ -z "$PUBLIC_SUBNETS" ]; then
+            # 태그 기반 조회가 실패하면 EKS 서브넷 사용
+            PUBLIC_SUBNETS=$(aws eks describe-cluster --name ${{ env.EKS_CLUSTER_NAME }} --query "cluster.resourcesVpcConfig.subnetIds" --output text | tr '\t' ',')
+          fi
+
+          echo "사용할 서브넷: $PUBLIC_SUBNETS"
+
+          # Ingress 생성 (AWS Load Balancer Controller 사용) - 강화된 설정
+          cat <<EOF > ingress.yaml
+          apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            name: ${{ env.PROJECT_NAME }}-ingress
+            namespace: ${{ env.PROJECT_NAME }}
+            annotations:
+              # 기본 ALB 설정
+              kubernetes.io/ingress.class: alb
+              alb.ingress.kubernetes.io/scheme: internet-facing
+              alb.ingress.kubernetes.io/target-type: ip
+              
+              # Health Check 설정
+              alb.ingress.kubernetes.io/healthcheck-path: /healthcheck.php
+              alb.ingress.kubernetes.io/healthcheck-interval-seconds: '30'
+              alb.ingress.kubernetes.io/healthcheck-timeout-seconds: '5'
+              alb.ingress.kubernetes.io/healthy-threshold-count: '2'
+              alb.ingress.kubernetes.io/unhealthy-threshold-count: '3'
+              
+              # 트래픽 설정
+              alb.ingress.kubernetes.io/target-group-attributes: stickiness.enabled=false,deregistration_delay.timeout_seconds=60
+              
+              # 태그 설정
+              alb.ingress.kubernetes.io/tags: |
+                Environment=${{ env.PROJECT_NAME }},
+                Project=${{ env.PROJECT_NAME }},
+                ManagedBy=Kubernetes
+                
+              # 로드밸런서 타입
+              alb.ingress.kubernetes.io/load-balancer-name: ${{ env.PROJECT_NAME }}-alb
+          spec:
+            ingressClassName: alb
+            rules:
+            - http:
+                paths:
+                - path: /
+                  pathType: Prefix
+                  backend:
+                    service:
+                      name: ${{ env.PROJECT_NAME }}-service
+                      port:
+                        number: 80
+          EOF
+
+          # ServiceAccount 생성 (IRSA용)
+          cat <<EOF > serviceaccount.yaml
+          apiVersion: v1
+          kind: ServiceAccount
+          metadata:
+            name: ${{ env.PROJECT_NAME }}-service-account
+            namespace: ${{ env.PROJECT_NAME }}
+            annotations:
+              eks.amazonaws.com/role-arn: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/walb-app-eks-app-role
+          EOF
+
+          echo "✅ 매니페스트 파일 생성 완료"
+
+      # ===============================================
+      # EKS에 애플리케이션 배포 (main 브랜치일 때만)
+      # ===============================================
+      - name: Deploy to EKS
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        run: |
+          echo "🚀 EKS에 애플리케이션 배포 중..."
+
+          # Namespace 먼저 생성
+          kubectl apply -f namespace.yaml
+
+          # 나머지 리소스 배포
+          kubectl apply -f serviceaccount.yaml
+          kubectl apply -f configmap.yaml
+          kubectl apply -f secret.yaml
+          kubectl apply -f deployment.yaml
+          kubectl apply -f service.yaml
+
+          # Ingress 배포 전 웹훅 빠른 확인
+          echo "🔗 Ingress 배포 전 웹훅 상태 확인..."
+          if ! kubectl get validatingadmissionwebhook aws-load-balancer-webhook >/dev/null 2>&1; then
+            echo "❌ ValidatingAdmissionWebhook이 존재하지 않습니다 - Ingress 배포 중단"
+            kubectl get validatingadmissionwebhook 2>/dev/null || echo "웹훅 목록 조회 실패"
+            exit 1
+          fi
+          echo "✅ ValidatingAdmissionWebhook 확인됨"
+
+          # Ingress 배포 (간소화된 재시도 로직)
+          echo "🔗 Ingress 리소스 배포 중..."
+          for i in {1..5}; do
+            echo "Ingress 배포 시도 ($i/5)..."
+            
+            if timeout 60s kubectl apply -f ingress.yaml; then
+              echo "✅ Ingress 배포 성공"
+              # 간단한 존재 확인
+              sleep 5
+              if kubectl get ingress ${{ env.PROJECT_NAME }}-ingress -n ${{ env.PROJECT_NAME }} >/dev/null 2>&1; then
+                echo "✅ Ingress 리소스 확인 완료"
+                break
+              fi
+            else
+              echo "⚠️ Ingress 배포 실패 ($i/5)"
+              if [ $i -lt 5 ]; then
+                echo "30초 후 재시도..."
                 sleep 30
               else
-                echo "❌ 모든 설치 시도 실패"
+                echo "❌ Ingress 배포 최종 실패"
+                kubectl get pods -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller || true
+                kubectl describe validatingadmissionwebhook aws-load-balancer-webhook || true
                 exit 1
               fi
             fi
           done
-        fi
-        
-        # Controller Pod 상태 확인
-        echo "⏳ AWS Load Balancer Controller Pod 시작 대기 중..."
-        kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=aws-load-balancer-controller -n kube-system --timeout=300s
-        
-        # 웹훅 서비스 기본 확인
-        echo "🔍 웹훅 서비스 기본 상태 확인..."
-        if kubectl get service aws-load-balancer-webhook-service -n kube-system >/dev/null 2>&1; then
-          echo "✅ 웹훅 서비스 존재"
-          kubectl get endpoints aws-load-balancer-webhook-service -n kube-system
-        else
-          echo "⚠️ 웹훅 서비스 아직 생성되지 않음"
-        fi
-        
-        # ValidatingAdmissionWebhook 생성 대기 및 확인 강화
-        echo "🔍 ValidatingAdmissionWebhook 생성 대기 중..."
-        WEBHOOK_READY=false
-        
-        # cert-manager가 인증서를 생성할 시간을 기다림
-        echo "⏳ TLS 인증서 생성 대기 중 (30초)..."
-        sleep 30
-        
-        for i in {1..15}; do
-          echo "ValidatingAdmissionWebhook 확인 시도 ($i/15)..."
-          
-          # 1단계: ValidatingAdmissionWebhook 존재 확인
-          if kubectl get validatingadmissionwebhook aws-load-balancer-webhook >/dev/null 2>&1; then
-            echo "✅ ValidatingAdmissionWebhook 존재"
-            
-            # 2단계: Webhook 상세 정보 출력
-            echo "웹훅 상세 정보:"
-            kubectl get validatingadmissionwebhook aws-load-balancer-webhook -o yaml | head -50
-            
-            # 3단계: ClientConfig 서비스 확인
-            WEBHOOK_SERVICE=$(kubectl get validatingadmissionwebhook aws-load-balancer-webhook -o jsonpath='{.webhooks[0].clientConfig.service.name}' 2>/dev/null || echo "")
-            WEBHOOK_NAMESPACE=$(kubectl get validatingadmissionwebhook aws-load-balancer-webhook -o jsonpath='{.webhooks[0].clientConfig.service.namespace}' 2>/dev/null || echo "")
-            
-            if [ -n "$WEBHOOK_SERVICE" ] && [ -n "$WEBHOOK_NAMESPACE" ]; then
-              echo "웹훅 서비스: $WEBHOOK_SERVICE (네임스페이스: $WEBHOOK_NAMESPACE)"
-              
-              # 4단계: 서비스 존재 및 엔드포인트 확인
-              if kubectl get service "$WEBHOOK_SERVICE" -n "$WEBHOOK_NAMESPACE" >/dev/null 2>&1; then
-                echo "✅ 웹훅 서비스 존재"
-                
-                # 5단계: 엔드포인트 확인
-                ENDPOINT_IPS=$(kubectl get endpoints "$WEBHOOK_SERVICE" -n "$WEBHOOK_NAMESPACE" -o jsonpath='{.subsets[*].addresses[*].ip}' 2>/dev/null || echo "")
-                if [ -n "$ENDPOINT_IPS" ]; then
-                  echo "✅ 웹훅 엔드포인트 준비 완료: $ENDPOINT_IPS"
-                  
-                  # 6단계: TLS 인증서 확인
-                  TLS_SECRET=$(kubectl get validatingadmissionwebhook aws-load-balancer-webhook -o jsonpath='{.webhooks[0].clientConfig.caBundle}' 2>/dev/null || echo "")
-                  if [ -n "$TLS_SECRET" ]; then
-                    echo "✅ TLS 인증서 확인됨"
-                    WEBHOOK_READY=true
-                    break
-                  else
-                    echo "⚠️ TLS 인증서 대기 중..."
-                  fi
-                else
-                  echo "⚠️ 웹훅 엔드포인트 대기 중..."
-                fi
-              else
-                echo "❌ 웹훅 서비스 없음"
-              fi
-            else
-              echo "⚠️ 웹훅 ClientConfig 정보 불완전"
-            fi
-          else
-            echo "⚠️ ValidatingAdmissionWebhook 생성 대기 중..."
-            
-            # cert-manager와 AWS Load Balancer Controller 상태 확인
-            echo "🔍 cert-manager 상태:"
-            kubectl get pods -n cert-manager --no-headers | grep -E "(cert-manager|webhook|cainjector)" || echo "cert-manager 정보 없음"
-            
-            echo "🔍 AWS Load Balancer Controller 상태:"
-            kubectl get pods -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller --no-headers || echo "Controller 정보 없음"
-            
-            # Certificate 리소스 확인 (있다면)
-            echo "🔍 Certificate 리소스 확인:"
-            kubectl get certificates -n kube-system 2>/dev/null || echo "Certificate 리소스 없음"
-          fi
-          
-          if [ $i -lt 15 ]; then
-            echo "20초 후 재시도..."
-            sleep 20
-          fi
-        done
-        
-        if [ "$WEBHOOK_READY" = false ]; then
-          echo "❌ ValidatingAdmissionWebhook이 준비되지 않았습니다"
-          
-          # 더 상세한 진단 정보 수집
-          echo ""
-          echo "🔍 AWS Load Balancer Controller 진단 정보:"
-          
-          # Pod 상태 확인
-          echo "Pod 상태:"
-          kubectl get pods -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller -o wide || true
-          
-          # Pod 이벤트 확인
-          echo ""
-          echo "Pod 이벤트:"
-          kubectl get events -n kube-system --field-selector involvedObject.kind=Pod --sort-by='.lastTimestamp' | grep aws-load-balancer-controller || true
-          
-          # Deployment 상태 확인
-          echo ""
-          echo "Deployment 상태:"
-          kubectl describe deployment -n kube-system aws-load-balancer-controller || true
-          
-          # ReplicaSet 상태 확인
-          echo ""
-          echo "ReplicaSet 상태:"
-          kubectl get replicasets -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller || true
-          
-          # ServiceAccount 확인
-          echo ""
-          echo "ServiceAccount 상태:"
-          kubectl get serviceaccount aws-load-balancer-controller -n kube-system -o yaml || true
-          
-          # 로그 조회 시도 (여러 방법)
-          echo ""
-          echo "Controller Pod 로그 조회 시도:"
-          
-          # 방법 1: 간단한 로그 조회
-          if kubectl logs -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller --tail=50 --since=10m 2>/dev/null; then
-            echo "✅ 로그 조회 성공"
-          else
-            echo "⚠️ 방법 1 실패, 다른 방법 시도 중..."
-            
-            # 방법 2: Pod 이름으로 직접 조회
-            POD_NAME=$(kubectl get pods -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
-            if [ -n "$POD_NAME" ]; then
-              echo "Pod 이름: $POD_NAME"
-              if kubectl logs -n kube-system "$POD_NAME" --tail=50 --since=10m 2>/dev/null; then
-                echo "✅ Pod별 로그 조회 성공"
-              else
-                echo "⚠️ Pod별 로그 조회도 실패"
-                
-                # 방법 3: Pod 상세 정보
-                echo "Pod 상세 정보:"
-                kubectl describe pod -n kube-system "$POD_NAME" 2>/dev/null || echo "Pod 상세 정보 조회 실패"
-              fi
-            else
-              echo "❌ Controller Pod를 찾을 수 없습니다"
-            fi
-          fi
-          
-          # ValidatingAdmissionWebhook 상세 확인
-          echo ""
-          echo "ValidatingAdmissionWebhook 진단:"
-          if kubectl get validatingadmissionwebhook 2>/dev/null | grep aws-load-balancer; then
-            kubectl describe validatingadmissionwebhook aws-load-balancer-webhook 2>/dev/null || echo "웹훅 상세 정보 조회 실패"
-          else
-            echo "❌ ValidatingAdmissionWebhook이 존재하지 않습니다"
-            echo "사용 가능한 웹훅 목록:"
-            kubectl get validatingadmissionwebhook 2>/dev/null || echo "웹훅 목록 조회 실패"
-          fi
-          
-          exit 1
-        fi
-        
-        # 웹훅 인증서 생성 및 상태 확인 강화
-        echo "🔍 웹훅 인증서 생성 및 상태 확인 중..."
-        
-        # cert-manager가 생성하는 다양한 인증서 패턴 확인
-        TLS_SECRET_PATTERNS=(
-          "aws-load-balancer-webhook-tls"
-          "aws-load-balancer-webhook-ca"
-          "aws-load-balancer-controller-webhook-tls"
-        )
-        
-        FOUND_TLS_SECRET=""
-        for TLS_SECRET_NAME in "${TLS_SECRET_PATTERNS[@]}"; do
-          if kubectl get secret -n kube-system "$TLS_SECRET_NAME" >/dev/null 2>&1; then
-            echo "✅ TLS 인증서 발견: $TLS_SECRET_NAME"
-            FOUND_TLS_SECRET="$TLS_SECRET_NAME"
-            
-            # 인증서 상세 정보 확인
-            echo "인증서 상세 정보:"
-            kubectl get secret -n kube-system "$TLS_SECRET_NAME" -o yaml | head -20
-            
-            # 인증서 만료일 확인
-            CERT_DATA=$(kubectl get secret -n kube-system "$TLS_SECRET_NAME" -o jsonpath='{.data.tls\.crt}' 2>/dev/null || echo "")
-            if [ -n "$CERT_DATA" ]; then
-              echo "인증서 정보:"
-              echo "$CERT_DATA" | base64 -d | openssl x509 -noout -subject -dates 2>/dev/null || echo "인증서 정보 파싱 실패"
-            fi
-            break
-          fi
-        done
-        
-        if [ -z "$FOUND_TLS_SECRET" ]; then
-          echo "⚠️ 웹훅 TLS 인증서를 찾을 수 없습니다"
-          echo ""
-          echo "🔍 사용 가능한 secrets 목록:"
-          kubectl get secrets -n kube-system | grep -E "(tls|cert|webhook)" || echo "관련 secrets 없음"
-          
-          echo ""
-          echo "🔍 cert-manager 이벤트 확인:"
-          kubectl get events -n cert-manager --sort-by='.lastTimestamp' | tail -10 || echo "cert-manager 이벤트 조회 실패"
-          
-          echo ""
-          echo "🔍 kube-system 이벤트 확인:"
-          kubectl get events -n kube-system --sort-by='.lastTimestamp' | grep -i cert | tail -10 || echo "인증서 관련 이벤트 없음"
-        fi
-        
-        # 웹훅 연결 테스트
-        echo "🔍 웹훅 연결 테스트 수행 중..."
-        WEBHOOK_PORT=$(kubectl get validatingadmissionwebhook aws-load-balancer-webhook -o jsonpath='{.webhooks[0].clientConfig.service.port}' 2>/dev/null || echo "443")
-        if kubectl exec -n kube-system $(kubectl get pods -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller -o jsonpath='{.items[0].metadata.name}') -- sh -c "nc -zv aws-load-balancer-webhook-service.kube-system.svc.cluster.local $WEBHOOK_PORT" 2>/dev/null; then
-          echo "✅ 웹훅 포트 연결 테스트 성공"
-        else
-          echo "⚠️ 웹훅 포트 연결 테스트 실패 (일반적인 현상일 수 있음)"
-        fi
-        
-        # Controller 안정화 대기
-        echo "⏳ Controller 안정화 대기 중 (30초)..."
-        sleep 30
-        
-        echo "✅ AWS Load Balancer Controller 설치 완료"
-        kubectl get pods -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller
-        kubectl get service aws-load-balancer-webhook-service -n kube-system
-        kubectl get endpoints aws-load-balancer-webhook-service -n kube-system
 
-    # ===============================================
-    # Kubernetes 매니페스트 파일 생성
-    # ===============================================
-    - name: Generate Kubernetes manifests
-      run: |
-        echo "📝 Kubernetes 매니페스트 생성 중..."
-        
-        # Namespace 생성
-        cat <<EOF > namespace.yaml
-        apiVersion: v1
-        kind: Namespace
-        metadata:
-          name: ${{ env.PROJECT_NAME }}
-          labels:
-            name: ${{ env.PROJECT_NAME }}
-        EOF
-        
-        # ConfigMap 생성 (환경변수)
-        cat <<EOF > configmap.yaml
-        apiVersion: v1
-        kind: ConfigMap
-        metadata:
-          name: ${{ env.PROJECT_NAME }}-config
-          namespace: ${{ env.PROJECT_NAME }}
-        data:
-          DB_HOST: "${{ env.RDS_ENDPOINT }}"
-          DB_PORT: "5432"
-          DB_NAME: "mydb"
-          DB_USER: "dbadmin"
-          AWS_REGION: "${{ secrets.AWS_REGION }}"
-          AWS_S3_BUCKET: "walb-app-files"
-          AWS_S3_REGION: "${{ secrets.AWS_REGION }}"
-          STORAGE_TYPE: "s3"
-          APP_ENV: "production"
-          APP_DEBUG: "false"
-          PHP_MEMORY_LIMIT: "256M"
-          PHP_MAX_EXECUTION_TIME: "30"
-          PHP_TIMEZONE: "Asia/Seoul"
-          UPLOAD_MAX_SIZE: "10M"
-          SESSION_LIFETIME: "7200"
-        EOF
-        
-        # Secret 생성 (DB 패스워드)
-        cat <<EOF > secret.yaml
-        apiVersion: v1
-        kind: Secret
-        metadata:
-          name: ${{ env.PROJECT_NAME }}-secret
-          namespace: ${{ env.PROJECT_NAME }}
-        type: Opaque
-        data:
-          DB_PASSWORD: $(echo -n "${{ secrets.DB_PASSWORD }}" | base64)
-        EOF
-        
-        # Deployment 생성
-        cat <<EOF > deployment.yaml
-        apiVersion: apps/v1
-        kind: Deployment
-        metadata:
-          name: ${{ env.PROJECT_NAME }}-app
-          namespace: ${{ env.PROJECT_NAME }}
-          labels:
-            app: ${{ env.PROJECT_NAME }}-app
-        spec:
-          replicas: 2
-          selector:
-            matchLabels:
-              app: ${{ env.PROJECT_NAME }}-app
-          template:
-            metadata:
-              labels:
-                app: ${{ env.PROJECT_NAME }}-app
-            spec:
-              serviceAccountName: ${{ env.PROJECT_NAME }}-service-account
-              containers:
-              - name: php-app
-                image: ${{ steps.build-image.outputs.image }}
-                ports:
-                - containerPort: 80
-                  name: http
-                envFrom:
-                - configMapRef:
-                    name: ${{ env.PROJECT_NAME }}-config
-                - secretRef:
-                    name: ${{ env.PROJECT_NAME }}-secret
-                livenessProbe:
-                  httpGet:
-                    path: /healthcheck.php
-                    port: 80
-                  initialDelaySeconds: 60
-                  periodSeconds: 30
-                  timeoutSeconds: 10
-                readinessProbe:
-                  httpGet:
-                    path: /healthcheck.php
-                    port: 80
-                  initialDelaySeconds: 30
-                  periodSeconds: 10
-                  timeoutSeconds: 5
-                resources:
-                  requests:
-                    memory: "256Mi"
-                    cpu: "250m"
-                  limits:
-                    memory: "512Mi"
-                    cpu: "500m"
-                securityContext:
-                  runAsNonRoot: false
-                  allowPrivilegeEscalation: false
-                  readOnlyRootFilesystem: false
-        EOF
-        
-        # Service 생성 (ClusterIP로 유지 - Ingress가 사용)
-        cat <<EOF > service.yaml
-        apiVersion: v1
-        kind: Service
-        metadata:
-          name: ${{ env.PROJECT_NAME }}-service
-          namespace: ${{ env.PROJECT_NAME }}
-          labels:
-            app: ${{ env.PROJECT_NAME }}-app
-        spec:
-          type: ClusterIP
-          ports:
-          - port: 80
-            targetPort: 80
-            protocol: TCP
-            name: http
-          selector:
-            app: ${{ env.PROJECT_NAME }}-app
-        EOF
-        
-        # VPC 서브넷 정보 조회
-        echo "🔍 VPC 서브넷 정보 조회 중..."
-        PUBLIC_SUBNETS=$(aws ec2 describe-subnets \
-          --filters "Name=vpc-id,Values=$(aws eks describe-cluster --name ${{ env.EKS_CLUSTER_NAME }} --query "cluster.resourcesVpcConfig.vpcId" --output text)" \
-                    "Name=tag:Name,Values=*public*" \
-          --query "Subnets[*].SubnetId" --output text | tr '\t' ',')
-        
-        if [ -z "$PUBLIC_SUBNETS" ]; then
-          # 태그 기반 조회가 실패하면 EKS 서브넷 사용
-          PUBLIC_SUBNETS=$(aws eks describe-cluster --name ${{ env.EKS_CLUSTER_NAME }} --query "cluster.resourcesVpcConfig.subnetIds" --output text | tr '\t' ',')
-        fi
-        
-        echo "사용할 서브넷: $PUBLIC_SUBNETS"
-        
-        # Ingress 생성 (AWS Load Balancer Controller 사용) - 강화된 설정
-        cat <<EOF > ingress.yaml
-        apiVersion: networking.k8s.io/v1
-        kind: Ingress
-        metadata:
-          name: ${{ env.PROJECT_NAME }}-ingress
-          namespace: ${{ env.PROJECT_NAME }}
-          annotations:
-            # 기본 ALB 설정
-            kubernetes.io/ingress.class: alb
-            alb.ingress.kubernetes.io/scheme: internet-facing
-            alb.ingress.kubernetes.io/target-type: ip
+          echo "⏳ 배포 완료 대기 중..."
+          kubectl rollout status deployment/${{ env.PROJECT_NAME }}-app -n ${{ env.PROJECT_NAME }} --timeout=300s
+
+      # ===============================================
+      # 배포 결과 확인
+      # ===============================================
+      - name: Verify Deployment
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        run: |
+          echo "🔍 배포 상태 확인 중..."
+          echo "네임스페이스: ${{ env.PROJECT_NAME }}"
+          echo "앱 라벨: ${{ env.PROJECT_NAME }}-app"
+
+          # 네임스페이스 존재 확인
+          if ! kubectl get namespace ${{ env.PROJECT_NAME }} >/dev/null 2>&1; then
+            echo "❌ 네임스페이스 '${{ env.PROJECT_NAME }}'가 존재하지 않습니다."
+            kubectl get namespaces
+            exit 1
+          fi
+
+          # 기본 리소스 상태 확인
+          echo "📋 Pod 상태:"
+          kubectl get pods -n ${{ env.PROJECT_NAME }} -o wide || echo "Pod를 찾을 수 없습니다."
+
+          echo "📋 Service 상태:"
+          kubectl get services -n ${{ env.PROJECT_NAME }} || echo "Service를 찾을 수 없습니다."
+
+          echo "📋 Deployment 상태:"
+          kubectl get deployments -n ${{ env.PROJECT_NAME }} || echo "Deployment를 찾을 수 없습니다."
+
+          echo "📋 Ingress 상태:"
+          kubectl get ingress -n ${{ env.PROJECT_NAME }} || echo "Ingress를 찾을 수 없습니다."
+
+          echo "📋 AWS Load Balancer Controller 상태:"
+          kubectl get pods -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller || echo "AWS Load Balancer Controller를 찾을 수 없습니다."
+
+          # Deployment 존재 확인 후 대기
+          if kubectl get deployment ${{ env.PROJECT_NAME }}-app -n ${{ env.PROJECT_NAME }} >/dev/null 2>&1; then
+            echo "⏳ Pod 준비 상태 대기 중..."
+            kubectl wait --for=condition=ready pod -l app=${{ env.PROJECT_NAME }}-app -n ${{ env.PROJECT_NAME }} --timeout=300s || echo "Pod 준비 상태 대기 시간 초과"
             
-            # Health Check 설정
-            alb.ingress.kubernetes.io/healthcheck-path: /healthcheck.php
-            alb.ingress.kubernetes.io/healthcheck-interval-seconds: '30'
-            alb.ingress.kubernetes.io/healthcheck-timeout-seconds: '5'
-            alb.ingress.kubernetes.io/healthy-threshold-count: '2'
-            alb.ingress.kubernetes.io/unhealthy-threshold-count: '3'
+            echo "📝 Deployment 상세 정보:"
+            kubectl describe deployment ${{ env.PROJECT_NAME }}-app -n ${{ env.PROJECT_NAME }}
             
-            # 트래픽 설정
-            alb.ingress.kubernetes.io/target-group-attributes: stickiness.enabled=false,deregistration_delay.timeout_seconds=60
-            
-            # 태그 설정
-            alb.ingress.kubernetes.io/tags: |
-              Environment=${{ env.PROJECT_NAME }},
-              Project=${{ env.PROJECT_NAME }},
-              ManagedBy=Kubernetes
-              
-            # 로드밸런서 타입
-            alb.ingress.kubernetes.io/load-balancer-name: ${{ env.PROJECT_NAME }}-alb
-        spec:
-          ingressClassName: alb
-          rules:
-          - http:
-              paths:
-              - path: /
-                pathType: Prefix
-                backend:
-                  service:
-                    name: ${{ env.PROJECT_NAME }}-service
-                    port:
-                      number: 80
-        EOF
-        
-        # ServiceAccount 생성 (IRSA용)
-        cat <<EOF > serviceaccount.yaml
-        apiVersion: v1
-        kind: ServiceAccount
-        metadata:
-          name: ${{ env.PROJECT_NAME }}-service-account
-          namespace: ${{ env.PROJECT_NAME }}
-          annotations:
-            eks.amazonaws.com/role-arn: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/walb-app-eks-app-role
-        EOF
-        
-        echo "✅ 매니페스트 파일 생성 완료"
-    
-    # ===============================================
-    # EKS에 애플리케이션 배포 (main 브랜치일 때만)
-    # ===============================================
-    - name: Deploy to EKS
-      if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-      run: |
-        echo "🚀 EKS에 애플리케이션 배포 중..."
-        
-        # Namespace 먼저 생성
-        kubectl apply -f namespace.yaml
-        
-        # 나머지 리소스 배포
-        kubectl apply -f serviceaccount.yaml
-        kubectl apply -f configmap.yaml
-        kubectl apply -f secret.yaml
-        kubectl apply -f deployment.yaml
-        kubectl apply -f service.yaml
-        
-        # Ingress 배포 전 웹훅 빠른 확인
-        echo "🔗 Ingress 배포 전 웹훅 상태 확인..."
-        if ! kubectl get validatingadmissionwebhook aws-load-balancer-webhook >/dev/null 2>&1; then
-          echo "❌ ValidatingAdmissionWebhook이 존재하지 않습니다 - Ingress 배포 중단"
-          kubectl get validatingadmissionwebhook 2>/dev/null || echo "웹훅 목록 조회 실패"
-          exit 1
-        fi
-        echo "✅ ValidatingAdmissionWebhook 확인됨"
-        
-        # Ingress 배포 (간소화된 재시도 로직)
-        echo "🔗 Ingress 리소스 배포 중..."
-        for i in {1..5}; do
-          echo "Ingress 배포 시도 ($i/5)..."
-          
-          if timeout 60s kubectl apply -f ingress.yaml; then
-            echo "✅ Ingress 배포 성공"
-            # 간단한 존재 확인
-            sleep 5
-            if kubectl get ingress ${{ env.PROJECT_NAME }}-ingress -n ${{ env.PROJECT_NAME }} >/dev/null 2>&1; then
-              echo "✅ Ingress 리소스 확인 완료"
+          else
+            echo "❌ Deployment '${{ env.PROJECT_NAME }}-app'를 찾을 수 없습니다."
+            echo "사용 가능한 Deployment 목록:"
+            kubectl get deployments -n ${{ env.PROJECT_NAME }}
+            exit 1
+          fi
+
+      # ===============================================
+      # LoadBalancer 설정 확인 및 접속 URL 제공
+      # ===============================================
+      - name: Get Application URL
+        if: success() && github.ref == 'refs/heads/main' && github.event_name == 'push'
+        run: |
+          echo "🔗 애플리케이션 접속 정보 확인 중..."
+
+          # Ingress에서 ALB DNS 확인 (최대 3분 대기)
+          echo "⏳ Ingress ALB 생성 대기 중..."
+          for i in {1..18}; do
+            ALB_DNS=$(kubectl get ingress ${{ env.PROJECT_NAME }}-ingress -n ${{ env.PROJECT_NAME }} -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "")
+            if [ -n "$ALB_DNS" ]; then
+              echo "✅ ALB DNS 확인: $ALB_DNS"
               break
             fi
-          else
-            echo "⚠️ Ingress 배포 실패 ($i/5)"
-            if [ $i -lt 5 ]; then
-              echo "30초 후 재시도..."
-              sleep 30
-            else
-              echo "❌ Ingress 배포 최종 실패"
-              kubectl get pods -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller || true
-              kubectl describe validatingadmissionwebhook aws-load-balancer-webhook || true
-              exit 1
-            fi
-          fi
-        done
-        
-        echo "⏳ 배포 완료 대기 중..."
-        kubectl rollout status deployment/${{ env.PROJECT_NAME }}-app -n ${{ env.PROJECT_NAME }} --timeout=300s
-    
-    # ===============================================
-    # 배포 결과 확인
-    # ===============================================
-    - name: Verify Deployment
-      if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-      run: |
-        echo "🔍 배포 상태 확인 중..."
-        echo "네임스페이스: ${{ env.PROJECT_NAME }}"
-        echo "앱 라벨: ${{ env.PROJECT_NAME }}-app"
-        
-        # 네임스페이스 존재 확인
-        if ! kubectl get namespace ${{ env.PROJECT_NAME }} >/dev/null 2>&1; then
-          echo "❌ 네임스페이스 '${{ env.PROJECT_NAME }}'가 존재하지 않습니다."
-          kubectl get namespaces
-          exit 1
-        fi
-        
-        # 기본 리소스 상태 확인
-        echo "📋 Pod 상태:"
-        kubectl get pods -n ${{ env.PROJECT_NAME }} -o wide || echo "Pod를 찾을 수 없습니다."
-        
-        echo "📋 Service 상태:"
-        kubectl get services -n ${{ env.PROJECT_NAME }} || echo "Service를 찾을 수 없습니다."
-        
-        echo "📋 Deployment 상태:"
-        kubectl get deployments -n ${{ env.PROJECT_NAME }} || echo "Deployment를 찾을 수 없습니다."
-        
-        echo "📋 Ingress 상태:"
-        kubectl get ingress -n ${{ env.PROJECT_NAME }} || echo "Ingress를 찾을 수 없습니다."
-        
-        echo "📋 AWS Load Balancer Controller 상태:"
-        kubectl get pods -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller || echo "AWS Load Balancer Controller를 찾을 수 없습니다."
-        
-        # Deployment 존재 확인 후 대기
-        if kubectl get deployment ${{ env.PROJECT_NAME }}-app -n ${{ env.PROJECT_NAME }} >/dev/null 2>&1; then
-          echo "⏳ Pod 준비 상태 대기 중..."
-          kubectl wait --for=condition=ready pod -l app=${{ env.PROJECT_NAME }}-app -n ${{ env.PROJECT_NAME }} --timeout=300s || echo "Pod 준비 상태 대기 시간 초과"
-          
-          echo "📝 Deployment 상세 정보:"
-          kubectl describe deployment ${{ env.PROJECT_NAME }}-app -n ${{ env.PROJECT_NAME }}
-          
-        else
-          echo "❌ Deployment '${{ env.PROJECT_NAME }}-app'를 찾을 수 없습니다."
-          echo "사용 가능한 Deployment 목록:"
-          kubectl get deployments -n ${{ env.PROJECT_NAME }}
-          exit 1
-        fi
-    
-    # ===============================================
-    # LoadBalancer 설정 확인 및 접속 URL 제공
-    # ===============================================
-    - name: Get Application URL
-      if: success() && github.ref == 'refs/heads/main' && github.event_name == 'push'
-      run: |
-        echo "🔗 애플리케이션 접속 정보 확인 중..."
-        
-        # Ingress에서 ALB DNS 확인 (최대 3분 대기)
-        echo "⏳ Ingress ALB 생성 대기 중..."
-        for i in {1..18}; do
-          ALB_DNS=$(kubectl get ingress ${{ env.PROJECT_NAME }}-ingress -n ${{ env.PROJECT_NAME }} -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "")
-          if [ -n "$ALB_DNS" ]; then
-            echo "✅ ALB DNS 확인: $ALB_DNS"
-            break
-          fi
-          echo "대기 중... ($i/18)"
-          sleep 10
-        done
-        
-        if [ -n "$ALB_DNS" ]; then
-          echo "🌐 애플리케이션 접속 URL: http://$ALB_DNS"
-          echo "🔍 Ingress 상태:"
-          kubectl describe ingress ${{ env.PROJECT_NAME }}-ingress -n ${{ env.PROJECT_NAME }}
-        else
-          echo "⚠️ Ingress ALB DNS를 찾을 수 없습니다."
-          echo "Ingress 상태 확인:"
-          kubectl get ingress -n ${{ env.PROJECT_NAME }}
-          echo "대체 접근 방법:"
-          echo "kubectl port-forward -n ${{ env.PROJECT_NAME }} svc/${{ env.PROJECT_NAME }}-service 8080:80"
-        fi
-    
-    # ===============================================
-    # 배포 완료 알림
-    # ===============================================
-    - name: Application Deployment Notification
-      if: success() && github.ref == 'refs/heads/main' && github.event_name == 'push'
-      run: |
-        echo "🎉 PHP 애플리케이션 배포 완료!"
-        echo "프로젝트: ${{ env.PROJECT_NAME }}"
-        echo "이미지: ${{ steps.build-image.outputs.image }}"
-        echo "클러스터: ${{ env.EKS_CLUSTER_NAME }}"
-        echo "네임스페이스: ${{ env.PROJECT_NAME }}"
-        echo "데이터베이스: ${{ env.RDS_ENDPOINT }}"
-        echo "커밋: ${{ github.sha }}"
-        echo "배포 시간: $(date)"
-        
-        # 배포된 서비스 정보 출력
-        echo "📋 배포된 리소스 목록:"
-        kubectl get all -n ${{ env.PROJECT_NAME }} || echo "리소스 조회 실패"
+            echo "대기 중... ($i/18)"
+            sleep 10
+          done
 
-    # ===============================================
-    # 배포 실패 시 롤백
-    # ===============================================
-    - name: Rollback on failure
-      if: failure() && github.ref == 'refs/heads/main' && github.event_name == 'push'
-      run: |
-        echo "❌ 배포 실패 - 이전 버전으로 롤백 중..."
-        kubectl rollout undo deployment/${{ env.PROJECT_NAME }}-app -n ${{ env.PROJECT_NAME }} || true
-        kubectl rollout status deployment/${{ env.PROJECT_NAME }}-app -n ${{ env.PROJECT_NAME }} --timeout=300s || true
-        echo "✅ 롤백 시도 완료"
+          if [ -n "$ALB_DNS" ]; then
+            echo "🌐 애플리케이션 접속 URL: http://$ALB_DNS"
+            echo "🔍 Ingress 상태:"
+            kubectl describe ingress ${{ env.PROJECT_NAME }}-ingress -n ${{ env.PROJECT_NAME }}
+          else
+            echo "⚠️ Ingress ALB DNS를 찾을 수 없습니다."
+            echo "Ingress 상태 확인:"
+            kubectl get ingress -n ${{ env.PROJECT_NAME }}
+            echo "대체 접근 방법:"
+            echo "kubectl port-forward -n ${{ env.PROJECT_NAME }} svc/${{ env.PROJECT_NAME }}-service 8080:80"
+          fi
+
+      # ===============================================
+      # 배포 완료 알림
+      # ===============================================
+      - name: Application Deployment Notification
+        if: success() && github.ref == 'refs/heads/main' && github.event_name == 'push'
+        run: |
+          echo "🎉 PHP 애플리케이션 배포 완료!"
+          echo "프로젝트: ${{ env.PROJECT_NAME }}"
+          echo "이미지: ${{ steps.build-image.outputs.image }}"
+          echo "클러스터: ${{ env.EKS_CLUSTER_NAME }}"
+          echo "네임스페이스: ${{ env.PROJECT_NAME }}"
+          echo "데이터베이스: ${{ env.RDS_ENDPOINT }}"
+          echo "커밋: ${{ github.sha }}"
+          echo "배포 시간: $(date)"
+
+          # 배포된 서비스 정보 출력
+          echo "📋 배포된 리소스 목록:"
+          kubectl get all -n ${{ env.PROJECT_NAME }} || echo "리소스 조회 실패"
+
+      # ===============================================
+      # 배포 실패 시 롤백
+      # ===============================================
+      - name: Rollback on failure
+        if: failure() && github.ref == 'refs/heads/main' && github.event_name == 'push'
+        run: |
+          echo "❌ 배포 실패 - 이전 버전으로 롤백 중..."
+          kubectl rollout undo deployment/${{ env.PROJECT_NAME }}-app -n ${{ env.PROJECT_NAME }} || true
+          kubectl rollout status deployment/${{ env.PROJECT_NAME }}-app -n ${{ env.PROJECT_NAME }} --timeout=300s || true
+          echo "✅ 롤백 시도 완료"
