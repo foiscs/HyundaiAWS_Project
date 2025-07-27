@@ -522,14 +522,69 @@ jobs:
         kubectl get nodes --show-labels
     
     # ===============================================
+    # cert-manager 설치 (AWS Load Balancer Controller 의존성)
+    # ===============================================
+    - name: Install cert-manager
+      run: |
+        echo "🔧 cert-manager 설치 중..."
+        
+        # Helm 설치
+        curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+        
+        # cert-manager 네임스페이스 생성
+        kubectl create namespace cert-manager --dry-run=client -o yaml | kubectl apply -f -
+        
+        # cert-manager Helm 리포지토리 추가
+        helm repo add jetstack https://charts.jetstack.io
+        helm repo update
+        
+        # 기존 cert-manager 확인
+        if helm list -n cert-manager | grep -q cert-manager; then
+          echo "기존 cert-manager 발견 - 업그레이드 시도..."
+          helm upgrade cert-manager jetstack/cert-manager \
+            --namespace cert-manager \
+            --version v1.13.0 \
+            --set installCRDs=true \
+            --set webhook.securePort=10250 \
+            --timeout=300s \
+            --wait || {
+            echo "업그레이드 실패 - 재설치 시도..."
+            helm uninstall cert-manager -n cert-manager || true
+            sleep 30
+            helm install cert-manager jetstack/cert-manager \
+              --namespace cert-manager \
+              --version v1.13.0 \
+              --set installCRDs=true \
+              --set webhook.securePort=10250 \
+              --timeout=300s \
+              --wait
+          }
+        else
+          echo "새로운 cert-manager 설치 중..."
+          helm install cert-manager jetstack/cert-manager \
+            --namespace cert-manager \
+            --version v1.13.0 \
+            --set installCRDs=true \
+            --set webhook.securePort=10250 \
+            --timeout=300s \
+            --wait
+        fi
+        
+        # cert-manager Pod 준비 상태 대기
+        echo "⏳ cert-manager Pod 준비 대기 중..."
+        kubectl wait --for=condition=ready pod -l app=cert-manager -n cert-manager --timeout=300s
+        kubectl wait --for=condition=ready pod -l app=webhook -n cert-manager --timeout=300s
+        kubectl wait --for=condition=ready pod -l app=cainjector -n cert-manager --timeout=300s
+        
+        echo "✅ cert-manager 설치 완료"
+        kubectl get pods -n cert-manager
+    
+    # ===============================================
     # AWS Load Balancer Controller 설치
     # ===============================================
     - name: Install AWS Load Balancer Controller
       run: |
         echo "🔧 AWS Load Balancer Controller 설치 중..."
-        
-        # Helm 설치
-        curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
         
         # IAM Role과 ServiceAccount 존재 확인
         echo "🔍 IAM Role 확인 중..."
@@ -703,55 +758,87 @@ jobs:
         echo "⏳ AWS Load Balancer Controller Pod 시작 대기 중..."
         kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=aws-load-balancer-controller -n kube-system --timeout=300s
         
-        # 웹훅 서비스 준비 상태 확인 강화
-        echo "🔍 웹훅 서비스 준비 상태 확인 중..."
-        for i in {1..20}; do
-          if kubectl get endpoints aws-load-balancer-webhook-service -n kube-system >/dev/null 2>&1; then
-            READY_ENDPOINTS=$(kubectl get endpoints aws-load-balancer-webhook-service -n kube-system -o jsonpath='{.subsets[*].addresses[*].ip}' | wc -w)
-            if [ "$READY_ENDPOINTS" -gt 0 ]; then
-              echo "✅ 웹훅 서비스 준비 완료 (Ready endpoints: $READY_ENDPOINTS)"
-              
-              # 엔드포인트 상세 정보 확인
-              kubectl get endpoints aws-load-balancer-webhook-service -n kube-system -o yaml
-              break
-            fi
-          fi
-          echo "웹훅 서비스 대기 중... ($i/20)"
-          sleep 15
-        done
+        # 웹훅 서비스 기본 확인
+        echo "🔍 웹훅 서비스 기본 상태 확인..."
+        if kubectl get service aws-load-balancer-webhook-service -n kube-system >/dev/null 2>&1; then
+          echo "✅ 웹훅 서비스 존재"
+          kubectl get endpoints aws-load-balancer-webhook-service -n kube-system
+        else
+          echo "⚠️ 웹훅 서비스 아직 생성되지 않음"
+        fi
         
-        # ValidatingAdmissionWebhook 상태 확인 강화
-        echo "🔍 ValidatingAdmissionWebhook 상태 확인 중..."
+        # ValidatingAdmissionWebhook 생성 대기 및 확인 강화
+        echo "🔍 ValidatingAdmissionWebhook 생성 대기 중..."
         WEBHOOK_READY=false
+        
+        # cert-manager가 인증서를 생성할 시간을 기다림
+        echo "⏳ TLS 인증서 생성 대기 중 (30초)..."
+        sleep 30
+        
         for i in {1..15}; do
+          echo "ValidatingAdmissionWebhook 확인 시도 ($i/15)..."
+          
+          # 1단계: ValidatingAdmissionWebhook 존재 확인
           if kubectl get validatingadmissionwebhook aws-load-balancer-webhook >/dev/null 2>&1; then
             echo "✅ ValidatingAdmissionWebhook 존재"
             
-            # Webhook 상세 정보 출력
-            kubectl get validatingadmissionwebhook aws-load-balancer-webhook -o yaml
+            # 2단계: Webhook 상세 정보 출력
+            echo "웹훅 상세 정보:"
+            kubectl get validatingadmissionwebhook aws-load-balancer-webhook -o yaml | head -50
             
-            # ClientConfig 서비스 확인
-            WEBHOOK_SERVICE=$(kubectl get validatingadmissionwebhook aws-load-balancer-webhook -o jsonpath='{.webhooks[0].clientConfig.service.name}')
-            WEBHOOK_NAMESPACE=$(kubectl get validatingadmissionwebhook aws-load-balancer-webhook -o jsonpath='{.webhooks[0].clientConfig.service.namespace}')
-            echo "웹훅 서비스: $WEBHOOK_SERVICE (네임스페이스: $WEBHOOK_NAMESPACE)"
+            # 3단계: ClientConfig 서비스 확인
+            WEBHOOK_SERVICE=$(kubectl get validatingadmissionwebhook aws-load-balancer-webhook -o jsonpath='{.webhooks[0].clientConfig.service.name}' 2>/dev/null || echo "")
+            WEBHOOK_NAMESPACE=$(kubectl get validatingadmissionwebhook aws-load-balancer-webhook -o jsonpath='{.webhooks[0].clientConfig.service.namespace}' 2>/dev/null || echo "")
             
-            # 서비스 존재 및 엔드포인트 확인
-            if kubectl get service "$WEBHOOK_SERVICE" -n "$WEBHOOK_NAMESPACE" >/dev/null 2>&1; then
-              echo "✅ 웹훅 서비스 존재"
-              if kubectl get endpoints "$WEBHOOK_SERVICE" -n "$WEBHOOK_NAMESPACE" -o jsonpath='{.subsets[*].addresses[*].ip}' | grep -q .; then
-                echo "✅ 웹훅 엔드포인트 준비 완료"
-                WEBHOOK_READY=true
-                break
+            if [ -n "$WEBHOOK_SERVICE" ] && [ -n "$WEBHOOK_NAMESPACE" ]; then
+              echo "웹훅 서비스: $WEBHOOK_SERVICE (네임스페이스: $WEBHOOK_NAMESPACE)"
+              
+              # 4단계: 서비스 존재 및 엔드포인트 확인
+              if kubectl get service "$WEBHOOK_SERVICE" -n "$WEBHOOK_NAMESPACE" >/dev/null 2>&1; then
+                echo "✅ 웹훅 서비스 존재"
+                
+                # 5단계: 엔드포인트 확인
+                ENDPOINT_IPS=$(kubectl get endpoints "$WEBHOOK_SERVICE" -n "$WEBHOOK_NAMESPACE" -o jsonpath='{.subsets[*].addresses[*].ip}' 2>/dev/null || echo "")
+                if [ -n "$ENDPOINT_IPS" ]; then
+                  echo "✅ 웹훅 엔드포인트 준비 완료: $ENDPOINT_IPS"
+                  
+                  # 6단계: TLS 인증서 확인
+                  TLS_SECRET=$(kubectl get validatingadmissionwebhook aws-load-balancer-webhook -o jsonpath='{.webhooks[0].clientConfig.caBundle}' 2>/dev/null || echo "")
+                  if [ -n "$TLS_SECRET" ]; then
+                    echo "✅ TLS 인증서 확인됨"
+                    WEBHOOK_READY=true
+                    break
+                  else
+                    echo "⚠️ TLS 인증서 대기 중..."
+                  fi
+                else
+                  echo "⚠️ 웹훅 엔드포인트 대기 중..."
+                fi
               else
-                echo "⚠️ 웹훅 엔드포인트 대기 중..."
+                echo "❌ 웹훅 서비스 없음"
               fi
             else
-              echo "❌ 웹훅 서비스 없음"
+              echo "⚠️ 웹훅 ClientConfig 정보 불완전"
             fi
           else
-            echo "⚠️ ValidatingAdmissionWebhook 대기 중... ($i/15)"
+            echo "⚠️ ValidatingAdmissionWebhook 생성 대기 중..."
+            
+            # cert-manager와 AWS Load Balancer Controller 상태 확인
+            echo "🔍 cert-manager 상태:"
+            kubectl get pods -n cert-manager --no-headers | grep -E "(cert-manager|webhook|cainjector)" || echo "cert-manager 정보 없음"
+            
+            echo "🔍 AWS Load Balancer Controller 상태:"
+            kubectl get pods -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller --no-headers || echo "Controller 정보 없음"
+            
+            # Certificate 리소스 확인 (있다면)
+            echo "🔍 Certificate 리소스 확인:"
+            kubectl get certificates -n kube-system 2>/dev/null || echo "Certificate 리소스 없음"
           fi
-          sleep 20
+          
+          if [ $i -lt 15 ]; then
+            echo "20초 후 재시도..."
+            sleep 20
+          fi
         done
         
         if [ "$WEBHOOK_READY" = false ]; then
@@ -827,21 +914,49 @@ jobs:
           exit 1
         fi
         
-        # 웹훅 인증서 상태 확인 강화
-        echo "🔍 웹훅 인증서 상태 확인 중..."
-        TLS_SECRET_NAME="aws-load-balancer-webhook-tls"
-        if kubectl get secret -n kube-system "$TLS_SECRET_NAME" >/dev/null 2>&1; then
-          echo "✅ 웹훅 TLS 인증서 존재"
-          
-          # 인증서 만료일 확인
-          CERT_DATA=$(kubectl get secret -n kube-system "$TLS_SECRET_NAME" -o jsonpath='{.data.tls\.crt}')
-          if [ -n "$CERT_DATA" ]; then
-            echo "$CERT_DATA" | base64 -d | openssl x509 -noout -dates 2>/dev/null || echo "인증서 날짜 확인 실패"
+        # 웹훅 인증서 생성 및 상태 확인 강화
+        echo "🔍 웹훅 인증서 생성 및 상태 확인 중..."
+        
+        # cert-manager가 생성하는 다양한 인증서 패턴 확인
+        TLS_SECRET_PATTERNS=(
+          "aws-load-balancer-webhook-tls"
+          "aws-load-balancer-webhook-ca"
+          "aws-load-balancer-controller-webhook-tls"
+        )
+        
+        FOUND_TLS_SECRET=""
+        for TLS_SECRET_NAME in "${TLS_SECRET_PATTERNS[@]}"; do
+          if kubectl get secret -n kube-system "$TLS_SECRET_NAME" >/dev/null 2>&1; then
+            echo "✅ TLS 인증서 발견: $TLS_SECRET_NAME"
+            FOUND_TLS_SECRET="$TLS_SECRET_NAME"
+            
+            # 인증서 상세 정보 확인
+            echo "인증서 상세 정보:"
+            kubectl get secret -n kube-system "$TLS_SECRET_NAME" -o yaml | head -20
+            
+            # 인증서 만료일 확인
+            CERT_DATA=$(kubectl get secret -n kube-system "$TLS_SECRET_NAME" -o jsonpath='{.data.tls\.crt}' 2>/dev/null || echo "")
+            if [ -n "$CERT_DATA" ]; then
+              echo "인증서 정보:"
+              echo "$CERT_DATA" | base64 -d | openssl x509 -noout -subject -dates 2>/dev/null || echo "인증서 정보 파싱 실패"
+            fi
+            break
           fi
-        else
+        done
+        
+        if [ -z "$FOUND_TLS_SECRET" ]; then
           echo "⚠️ 웹훅 TLS 인증서를 찾을 수 없습니다"
-          echo "사용 가능한 TLS secrets:"
-          kubectl get secrets -n kube-system | grep tls || echo "TLS secrets 없음"
+          echo ""
+          echo "🔍 사용 가능한 secrets 목록:"
+          kubectl get secrets -n kube-system | grep -E "(tls|cert|webhook)" || echo "관련 secrets 없음"
+          
+          echo ""
+          echo "🔍 cert-manager 이벤트 확인:"
+          kubectl get events -n cert-manager --sort-by='.lastTimestamp' | tail -10 || echo "cert-manager 이벤트 조회 실패"
+          
+          echo ""
+          echo "🔍 kube-system 이벤트 확인:"
+          kubectl get events -n kube-system --sort-by='.lastTimestamp' | grep -i cert | tail -10 || echo "인증서 관련 이벤트 없음"
         fi
         
         # 웹훅 연결 테스트
@@ -853,9 +968,9 @@ jobs:
           echo "⚠️ 웹훅 포트 연결 테스트 실패 (일반적인 현상일 수 있음)"
         fi
         
-        # 추가 안정화 대기
-        echo "⏳ Controller 완전 안정화 대기 중 (60초)..."
-        sleep 60
+        # Controller 안정화 대기
+        echo "⏳ Controller 안정화 대기 중 (30초)..."
+        sleep 30
         
         echo "✅ AWS Load Balancer Controller 설치 완료"
         kubectl get pods -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller
@@ -1084,66 +1199,36 @@ jobs:
         kubectl apply -f deployment.yaml
         kubectl apply -f service.yaml
         
-        # Ingress 배포 전 웹훅 재검증
-        echo "🔗 Ingress 배포 전 웹훅 상태 재확인..."
-        WEBHOOK_VALIDATION_PASSED=false
-        for i in {1..5}; do
-          if kubectl get validatingadmissionwebhook aws-load-balancer-webhook >/dev/null 2>&1; then
-            # 웹훅 엔드포인트 테스트
-            WEBHOOK_SERVICE="aws-load-balancer-webhook-service"
-            if kubectl get endpoints "$WEBHOOK_SERVICE" -n kube-system -o jsonpath='{.subsets[*].addresses[*].ip}' | grep -q .; then
-              echo "✅ 웹훅 검증 통과 ($i번째 시도)"
-              WEBHOOK_VALIDATION_PASSED=true
-              break
-            fi
-          fi
-          echo "⚠️ 웹훅 검증 실패 ($i/5) - 20초 후 재시도..."
-          sleep 20
-        done
-        
-        if [ "$WEBHOOK_VALIDATION_PASSED" = false ]; then
-          echo "❌ 웹훅 검증 실패 - Ingress 배포 중단"
-          kubectl logs -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller --tail=100 || true
+        # Ingress 배포 전 웹훅 빠른 확인
+        echo "🔗 Ingress 배포 전 웹훅 상태 확인..."
+        if ! kubectl get validatingadmissionwebhook aws-load-balancer-webhook >/dev/null 2>&1; then
+          echo "❌ ValidatingAdmissionWebhook이 존재하지 않습니다 - Ingress 배포 중단"
+          kubectl get validatingadmissionwebhook 2>/dev/null || echo "웹훅 목록 조회 실패"
           exit 1
         fi
+        echo "✅ ValidatingAdmissionWebhook 확인됨"
         
-        # Ingress 배포 (강화된 재시도 로직)
+        # Ingress 배포 (간소화된 재시도 로직)
         echo "🔗 Ingress 리소스 배포 중..."
-        for i in {1..8}; do
-          echo "Ingress 배포 시도 ($i/8)..."
+        for i in {1..5}; do
+          echo "Ingress 배포 시도 ($i/5)..."
           
-          # 배포 시도
-          if timeout 60s kubectl apply -f ingress.yaml 2>&1; then
+          if timeout 60s kubectl apply -f ingress.yaml; then
             echo "✅ Ingress 배포 성공"
-            
-            # 배포 후 상태 확인
-            sleep 10
+            # 간단한 존재 확인
+            sleep 5
             if kubectl get ingress ${{ env.PROJECT_NAME }}-ingress -n ${{ env.PROJECT_NAME }} >/dev/null 2>&1; then
               echo "✅ Ingress 리소스 확인 완료"
               break
-            else
-              echo "⚠️ Ingress 리소스 생성 확인 실패"
             fi
           else
-            echo "⚠️ Ingress 배포 실패 ($i/8)"
-            
-            # 상세한 오류 정보 수집
-            if [ $i -ge 3 ]; then
-              echo "상세 오류 진단:"
-              kubectl get validatingadmissionwebhook aws-load-balancer-webhook -o yaml 2>/dev/null || echo "웹훅 정보 조회 실패"
-              kubectl get endpoints aws-load-balancer-webhook-service -n kube-system 2>/dev/null || echo "웹훅 엔드포인트 조회 실패"
-              kubectl logs -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller --tail=20 2>/dev/null || echo "컨트롤러 로그 조회 실패"
-            fi
-            
-            if [ $i -lt 8 ]; then
-              WAIT_TIME=$((30 + i * 10))
-              echo "${WAIT_TIME}초 후 재시도..."
-              sleep $WAIT_TIME
+            echo "⚠️ Ingress 배포 실패 ($i/5)"
+            if [ $i -lt 5 ]; then
+              echo "30초 후 재시도..."
+              sleep 30
             else
               echo "❌ Ingress 배포 최종 실패"
-              echo "최종 진단 정보:"
-              kubectl get pods -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller
-              kubectl logs -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller --tail=100 || true
+              kubectl get pods -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller || true
               kubectl describe validatingadmissionwebhook aws-load-balancer-webhook || true
               exit 1
             fi
@@ -1209,15 +1294,15 @@ jobs:
       run: |
         echo "🔗 애플리케이션 접속 정보 확인 중..."
         
-        # Ingress에서 ALB DNS 확인 (최대 5분 대기)
+        # Ingress에서 ALB DNS 확인 (최대 3분 대기)
         echo "⏳ Ingress ALB 생성 대기 중..."
-        for i in {1..30}; do
+        for i in {1..18}; do
           ALB_DNS=$(kubectl get ingress ${{ env.PROJECT_NAME }}-ingress -n ${{ env.PROJECT_NAME }} -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "")
           if [ -n "$ALB_DNS" ]; then
             echo "✅ ALB DNS 확인: $ALB_DNS"
             break
           fi
-          echo "대기 중... ($i/30)"
+          echo "대기 중... ($i/18)"
           sleep 10
         done
         
