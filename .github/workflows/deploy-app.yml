@@ -433,12 +433,23 @@ jobs:
         echo "✅ 데이터베이스 스키마 작업 완료"
     
     # ===============================================
-    # kubectl 설치 및 EKS 연결
+    # kubectl 및 Helm 설치
     # ===============================================
-    - name: Install kubectl
-      uses: azure/setup-kubectl@v3
-      with:
-        version: 'v1.28.0'
+    - name: Install kubectl and Helm
+      run: |
+        echo "🔧 kubectl 및 Helm 설치 중..."
+        
+        # kubectl 설치
+        curl -LO "https://dl.k8s.io/release/v1.28.0/bin/linux/amd64/kubectl"
+        chmod +x kubectl
+        sudo mv kubectl /usr/local/bin/
+        
+        # Helm 설치
+        curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+        
+        echo "✅ kubectl 및 Helm 설치 완료"
+        kubectl version --client
+        helm version
     
     - name: Update kubeconfig for EKS
       run: |
@@ -484,18 +495,6 @@ jobs:
         echo "🔧 kubeconfig 업데이트 중..."
         aws eks update-kubeconfig --region ${{ secrets.AWS_REGION }} --name "$EKS_CLUSTER_NAME" --verbose
         
-        # kubeconfig 파일 확인
-        echo "📋 kubeconfig 파일 내용:"
-        cat ~/.kube/config
-        
-        # AWS CLI 버전 확인
-        echo "🔍 AWS CLI 버전:"
-        aws --version
-        
-        # kubectl 버전 확인
-        echo "🔍 kubectl 버전:"
-        kubectl version --client
-        
         # 클러스터 연결 테스트 (자세한 오류 정보 포함)
         echo "🔍 클러스터 연결 테스트..."
         if ! kubectl cluster-info --request-timeout=30s; then
@@ -522,14 +521,26 @@ jobs:
         kubectl get nodes --show-labels
     
     # ===============================================
-    # cert-manager 설치 (AWS Load Balancer Controller 의존성)
+    # cert-manager 설치
     # ===============================================
     - name: Install cert-manager
       run: |
         echo "🔧 cert-manager 설치 중..."
         
-        # Helm 설치
-        curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+        # 기존 AWS Load Balancer Controller webhook 정리 (cert-manager 설치 간섭 방지)
+        echo "🧹 기존 AWS Load Balancer Controller webhook 정리 중..."
+        kubectl delete validatingadmissionwebhook aws-load-balancer-webhook 2>/dev/null || echo "ValidatingAdmissionWebhook 없음"
+        kubectl delete mutatingadmissionwebhook aws-load-balancer-webhook 2>/dev/null || echo "MutatingAdmissionWebhook 없음"
+        kubectl delete service aws-load-balancer-webhook-service -n kube-system 2>/dev/null || echo "웹훅 서비스 없음"
+        
+        # AWS Load Balancer Controller 제거 (재설치를 위해)
+        if helm list -n kube-system | grep -q aws-load-balancer-controller; then
+          echo "기존 AWS Load Balancer Controller 제거 중..."
+          helm uninstall aws-load-balancer-controller -n kube-system || true
+          sleep 10
+        fi
+        
+        echo "✅ webhook 정리 완료"
         
         # cert-manager 네임스페이스 생성
         kubectl create namespace cert-manager --dry-run=client -o yaml | kubectl apply -f -
@@ -538,37 +549,50 @@ jobs:
         helm repo add jetstack https://charts.jetstack.io
         helm repo update
         
-        # 기존 cert-manager 확인
+        # 기존 cert-manager 제거 (완전 재설치)
         if helm list -n cert-manager | grep -q cert-manager; then
-          echo "기존 cert-manager 발견 - 업그레이드 시도..."
-          helm upgrade cert-manager jetstack/cert-manager \
-            --namespace cert-manager \
-            --version v1.13.0 \
-            --set installCRDs=true \
-            --set webhook.securePort=10250 \
-            --timeout=300s \
-            --wait || {
-            echo "업그레이드 실패 - 재설치 시도..."
-            helm uninstall cert-manager -n cert-manager || true
-            sleep 30
-            helm install cert-manager jetstack/cert-manager \
-              --namespace cert-manager \
-              --version v1.13.0 \
-              --set installCRDs=true \
-              --set webhook.securePort=10250 \
-              --timeout=300s \
-              --wait
-          }
-        else
-          echo "새로운 cert-manager 설치 중..."
-          helm install cert-manager jetstack/cert-manager \
-            --namespace cert-manager \
-            --version v1.13.0 \
-            --set installCRDs=true \
-            --set webhook.securePort=10250 \
-            --timeout=300s \
-            --wait
+          echo "기존 cert-manager 제거 중..."
+          helm uninstall cert-manager -n cert-manager || true
+          sleep 20
         fi
+        
+        # cert-manager Deployment나 Pod가 남아있다면 제거
+        kubectl delete deployment --all -n cert-manager 2>/dev/null || true
+        kubectl delete pod --all -n cert-manager 2>/dev/null || true
+        sleep 10
+        
+        # cert-manager 설치 (단일 방법으로 CRDs 포함)
+        echo "📦 cert-manager 설치 중..."
+        for i in {1..3}; do
+          echo "cert-manager 설치 시도 ($i/3)..."
+          if helm install cert-manager jetstack/cert-manager \
+            --namespace cert-manager \
+            --version v1.13.0 \
+            --set installCRDs=true \
+            --set webhook.securePort=9443 \
+            --set webhook.hostNetwork=false \
+            --set startupapicheck.enabled=false \
+            --timeout=600s \
+            --wait; then
+            echo "✅ cert-manager 설치 성공"
+            break
+          else
+            echo "❌ cert-manager 설치 실패 ($i/3)"
+            if [ $i -lt 3 ]; then
+              helm uninstall cert-manager -n cert-manager 2>/dev/null || true
+              sleep 30
+            else
+              echo "❌ Helm 설치 최종 실패 - kubectl 직접 설치 시도..."
+              # 대안: kubectl로 직접 설치
+              kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.13.0/cert-manager.yaml || {
+                echo "❌ kubectl 설치도 실패"
+                exit 1
+              }
+              echo "✅ kubectl로 cert-manager 설치 완료"
+              break
+            fi
+          fi
+        done
         
         # cert-manager Pod 준비 상태 대기
         echo "⏳ cert-manager Pod 준비 대기 중..."
@@ -717,9 +741,25 @@ jobs:
         if [ "${INSTALL_NEEDED:-true}" = "true" ]; then
           echo "새로운 AWS Load Balancer Controller 설치 중..."
           
+          # cert-manager 완전 준비 대기
+          echo "⏳ cert-manager 완전 준비 대기 중..."
+          for i in {1..10}; do
+            if kubectl get pods -n cert-manager -l app=cert-manager --field-selector=status.phase=Running | grep -q cert-manager; then
+              echo "✅ cert-manager 준비 완료"
+              break
+            fi
+            echo "cert-manager 대기 중... ($i/10)"
+            sleep 10
+          done
+          
           # 재시도 로직으로 설치
           for i in {1..3}; do
             echo "설치 시도 $i/3..."
+            
+            # 혹시 남은 webhook 정리
+            kubectl delete validatingadmissionwebhook aws-load-balancer-webhook 2>/dev/null || true
+            kubectl delete mutatingadmissionwebhook aws-load-balancer-webhook 2>/dev/null || true
+            
             if helm install aws-load-balancer-controller eks/aws-load-balancer-controller \
               -n kube-system \
               --set clusterName=${{ env.EKS_CLUSTER_NAME }} \
@@ -735,6 +775,7 @@ jobs:
               --set resources.limits.memory=500Mi \
               --set resources.requests.cpu=100m \
               --set resources.requests.memory=200Mi \
+              --set webhook.port=9443 \
               --timeout=600s \
               --wait; then
               echo "✅ 설치 성공"
@@ -742,10 +783,12 @@ jobs:
             else
               echo "❌ 설치 실패 ($i/3)"
               if [ $i -lt 3 ]; then
-                echo "30초 후 재시도..."
-                sleep 30
+                echo "60초 후 재시도..."
+                sleep 60
                 # 실패한 설치 정리
                 helm uninstall aws-load-balancer-controller -n kube-system 2>/dev/null || true
+                kubectl delete validatingadmissionwebhook aws-load-balancer-webhook 2>/dev/null || true
+                kubectl delete mutatingadmissionwebhook aws-load-balancer-webhook 2>/dev/null || true
               else
                 echo "❌ 모든 설치 시도 실패"
                 exit 1
