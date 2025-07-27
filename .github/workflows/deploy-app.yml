@@ -521,357 +521,78 @@ jobs:
           kubectl get nodes --show-labels
 
       # ===============================================
-      # cert-manager 설치 (webhook TLS 인증서 문제 해결)
+      # AWS Load Balancer Controller 정리 및 준비
       # ===============================================
-      - name: Install cert-manager
+      - name: Clean up and prepare for AWS Load Balancer Controller
         run: |
-          echo "🔧 cert-manager 설치 중..."
+          echo "🧹 기존 AWS Load Balancer Controller 리소스 정리 중..."
 
-          # 기존 AWS Load Balancer Controller webhook 정리 (cert-manager 설치 간섭 방지)
-          echo "🧹 기존 AWS Load Balancer Controller webhook 정리 중..."
-          kubectl delete validatingadmissionwebhook aws-load-balancer-webhook 2>/dev/null || echo "ValidatingAdmissionWebhook 없음"
-          kubectl delete mutatingadmissionwebhook aws-load-balancer-webhook 2>/dev/null || echo "MutatingAdmissionWebhook 없음"
-          kubectl delete service aws-load-balancer-webhook-service -n kube-system 2>/dev/null || echo "웹훅 서비스 없음"
-
-          # AWS Load Balancer Controller 제거 (재설치를 위해)
+          # 기존 AWS Load Balancer Controller 제거
           if helm list -n kube-system | grep -q aws-load-balancer-controller; then
             echo "기존 AWS Load Balancer Controller 제거 중..."
             helm uninstall aws-load-balancer-controller -n kube-system || true
             sleep 10
           fi
 
-          echo "✅ webhook 정리 완료"
+          # 웹훅 관련 리소스 정리
+          kubectl delete validatingadmissionwebhook aws-load-balancer-webhook 2>/dev/null || echo "ValidatingAdmissionWebhook 없음"
+          kubectl delete mutatingadmissionwebhook aws-load-balancer-webhook 2>/dev/null || echo "MutatingAdmissionWebhook 없음"
+          kubectl delete service aws-load-balancer-webhook-service -n kube-system 2>/dev/null || echo "웹훅 서비스 없음"
 
-          # cert-manager 네임스페이스 생성
-          kubectl create namespace cert-manager --dry-run=client -o yaml | kubectl apply -f -
-
-          # cert-manager Helm 리포지토리 추가
-          helm repo add jetstack https://charts.jetstack.io
-          helm repo update
-
-          # 기존 cert-manager 완전 제거
-          if helm list -n cert-manager | grep -q cert-manager; then
-            echo "기존 cert-manager 제거 중..."
-            helm uninstall cert-manager -n cert-manager || true
-          fi
-
-          # cert-manager CRDs 제거 (완전 초기화)
+          # cert-manager 완전 제거 (더 이상 사용하지 않음)
+          echo "🗑️ cert-manager 완전 제거 중..."
+          kubectl delete namespace cert-manager 2>/dev/null || true
           kubectl delete crd certificaterequests.cert-manager.io 2>/dev/null || true
           kubectl delete crd certificates.cert-manager.io 2>/dev/null || true
           kubectl delete crd challenges.acme.cert-manager.io 2>/dev/null || true
           kubectl delete crd clusterissuers.cert-manager.io 2>/dev/null || true
           kubectl delete crd issuers.cert-manager.io 2>/dev/null || true
           kubectl delete crd orders.acme.cert-manager.io 2>/dev/null || true
-
-          # 네임스페이스 완전 정리
-          kubectl delete namespace cert-manager 2>/dev/null || true
-          sleep 20
-
-          # cert-manager 네임스페이스 재생성
-          kubectl create namespace cert-manager
-
-          # cert-manager 단계적 설치 (webhook 문제 근본 해결)
-          echo "📦 cert-manager 단계적 설치 중..."
-
-          # 1단계: CRDs만 먼저 설치
-          echo "1️⃣ cert-manager CRDs 설치 중..."
-          kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.13.0/cert-manager.crds.yaml
-          sleep 10
-
-          # 2단계: webhook 없이 cert-manager 컨트롤러만 설치
-          echo "2️⃣ cert-manager 컨트롤러 설치 중 (webhook 제외)..."
-          cat <<'EOF' | kubectl apply -f -
-          apiVersion: v1
-          kind: Namespace
-          metadata:
-            name: cert-manager
-          ---
-          apiVersion: apps/v1
-          kind: Deployment
-          metadata:
-            name: cert-manager-controller
-            namespace: cert-manager
-          spec:
-            replicas: 1
-            selector:
-              matchLabels:
-                app: cert-manager
-                app.kubernetes.io/name: cert-manager
-                app.kubernetes.io/instance: cert-manager
-            template:
-              metadata:
-                labels:
-                  app: cert-manager
-                  app.kubernetes.io/name: cert-manager
-                  app.kubernetes.io/instance: cert-manager
-              spec:
-                serviceAccountName: cert-manager
-                containers:
-                - name: cert-manager-controller
-                  image: quay.io/jetstack/cert-manager-controller:v1.13.0
-                  args:
-                  - --v=2
-                  - --cluster-resource-namespace=$(POD_NAMESPACE)
-                  - --leader-election-namespace=kube-system
-                  - --acme-http01-solver-image=quay.io/jetstack/cert-manager-acmesolver:v1.13.0
-                  - --max-concurrent-challenges=60
-                  env:
-                  - name: POD_NAMESPACE
-                    valueFrom:
-                      fieldRef:
-                        fieldPath: metadata.namespace
-                  ports:
-                  - containerPort: 9402
-                    name: http-metrics
-                    protocol: TCP
-                  resources:
-                    limits:
-                      cpu: 100m
-                      memory: 128Mi
-                    requests:
-                      cpu: 10m
-                      memory: 32Mi
-          ---
-          apiVersion: v1
-          kind: ServiceAccount
-          metadata:
-            name: cert-manager
-            namespace: cert-manager
-          ---
-          apiVersion: rbac.authorization.k8s.io/v1
-          kind: ClusterRole
-          metadata:
-            name: cert-manager-controller-issuers
-          rules:
-          - apiGroups: ["cert-manager.io"]
-            resources: ["issuers", "issuers/status"]
-            verbs: ["update", "patch"]
-          - apiGroups: ["cert-manager.io"]
-            resources: ["issuers"]
-            verbs: ["get", "list", "watch"]
-          - apiGroups: [""]
-            resources: ["secrets"]
-            verbs: ["get", "list", "watch", "create", "update", "delete"]
-          - apiGroups: [""]
-            resources: ["events"]
-            verbs: ["create", "patch"]
-          ---
-          apiVersion: rbac.authorization.k8s.io/v1
-          kind: ClusterRole
-          metadata:
-            name: cert-manager-controller-clusterissuers
-          rules:
-          - apiGroups: ["cert-manager.io"]
-            resources: ["clusterissuers", "clusterissuers/status"]
-            verbs: ["update", "patch"]
-          - apiGroups: ["cert-manager.io"]
-            resources: ["clusterissuers"]
-            verbs: ["get", "list", "watch"]
-          - apiGroups: [""]
-            resources: ["secrets"]
-            verbs: ["get", "list", "watch", "create", "update", "delete"]
-          - apiGroups: [""]
-            resources: ["events"]
-            verbs: ["create", "patch"]
-          ---
-          apiVersion: rbac.authorization.k8s.io/v1
-          kind: ClusterRoleBinding
-          metadata:
-            name: cert-manager-controller-issuers
-          roleRef:
-            apiGroup: rbac.authorization.k8s.io
-            kind: ClusterRole
-            name: cert-manager-controller-issuers
-          subjects:
-          - kind: ServiceAccount
-            name: cert-manager
-            namespace: cert-manager
-          ---
-          apiVersion: rbac.authorization.k8s.io/v1
-          kind: ClusterRoleBinding
-          metadata:
-            name: cert-manager-controller-clusterissuers
-          roleRef:
-            apiGroup: rbac.authorization.k8s.io
-            kind: ClusterRole
-            name: cert-manager-controller-clusterissuers
-          subjects:
-          - kind: ServiceAccount
-            name: cert-manager
-            namespace: cert-manager
-          EOF
-
-          # 3단계: cert-manager 컨트롤러 준비 대기
-          echo "3️⃣ cert-manager 컨트롤러 준비 대기 중..."
-          kubectl wait --for=condition=ready pod -l app=cert-manager -n cert-manager --timeout=300s
-
-          echo "✅ cert-manager 기본 설치 완료 (webhook 없이)"
-
-          # 4단계: 전체 cert-manager 설치 (webhook 포함)
-          echo "4️⃣ 전체 cert-manager 설치 중 (webhook 포함)..."
-          kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.13.0/cert-manager.yaml
-
-          # 모든 Pod 준비 대기
-          echo "⏳ 모든 cert-manager Pod 준비 대기 중..."
-          kubectl wait --for=condition=ready pod -l app=cert-manager -n cert-manager --timeout=600s
-          kubectl wait --for=condition=ready pod -l app=webhook -n cert-manager --timeout=600s  
-          kubectl wait --for=condition=ready pod -l app=cainjector -n cert-manager --timeout=600s
-
-          # 최종 안정화 대기
-          echo "⏳ cert-manager 최종 안정화 대기 (60초)..."
-          sleep 60
-
-          # 5단계: ClusterIssuer 생성 (이제 webhook이 준비된 후)
-          echo "5️⃣ Self-signed ClusterIssuer 생성 중..."
-          cat <<'EOF' | kubectl apply -f -
-          apiVersion: cert-manager.io/v1
-          kind: ClusterIssuer
-          metadata:
-            name: selfsigned-issuer
-          spec:
-            selfSigned: {}
-          EOF
-
-          # ClusterIssuer 준비 대기
-          echo "⏳ ClusterIssuer 준비 대기..."
-          sleep 10
-          kubectl get clusterissuer selfsigned-issuer
-
-          # 6단계: webhook 기능 검증
-          echo "6️⃣ cert-manager webhook 기능 검증 중..."
-
-          # ValidatingAdmissionWebhook이 생성될 때까지 대기
-          WEBHOOK_READY=false
-          for i in {1..20}; do
-            echo "webhook 검증 시도 ($i/20)..."
-            
-            if kubectl get validatingadmissionwebhook cert-manager-webhook >/dev/null 2>&1; then
-              echo "✅ ValidatingAdmissionWebhook 존재"
-              
-              # webhook 엔드포인트 확인
-              ENDPOINTS=$(kubectl get endpoints cert-manager-webhook -n cert-manager -o jsonpath='{.subsets[*].addresses[*].ip}' 2>/dev/null || echo "")
-              if [ -n "$ENDPOINTS" ]; then
-                echo "✅ webhook 엔드포인트 준비: $ENDPOINTS"
-                
-                # 실제 webhook 기능 테스트 (간단한 dry-run)
-                if timeout 30s kubectl apply --dry-run=server -f - <<'EOF' 2>/dev/null
-          apiVersion: cert-manager.io/v1
-          kind: Certificate
-          metadata:
-            name: test-webhook-cert
-            namespace: cert-manager
-          spec:
-            secretName: test-webhook-cert-tls
-            commonName: test.example.com
-            issuerRef:
-              name: selfsigned-issuer
-              kind: ClusterIssuer
-          EOF
-                    then
-                      echo "✅ webhook 기능 테스트 성공"
-                      WEBHOOK_READY=true
-                      break
-                    else
-                      echo "⚠️ webhook 기능 테스트 실패"
-                    fi
-                  else
-                    echo "⚠️ webhook 엔드포인트 아직 준비되지 않음"
-                  fi
-                else
-                  echo "⚠️ ValidatingAdmissionWebhook 아직 생성되지 않음"
-                fi
-                
-                if [ $i -lt 20 ]; then
-                  echo "15초 후 재시도..."
-                  sleep 15
-                fi
-              done
-              
-              if [ "$WEBHOOK_READY" = false ]; then
-                echo "⚠️ cert-manager webhook 완전 준비 실패, 하지만 계속 진행..."
-                echo "Pod 상태:"
-                kubectl get pods -n cert-manager -o wide
-                echo "서비스 상태:"
-                kubectl get services -n cert-manager
-                echo "이벤트 확인:"
-                kubectl get events -n cert-manager --sort-by='.lastTimestamp' | tail -10
-              else
-                echo "✅ cert-manager webhook 완전 준비 완료"
-              fi
-              
-              echo "✅ cert-manager 설치 완료"
-              kubectl get pods -n cert-manager
-              kubectl get certificates -n cert-manager
+          helm uninstall cert-manager -n cert-manager 2>/dev/null || true
+          
+          echo "✅ 기존 리소스 정리 완료"
 
       # ===============================================
-      # AWS Load Balancer Controller 설치
+      # AWS Load Balancer Controller 설치 (cert-manager 없이)
       # ===============================================
-      - name: Install AWS Load Balancer Controller
+      - name: Install AWS Load Balancer Controller without cert-manager
         run: |
-          echo "🔧 AWS Load Balancer Controller 설치 중..."
+          echo "🔧 AWS Load Balancer Controller 설치 중 (cert-manager 없이)..."
 
-          # IAM Role과 ServiceAccount 존재 확인
+          # IAM Role 확인
           echo "🔍 IAM Role 확인 중..."
-
-          # EKS 클러스터 이름 기반으로 정확한 Role 이름 구성
           PRIMARY_ROLE_NAME="${{ env.EKS_CLUSTER_NAME }}-aws-load-balancer-controller"
-
-          echo "🔍 예상되는 IAM Role: $PRIMARY_ROLE_NAME"
-
-          # 먼저 예상되는 Role 이름으로 직접 확인
+          
           if aws iam get-role --role-name "$PRIMARY_ROLE_NAME" >/dev/null 2>&1; then
-            echo "✅ IAM Role 발견: $PRIMARY_ROLE_NAME"
             IAM_ROLE_ARN="arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/$PRIMARY_ROLE_NAME"
-            FOUND_ROLE="$PRIMARY_ROLE_NAME"
+            echo "✅ IAM Role 발견: $PRIMARY_ROLE_NAME"
           else
-            echo "⚠️ 예상 Role 없음, 다른 패턴 확인 중..."
-            
-            # 백업 패턴들 확인
-            BACKUP_PATTERNS=(
-              "walb-eks-cluster-aws-load-balancer-controller"
-              "walb-app-aws-load-balancer-controller"
-            )
-            
+            # 백업 패턴 확인
+            BACKUP_PATTERNS=("walb-eks-cluster-aws-load-balancer-controller" "walb-app-aws-load-balancer-controller")
             FOUND_ROLE=""
             for ROLE_NAME in "${BACKUP_PATTERNS[@]}"; do
-              echo "🔍 백업 패턴 확인: $ROLE_NAME"
               if aws iam get-role --role-name "$ROLE_NAME" >/dev/null 2>&1; then
-                echo "✅ IAM Role 발견: $ROLE_NAME"
                 IAM_ROLE_ARN="arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/$ROLE_NAME"
                 FOUND_ROLE="$ROLE_NAME"
+                echo "✅ IAM Role 발견: $ROLE_NAME"
                 break
               fi
             done
             
-            # 모든 패턴에서 찾지 못한 경우
             if [ -z "$FOUND_ROLE" ]; then
               echo "❌ AWS Load Balancer Controller IAM Role을 찾을 수 없습니다."
-              echo ""
-              echo "🔍 Load Balancer 관련 IAM Role 검색 중..."
-              if aws iam list-roles --query 'Roles[?contains(RoleName, `load-balancer`) || contains(RoleName, `alb`)].{RoleName:RoleName,CreateDate:CreateDate}' --output table 2>/dev/null; then
-                echo "위 Role들을 확인했지만 예상 패턴과 일치하지 않습니다."
-              else
-                echo "IAM Role 목록 조회 권한이 없습니다."
-              fi
-              echo ""
-              echo "해결 방법:"
-              echo "1. Terraform에서 enable_load_balancer = true로 설정"
-              echo "2. terraform apply로 인프라 재배포"
-              echo "3. 예상 Role 이름: $PRIMARY_ROLE_NAME"
+              echo "예상 Role 이름: $PRIMARY_ROLE_NAME"
               exit 1
             fi
           fi
 
-          echo "✅ 사용할 IAM Role: $IAM_ROLE_ARN"
+          # VPC ID 조회
+          VPC_ID=$(aws eks describe-cluster --name ${{ env.EKS_CLUSTER_NAME }} --query "cluster.resourcesVpcConfig.vpcId" --output text)
+          echo "VPC ID: $VPC_ID"
 
-          # 기존 ServiceAccount 확인 및 삭제 (재생성을 위해)
-          if kubectl get serviceaccount aws-load-balancer-controller -n kube-system >/dev/null 2>&1; then
-            echo "기존 ServiceAccount 삭제 중..."
-            kubectl delete serviceaccount aws-load-balancer-controller -n kube-system || true
-          fi
-
-          # AWS Load Balancer Controller ServiceAccount 생성
+          # ServiceAccount 생성/업데이트
           echo "🔧 ServiceAccount 생성 중..."
+          kubectl delete serviceaccount aws-load-balancer-controller -n kube-system 2>/dev/null || true
           kubectl apply -f - <<EOF
           apiVersion: v1
           kind: ServiceAccount
@@ -882,417 +603,52 @@ jobs:
               eks.amazonaws.com/role-arn: $IAM_ROLE_ARN
           EOF
 
-          # VPC ID 조회
-          VPC_ID=$(aws eks describe-cluster --name ${{ env.EKS_CLUSTER_NAME }} --query "cluster.resourcesVpcConfig.vpcId" --output text)
-          echo "VPC ID: $VPC_ID"
-
-          # AWS Load Balancer Controller Helm chart 설치
+          # Helm repo 추가
           helm repo add eks https://aws.github.io/eks-charts
           helm repo update
 
-          # 기존 설치 확인 및 처리
-          if helm list -n kube-system | grep -q aws-load-balancer-controller; then
-            echo "기존 AWS Load Balancer Controller 발견 - 상태 확인 중..."
-            
-            # 기존 설치 상태 확인
-            EXISTING_STATUS=$(helm status aws-load-balancer-controller -n kube-system -o json 2>/dev/null | jq -r '.info.status' || echo "unknown")
-            echo "기존 설치 상태: $EXISTING_STATUS"
-            
-            if [ "$EXISTING_STATUS" != "deployed" ]; then
-              echo "기존 설치가 불완전합니다. 제거 후 재설치..."
-              helm uninstall aws-load-balancer-controller -n kube-system || true
-              
-              # 관련 리소스 정리
-              kubectl delete validatingadmissionwebhook aws-load-balancer-webhook 2>/dev/null || true
-              kubectl delete mutatingadmissionwebhook aws-load-balancer-webhook 2>/dev/null || true
-              
-              # 정리 대기
-              sleep 30
-            else
-              echo "기존 설치가 정상입니다. 업그레이드 시도..."
-              if helm upgrade aws-load-balancer-controller eks/aws-load-balancer-controller \
-                -n kube-system \
-                --set clusterName=${{ env.EKS_CLUSTER_NAME }} \
-                --set serviceAccount.create=false \
-                --set serviceAccount.name=aws-load-balancer-controller \
-                --set region=${{ secrets.AWS_REGION }} \
-                --set vpcId=$VPC_ID \
-                --set enableShield=false \
-                --set enableWaf=false \
-                --set enableWafv2=false \
-                --timeout=600s \
-                --wait; then
-                echo "✅ 업그레이드 성공"
-                INSTALL_NEEDED=false
-              else
-                echo "❌ 업그레이드 실패 - 제거 후 재설치..."
-                helm uninstall aws-load-balancer-controller -n kube-system || true
-                kubectl delete validatingadmissionwebhook aws-load-balancer-webhook 2>/dev/null || true
-                kubectl delete mutatingadmissionwebhook aws-load-balancer-webhook 2>/dev/null || true
-                sleep 30
-                INSTALL_NEEDED=true
-              fi
-            fi
-          else
-            INSTALL_NEEDED=true
-          fi
-
-          # 새로운 설치 (필요한 경우)
-          if [ "${INSTALL_NEEDED:-true}" = "true" ]; then
-            echo "새로운 AWS Load Balancer Controller 설치 중..."
-            
-            # cert-manager 완전 준비 대기 (webhook 포함)
-            echo "⏳ cert-manager 완전 준비 대기 중..."
-            for i in {1..15}; do
-              CERT_MANAGER_READY=false
-              WEBHOOK_READY=false
-              
-              # cert-manager Pod 상태 확인
-              if kubectl get pods -n cert-manager -l app=cert-manager --field-selector=status.phase=Running | grep -q cert-manager; then
-                CERT_MANAGER_READY=true
-              fi
-              
-              # cert-manager webhook 상태 확인
-              if kubectl get validatingadmissionwebhook cert-manager-webhook >/dev/null 2>&1; then
-                WEBHOOK_READY=true
-              fi
-              
-              if [ "$CERT_MANAGER_READY" = "true" ] && [ "$WEBHOOK_READY" = "true" ]; then
-                echo "✅ cert-manager와 webhook 모두 준비 완료"
-                break
-              fi
-              
-              echo "cert-manager 대기 중... ($i/15) [cert-manager: $CERT_MANAGER_READY, webhook: $WEBHOOK_READY]"
-              sleep 20
-            done
-            
-            # ClusterIssuer 생성 (AWS Load Balancer Controller webhook용)
-            echo "🔐 AWS Load Balancer Controller용 ClusterIssuer 생성 중..."
-            cat <<'EOF' | kubectl apply -f -
-          apiVersion: cert-manager.io/v1
-          kind: ClusterIssuer
-          metadata:
-            name: aws-load-balancer-webhook-issuer
-          spec:
-            selfSigned: {}
-          EOF
-            
-            # AWS Load Balancer Controller webhook용 TLS 인증서 미리 생성
-            echo "📜 AWS Load Balancer Controller webhook TLS 인증서 미리 생성 중..."
-            cat <<'EOF' | kubectl apply -f -
-          apiVersion: cert-manager.io/v1
-          kind: Certificate
-          metadata:
-            name: aws-load-balancer-webhook-tls
-            namespace: kube-system
-          spec:
-            secretName: aws-load-balancer-webhook-tls
-            issuerRef:
-              name: aws-load-balancer-webhook-issuer
-              kind: ClusterIssuer
-            dnsNames:
-            - aws-load-balancer-webhook-service
-            - aws-load-balancer-webhook-service.kube-system
-            - aws-load-balancer-webhook-service.kube-system.svc
-            - aws-load-balancer-webhook-service.kube-system.svc.cluster.local
-          EOF
-            
-            # 인증서 생성 대기
-            echo "⏳ AWS Load Balancer Controller webhook TLS 인증서 생성 대기 중..."
-            kubectl wait --for=condition=ready certificate aws-load-balancer-webhook-tls -n kube-system --timeout=300s || {
-              echo "⚠️ 인증서 생성 실패, 계속 진행..."
-            }
-            
-            # 재시도 로직으로 설치
-            for i in {1..3}; do
-              echo "설치 시도 $i/3..."
-              
-              # 혹시 남은 webhook 정리
-              kubectl delete validatingadmissionwebhook aws-load-balancer-webhook 2>/dev/null || true
-              kubectl delete mutatingadmissionwebhook aws-load-balancer-webhook 2>/dev/null || true
-              
-              if helm install aws-load-balancer-controller eks/aws-load-balancer-controller \
-                -n kube-system \
-                --set clusterName=${{ env.EKS_CLUSTER_NAME }} \
-                --set serviceAccount.create=false \
-                --set serviceAccount.name=aws-load-balancer-controller \
-                --set region=${{ secrets.AWS_REGION }} \
-                --set vpcId=$VPC_ID \
-                --set enableShield=false \
-                --set enableWaf=false \
-                --set enableWafv2=false \
-                --set replicaCount=2 \
-                --set resources.limits.cpu=200m \
-                --set resources.limits.memory=500Mi \
-                --set resources.requests.cpu=100m \
-                --set resources.requests.memory=200Mi \
-                --set webhook.port=9443 \
-                --set webhook.certManager.enabled=true \
-                --set webhook.certManager.issuerRef.name=aws-load-balancer-webhook-issuer \
-                --set webhook.certManager.issuerRef.kind=ClusterIssuer \
-                --timeout=600s \
-                --wait; then
-                echo "✅ 설치 성공"
-                break
-              else
-                echo "❌ 설치 실패 ($i/3)"
-                if [ $i -lt 3 ]; then
-                  echo "60초 후 재시도..."
-                  sleep 60
-                  # 실패한 설치 정리
-                  helm uninstall aws-load-balancer-controller -n kube-system 2>/dev/null || true
-                  kubectl delete validatingadmissionwebhook aws-load-balancer-webhook 2>/dev/null || true
-                  kubectl delete mutatingadmissionwebhook aws-load-balancer-webhook 2>/dev/null || true
-                  # 인증서 재생성 시도
-                  kubectl delete certificate aws-load-balancer-webhook-tls -n kube-system 2>/dev/null || true
-                  cat <<'EOF' | kubectl apply -f -
-          apiVersion: cert-manager.io/v1
-          kind: Certificate
-          metadata:
-            name: aws-load-balancer-webhook-tls
-            namespace: kube-system
-          spec:
-            secretName: aws-load-balancer-webhook-tls
-            issuerRef:
-              name: aws-load-balancer-webhook-issuer
-              kind: ClusterIssuer
-            dnsNames:
-            - aws-load-balancer-webhook-service
-            - aws-load-balancer-webhook-service.kube-system
-            - aws-load-balancer-webhook-service.kube-system.svc
-            - aws-load-balancer-webhook-service.kube-system.svc.cluster.local
-          EOF
-                  sleep 30
-                else
-                  echo "❌ 모든 설치 시도 실패"
-                  exit 1
-                fi
-              fi
-            done
-          fi
+          # AWS Load Balancer Controller 설치 (cert-manager 완전 비활성화)
+          echo "🚀 AWS Load Balancer Controller 설치 시작 (cert-manager 없이)..."
+          
+          helm install aws-load-balancer-controller eks/aws-load-balancer-controller \
+            -n kube-system \
+            --set clusterName=${{ env.EKS_CLUSTER_NAME }} \
+            --set serviceAccount.create=false \
+            --set serviceAccount.name=aws-load-balancer-controller \
+            --set region=${{ secrets.AWS_REGION }} \
+            --set vpcId=$VPC_ID \
+            --set enableShield=false \
+            --set enableWaf=false \
+            --set enableWafv2=false \
+            --set webhook.certManager.enabled=false \
+            --set webhook.selfSigned.enabled=true \
+            --set replicaCount=1 \
+            --set resources.limits.cpu=200m \
+            --set resources.limits.memory=500Mi \
+            --set resources.requests.cpu=100m \
+            --set resources.requests.memory=200Mi \
+            --timeout=300s \
+            --wait
 
           # Controller Pod 상태 확인
           echo "⏳ AWS Load Balancer Controller Pod 시작 대기 중..."
           kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=aws-load-balancer-controller -n kube-system --timeout=300s
 
-          # 웹훅 서비스 기본 확인
-          echo "🔍 웹훅 서비스 기본 상태 확인..."
-          if kubectl get service aws-load-balancer-webhook-service -n kube-system >/dev/null 2>&1; then
-            echo "✅ 웹훅 서비스 존재"
-            kubectl get endpoints aws-load-balancer-webhook-service -n kube-system
-          else
-            echo "⚠️ 웹훅 서비스 아직 생성되지 않음"
-          fi
-
-          # ValidatingAdmissionWebhook 생성 대기 및 확인 강화
-          echo "🔍 ValidatingAdmissionWebhook 생성 대기 중..."
-          WEBHOOK_READY=false
-
-          # cert-manager가 인증서를 생성할 시간을 기다림
-          echo "⏳ TLS 인증서 생성 대기 중 (30초)..."
-          sleep 30
-
-          for i in {1..15}; do
-            echo "ValidatingAdmissionWebhook 확인 시도 ($i/15)..."
-            
-            # 1단계: ValidatingAdmissionWebhook 존재 확인
+          # ValidatingAdmissionWebhook 확인 (간소화)
+          echo "🔍 ValidatingAdmissionWebhook 확인 중..."
+          for i in {1..10}; do
             if kubectl get validatingadmissionwebhook aws-load-balancer-webhook >/dev/null 2>&1; then
-              echo "✅ ValidatingAdmissionWebhook 존재"
-              
-              # 2단계: Webhook 상세 정보 출력
-              echo "웹훅 상세 정보:"
-              kubectl get validatingadmissionwebhook aws-load-balancer-webhook -o yaml | head -50
-              
-              # 3단계: ClientConfig 서비스 확인
-              WEBHOOK_SERVICE=$(kubectl get validatingadmissionwebhook aws-load-balancer-webhook -o jsonpath='{.webhooks[0].clientConfig.service.name}' 2>/dev/null || echo "")
-              WEBHOOK_NAMESPACE=$(kubectl get validatingadmissionwebhook aws-load-balancer-webhook -o jsonpath='{.webhooks[0].clientConfig.service.namespace}' 2>/dev/null || echo "")
-              
-              if [ -n "$WEBHOOK_SERVICE" ] && [ -n "$WEBHOOK_NAMESPACE" ]; then
-                echo "웹훅 서비스: $WEBHOOK_SERVICE (네임스페이스: $WEBHOOK_NAMESPACE)"
-                
-                # 4단계: 서비스 존재 및 엔드포인트 확인
-                if kubectl get service "$WEBHOOK_SERVICE" -n "$WEBHOOK_NAMESPACE" >/dev/null 2>&1; then
-                  echo "✅ 웹훅 서비스 존재"
-                  
-                  # 5단계: 엔드포인트 확인
-                  ENDPOINT_IPS=$(kubectl get endpoints "$WEBHOOK_SERVICE" -n "$WEBHOOK_NAMESPACE" -o jsonpath='{.subsets[*].addresses[*].ip}' 2>/dev/null || echo "")
-                  if [ -n "$ENDPOINT_IPS" ]; then
-                    echo "✅ 웹훅 엔드포인트 준비 완료: $ENDPOINT_IPS"
-                    
-                    # 6단계: TLS 인증서 확인
-                    TLS_SECRET=$(kubectl get validatingadmissionwebhook aws-load-balancer-webhook -o jsonpath='{.webhooks[0].clientConfig.caBundle}' 2>/dev/null || echo "")
-                    if [ -n "$TLS_SECRET" ]; then
-                      echo "✅ TLS 인증서 확인됨"
-                      WEBHOOK_READY=true
-                      break
-                    else
-                      echo "⚠️ TLS 인증서 대기 중..."
-                    fi
-                  else
-                    echo "⚠️ 웹훅 엔드포인트 대기 중..."
-                  fi
-                else
-                  echo "❌ 웹훅 서비스 없음"
-                fi
-              else
-                echo "⚠️ 웹훅 ClientConfig 정보 불완전"
-              fi
-            else
-              echo "⚠️ ValidatingAdmissionWebhook 생성 대기 중..."
-              
-              # cert-manager와 AWS Load Balancer Controller 상태 확인
-              echo "🔍 cert-manager 상태:"
-              kubectl get pods -n cert-manager --no-headers | grep -E "(cert-manager|webhook|cainjector)" || echo "cert-manager 정보 없음"
-              
-              echo "🔍 AWS Load Balancer Controller 상태:"
-              kubectl get pods -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller --no-headers || echo "Controller 정보 없음"
-              
-              # Certificate 리소스 확인 (있다면)
-              echo "🔍 Certificate 리소스 확인:"
-              kubectl get certificates -n kube-system 2>/dev/null || echo "Certificate 리소스 없음"
-            fi
-            
-            if [ $i -lt 15 ]; then
-              echo "20초 후 재시도..."
-              sleep 20
-            fi
-          done
-
-          if [ "$WEBHOOK_READY" = false ]; then
-            echo "❌ ValidatingAdmissionWebhook이 준비되지 않았습니다"
-            
-            # 더 상세한 진단 정보 수집
-            echo ""
-            echo "🔍 AWS Load Balancer Controller 진단 정보:"
-            
-            # Pod 상태 확인
-            echo "Pod 상태:"
-            kubectl get pods -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller -o wide || true
-            
-            # Pod 이벤트 확인
-            echo ""
-            echo "Pod 이벤트:"
-            kubectl get events -n kube-system --field-selector involvedObject.kind=Pod --sort-by='.lastTimestamp' | grep aws-load-balancer-controller || true
-            
-            # Deployment 상태 확인
-            echo ""
-            echo "Deployment 상태:"
-            kubectl describe deployment -n kube-system aws-load-balancer-controller || true
-            
-            # ReplicaSet 상태 확인
-            echo ""
-            echo "ReplicaSet 상태:"
-            kubectl get replicasets -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller || true
-            
-            # ServiceAccount 확인
-            echo ""
-            echo "ServiceAccount 상태:"
-            kubectl get serviceaccount aws-load-balancer-controller -n kube-system -o yaml || true
-            
-            # 로그 조회 시도 (여러 방법)
-            echo ""
-            echo "Controller Pod 로그 조회 시도:"
-            
-            # 방법 1: 간단한 로그 조회
-            if kubectl logs -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller --tail=50 --since=10m 2>/dev/null; then
-              echo "✅ 로그 조회 성공"
-            else
-              echo "⚠️ 방법 1 실패, 다른 방법 시도 중..."
-              
-              # 방법 2: Pod 이름으로 직접 조회
-              POD_NAME=$(kubectl get pods -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
-              if [ -n "$POD_NAME" ]; then
-                echo "Pod 이름: $POD_NAME"
-                if kubectl logs -n kube-system "$POD_NAME" --tail=50 --since=10m 2>/dev/null; then
-                  echo "✅ Pod별 로그 조회 성공"
-                else
-                  echo "⚠️ Pod별 로그 조회도 실패"
-                  
-                  # 방법 3: Pod 상세 정보
-                  echo "Pod 상세 정보:"
-                  kubectl describe pod -n kube-system "$POD_NAME" 2>/dev/null || echo "Pod 상세 정보 조회 실패"
-                fi
-              else
-                echo "❌ Controller Pod를 찾을 수 없습니다"
-              fi
-            fi
-            
-            # ValidatingAdmissionWebhook 상세 확인
-            echo ""
-            echo "ValidatingAdmissionWebhook 진단:"
-            if kubectl get validatingadmissionwebhook 2>/dev/null | grep aws-load-balancer; then
-              kubectl describe validatingadmissionwebhook aws-load-balancer-webhook 2>/dev/null || echo "웹훅 상세 정보 조회 실패"
-            else
-              echo "❌ ValidatingAdmissionWebhook이 존재하지 않습니다"
-              echo "사용 가능한 웹훅 목록:"
-              kubectl get validatingadmissionwebhook 2>/dev/null || echo "웹훅 목록 조회 실패"
-            fi
-            
-            exit 1
-          fi
-
-          # 웹훅 인증서 생성 및 상태 확인 강화
-          echo "🔍 웹훅 인증서 생성 및 상태 확인 중..."
-
-          # cert-manager가 생성하는 다양한 인증서 패턴 확인
-          TLS_SECRET_PATTERNS=(
-            "aws-load-balancer-webhook-tls"
-            "aws-load-balancer-webhook-ca"
-            "aws-load-balancer-controller-webhook-tls"
-          )
-
-          FOUND_TLS_SECRET=""
-          for TLS_SECRET_NAME in "${TLS_SECRET_PATTERNS[@]}"; do
-            if kubectl get secret -n kube-system "$TLS_SECRET_NAME" >/dev/null 2>&1; then
-              echo "✅ TLS 인증서 발견: $TLS_SECRET_NAME"
-              FOUND_TLS_SECRET="$TLS_SECRET_NAME"
-              
-              # 인증서 상세 정보 확인
-              echo "인증서 상세 정보:"
-              kubectl get secret -n kube-system "$TLS_SECRET_NAME" -o yaml | head -20
-              
-              # 인증서 만료일 확인
-              CERT_DATA=$(kubectl get secret -n kube-system "$TLS_SECRET_NAME" -o jsonpath='{.data.tls\.crt}' 2>/dev/null || echo "")
-              if [ -n "$CERT_DATA" ]; then
-                echo "인증서 정보:"
-                echo "$CERT_DATA" | base64 -d | openssl x509 -noout -subject -dates 2>/dev/null || echo "인증서 정보 파싱 실패"
-              fi
+              echo "✅ ValidatingAdmissionWebhook 준비 완료"
               break
             fi
+            echo "ValidatingAdmissionWebhook 대기 중... ($i/10)"
+            sleep 15
           done
 
-          if [ -z "$FOUND_TLS_SECRET" ]; then
-            echo "⚠️ 웹훅 TLS 인증서를 찾을 수 없습니다"
-            echo ""
-            echo "🔍 사용 가능한 secrets 목록:"
-            kubectl get secrets -n kube-system | grep -E "(tls|cert|webhook)" || echo "관련 secrets 없음"
-            
-            echo ""
-            echo "🔍 cert-manager 이벤트 확인:"
-            kubectl get events -n cert-manager --sort-by='.lastTimestamp' | tail -10 || echo "cert-manager 이벤트 조회 실패"
-            
-            echo ""
-            echo "🔍 kube-system 이벤트 확인:"
-            kubectl get events -n kube-system --sort-by='.lastTimestamp' | grep -i cert | tail -10 || echo "인증서 관련 이벤트 없음"
-          fi
-
-          # 웹훅 연결 테스트
-          echo "🔍 웹훅 연결 테스트 수행 중..."
-          WEBHOOK_PORT=$(kubectl get validatingadmissionwebhook aws-load-balancer-webhook -o jsonpath='{.webhooks[0].clientConfig.service.port}' 2>/dev/null || echo "443")
-          if kubectl exec -n kube-system $(kubectl get pods -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller -o jsonpath='{.items[0].metadata.name}') -- sh -c "nc -zv aws-load-balancer-webhook-service.kube-system.svc.cluster.local $WEBHOOK_PORT" 2>/dev/null; then
-            echo "✅ 웹훅 포트 연결 테스트 성공"
-          else
-            echo "⚠️ 웹훅 포트 연결 테스트 실패 (일반적인 현상일 수 있음)"
-          fi
-
-          # Controller 안정화 대기
-          echo "⏳ Controller 안정화 대기 중 (30초)..."
-          sleep 30
-
+          # 최종 상태 확인
           echo "✅ AWS Load Balancer Controller 설치 완료"
           kubectl get pods -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller
-          kubectl get service aws-load-balancer-webhook-service -n kube-system
-          kubectl get endpoints aws-load-balancer-webhook-service -n kube-system
+          kubectl get validatingadmissionwebhook aws-load-balancer-webhook 2>/dev/null || echo "ValidatingAdmissionWebhook 아직 생성 중..."
 
       # ===============================================
       # Kubernetes 매니페스트 파일 생성
