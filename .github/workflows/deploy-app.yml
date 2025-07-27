@@ -612,7 +612,7 @@ jobs:
         echo "🔐 Self-signed issuer 생성 중..."
         for i in {1..5}; do
           echo "ClusterIssuer 생성 시도 ($i/5)..."
-          if cat <<EOF | kubectl apply -f -
+          if cat <<'EOF' | kubectl apply -f -
         apiVersion: cert-manager.io/v1
         kind: ClusterIssuer
         metadata:
@@ -802,34 +802,34 @@ jobs:
           
           # ClusterIssuer 생성 (AWS Load Balancer Controller webhook용)
           echo "🔐 AWS Load Balancer Controller용 ClusterIssuer 생성 중..."
-          cat <<EOF | kubectl apply -f -
-          apiVersion: cert-manager.io/v1
-          kind: ClusterIssuer
-          metadata:
-            name: aws-load-balancer-webhook-issuer
-          spec:
-            selfSigned: {}
-          EOF
+          cat <<'EOF' | kubectl apply -f -
+        apiVersion: cert-manager.io/v1
+        kind: ClusterIssuer
+        metadata:
+          name: aws-load-balancer-webhook-issuer
+        spec:
+          selfSigned: {}
+        EOF
           
           # AWS Load Balancer Controller webhook용 TLS 인증서 미리 생성
           echo "📜 AWS Load Balancer Controller webhook TLS 인증서 미리 생성 중..."
-          cat <<EOF | kubectl apply -f -
-          apiVersion: cert-manager.io/v1
-          kind: Certificate
-          metadata:
-            name: aws-load-balancer-webhook-tls
-            namespace: kube-system
-          spec:
-            secretName: aws-load-balancer-webhook-tls
-            issuerRef:
-              name: aws-load-balancer-webhook-issuer
-              kind: ClusterIssuer
-            dnsNames:
-            - aws-load-balancer-webhook-service
-            - aws-load-balancer-webhook-service.kube-system
-            - aws-load-balancer-webhook-service.kube-system.svc
-            - aws-load-balancer-webhook-service.kube-system.svc.cluster.local
-          EOF
+          cat <<'EOF' | kubectl apply -f -
+        apiVersion: cert-manager.io/v1
+        kind: Certificate
+        metadata:
+          name: aws-load-balancer-webhook-tls
+          namespace: kube-system
+        spec:
+          secretName: aws-load-balancer-webhook-tls
+          issuerRef:
+            name: aws-load-balancer-webhook-issuer
+            kind: ClusterIssuer
+          dnsNames:
+          - aws-load-balancer-webhook-service
+          - aws-load-balancer-webhook-service.kube-system
+          - aws-load-balancer-webhook-service.kube-system.svc
+          - aws-load-balancer-webhook-service.kube-system.svc.cluster.local
+        EOF
           
           # 인증서 생성 대기
           echo "⏳ AWS Load Balancer Controller webhook TLS 인증서 생성 대기 중..."
@@ -879,23 +879,23 @@ jobs:
                 kubectl delete mutatingadmissionwebhook aws-load-balancer-webhook 2>/dev/null || true
                 # 인증서 재생성 시도
                 kubectl delete certificate aws-load-balancer-webhook-tls -n kube-system 2>/dev/null || true
-                cat <<EOF | kubectl apply -f -
-                apiVersion: cert-manager.io/v1
-                kind: Certificate
-                metadata:
-                  name: aws-load-balancer-webhook-tls
-                  namespace: kube-system
-                spec:
-                  secretName: aws-load-balancer-webhook-tls
-                  issuerRef:
-                    name: aws-load-balancer-webhook-issuer
-                    kind: ClusterIssuer
-                  dnsNames:
-                  - aws-load-balancer-webhook-service
-                  - aws-load-balancer-webhook-service.kube-system
-                  - aws-load-balancer-webhook-service.kube-system.svc
-                  - aws-load-balancer-webhook-service.kube-system.svc.cluster.local
-          EOF
+                cat <<'EOF' | kubectl apply -f -
+        apiVersion: cert-manager.io/v1
+        kind: Certificate
+        metadata:
+          name: aws-load-balancer-webhook-tls
+          namespace: kube-system
+        spec:
+          secretName: aws-load-balancer-webhook-tls
+          issuerRef:
+            name: aws-load-balancer-webhook-issuer
+            kind: ClusterIssuer
+          dnsNames:
+          - aws-load-balancer-webhook-service
+          - aws-load-balancer-webhook-service.kube-system
+          - aws-load-balancer-webhook-service.kube-system.svc
+          - aws-load-balancer-webhook-service.kube-system.svc.cluster.local
+        EOF
                 sleep 30
               else
                 echo "❌ 모든 설치 시도 실패"
