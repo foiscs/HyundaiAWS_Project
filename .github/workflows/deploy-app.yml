@@ -549,11 +549,11 @@ jobs:
           fi
           
           # ValidatingAdmissionWebhook 확인
-          if kubectl get validatingadmissionwebhook | grep -E "(vingress|aws-load-balancer)" >/dev/null 2>&1; then
-            echo "✅ ValidatingAdmissionWebhook 확인됨"
-            kubectl get validatingadmissionwebhook | grep -E "(vingress|aws-load-balancer)"
+          if kubectl get validatingwebhookconfigurations | grep -E "(vingress|aws-load-balancer)" >/dev/null 2>&1; then
+            echo "✅ ValidatingWebhookConfiguration 확인됨"
+            kubectl get validatingwebhookconfigurations | grep -E "(vingress|aws-load-balancer)"
           else
-            echo "⚠️ ValidatingAdmissionWebhook를 찾을 수 없습니다."
+            echo "⚠️ ValidatingWebhookConfiguration을 찾을 수 없습니다."
             echo "AWS Load Balancer Controller가 아직 완전히 준비되지 않았을 수 있습니다."
           fi
           
@@ -826,7 +826,7 @@ jobs:
             echo "🔍 진단 정보:"
             kubectl get pods -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller
             kubectl logs -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller --tail=50 || true
-            kubectl get validatingadmissionwebhook | grep -E "(vingress|aws-load-balancer)" || echo "웹훅 없음"
+            kubectl get validatingwebhookconfigurations | grep -E "(vingress|aws-load-balancer)" || echo "웹훅 없음"
             kubectl get ingressclass || true
             exit 1
           fi

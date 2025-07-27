@@ -7,7 +7,7 @@
 | `AWS_ACCESS_KEY`        | 배포용 AWS 액세스 키 (예: github-actions-deploy-user)       |
 | `AWS_SECRET_ACCESS_KEY` | 배포용 AWS 시크릿 액세스 키 (예: github-actions-deploy-user)|
 | `AWS_REGION`            | 사용할 AWS 리전 (예: ap-northeast-2 등)                    |
-| `ECR_REPOSITORY`        | Docker 이미지를 업로드할 AWS ECR 리포지토리 이름           |
+| `ECR_REPOSITORY`        | Docker 이미지를 업로드할 AWS ECR 리포지토리  이름           |
 
 
 ## ToDo List   
