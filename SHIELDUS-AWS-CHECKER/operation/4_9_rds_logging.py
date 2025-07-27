@@ -1,4 +1,4 @@
-# 4.operation/4_9_rds_logging.py
+#  4.operation/4_9_rds_logging.py
 import boto3
 from botocore.exceptions import ClientError
 

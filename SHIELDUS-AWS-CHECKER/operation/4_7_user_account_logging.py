@@ -1,4 +1,4 @@
-# 4.operation/4_7_user_access_logging.py
+#  4.operation/4_7_user_access_logging.py
 import boto3
 from botocore.exceptions import ClientError
 from datetime import datetime, timezone

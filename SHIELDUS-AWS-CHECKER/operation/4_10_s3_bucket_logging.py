@@ -1,4 +1,4 @@
-# 4.operation\4_10_s3_bucket_logging.py
+#  4.operation\4_10_s3_bucket_logging.py
 import boto3
 import time
 from botocore.exceptions import ClientError

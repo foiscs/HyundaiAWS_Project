@@ -1,4 +1,4 @@
-# 4.operation/4_15_eks_cluster_encryption.py
+#  4.operation/4_15_eks_cluster_encryption.py
 import boto3
 from botocore.exceptions import ClientError
 

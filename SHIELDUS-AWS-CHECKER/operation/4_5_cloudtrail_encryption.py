@@ -1,4 +1,4 @@
-# 4.operation/4_5_cloudtrail_encryption.py
+#  4.operation/4_5_cloudtrail_encryption.py
 import boto3
 import json
 import datetime
