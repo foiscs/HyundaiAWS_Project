@@ -517,12 +517,16 @@ jobs:
           if [ -n "$BASTION_SG" ] && [ -n "$RDS_SG" ]; then
             echo "🔧 RDS 보안 그룹에 Bastion 접근 규칙 추가 중..."
             
-            aws ec2 authorize-security-group-ingress \
-              --group-id $RDS_SG \
-              --protocol tcp \
-              --port 5432 \
-              --source-group $BASTION_SG \
-              --no-cli-pager 2>/dev/null && echo "✅ RDS 인바운드 규칙 추가 완료" || echo "✅ RDS 규칙이 이미 존재합니다"
+            if ! aws ec2 describe-security-groups --group-ids $RDS_SG --query "SecurityGroups[0].IpPermissions[?FromPort==\`5432\` && ToPort==\`5432\` && UserIdGroupPairs[?GroupId==\`$BASTION_SG\`]]" --output text | grep -q "5432"; then
+              aws ec2 authorize-security-group-ingress \
+                --group-id $RDS_SG \
+                --protocol tcp \
+                --port 5432 \
+                --source-group $BASTION_SG \
+                --no-cli-pager && echo "✅ RDS 인바운드 규칙 추가 완료"
+            else
+              echo "✅ RDS 인바운드 규칙이 이미 존재합니다"
+            fi
           fi
         fi
         
@@ -530,12 +534,16 @@ jobs:
         if [ -n "$BASTION_SG" ]; then
           echo "🔧 Bastion 보안 그룹 아웃바운드 규칙 추가 중..."
           
-          aws ec2 authorize-security-group-egress \
-            --group-id $BASTION_SG \
-            --protocol tcp \
-            --port 5432 \
-            --cidr 0.0.0.0/0 \
-            --no-cli-pager 2>/dev/null && echo "✅ Bastion 아웃바운드 규칙 추가 완료" || echo "✅ Bastion 규칙이 이미 존재합니다"
+          if ! aws ec2 describe-security-groups --group-ids $BASTION_SG --query "SecurityGroups[0].IpPermissionsEgress[?FromPort==\`5432\` && ToPort==\`5432\` && IpRanges[?CidrIp==\`0.0.0.0/0\`]]" --output text | grep -q "5432"; then
+            aws ec2 authorize-security-group-egress \
+              --group-id $BASTION_SG \
+              --protocol tcp \
+              --port 5432 \
+              --cidr 0.0.0.0/0 \
+              --no-cli-pager && echo "✅ Bastion 아웃바운드 규칙 추가 완료"
+          else
+            echo "✅ Bastion 아웃바운드 규칙이 이미 존재합니다"
+          fi
         fi
         
         # SSH 키를 Parameter Store에서 가져오기
@@ -802,6 +810,10 @@ jobs:
             # aws-auth ConfigMap 확인 및 GitHub Actions 역할 추가
             echo "🔍 aws-auth ConfigMap 확인 및 GitHub Actions 역할 추가..."
             
+            # kubeconfig 다시 설정 (실패시를 위해)
+            echo "🔧 kubeconfig 재설정..."
+            aws eks update-kubeconfig --region ${{ secrets.AWS_REGION }} --name "$EKS_CLUSTER_NAME" --verbose
+            
             # 현재 aws-auth ConfigMap 백업
             kubectl get configmap aws-auth -n kube-system -o yaml > aws-auth-backup.yaml 2>/dev/null || echo "기존 aws-auth ConfigMap 없음"
             
@@ -927,37 +939,33 @@ jobs:
           echo "📝 Kubernetes 매니페스트 생성 중..."
 
           # Namespace 생성
-          cat <<EOF > namespace.yaml
-          apiVersion: v1
-          kind: Namespace
-          metadata:
-            name: ${{ env.PROJECT_NAME }}
-          EOF
+          echo "apiVersion: v1" > namespace.yaml
+          echo "kind: Namespace" >> namespace.yaml
+          echo "metadata:" >> namespace.yaml
+          echo "  name: ${{ env.PROJECT_NAME }}" >> namespace.yaml
           
           # ConfigMap 생성 (환경변수)
-          cat <<EOF > configmap.yaml
-          apiVersion: v1
-          kind: ConfigMap
-          metadata:
-            name: ${{ env.PROJECT_NAME }}-config
-            namespace: ${{ env.PROJECT_NAME }}
-          data:
-            DB_HOST: "${{ env.RDS_ENDPOINT }}"
-            DB_PORT: "5432"
-            DB_NAME: "mydb"
-            DB_USER: "dbadmin"
-            AWS_REGION: "${{ secrets.AWS_REGION }}"
-            AWS_S3_BUCKET: "walb-app-files"
-            AWS_S3_REGION: "${{ secrets.AWS_REGION }}"
-            STORAGE_TYPE: "s3"
-            APP_ENV: "production"
-            APP_DEBUG: "false"
-            PHP_MEMORY_LIMIT: "256M"
-            PHP_MAX_EXECUTION_TIME: "30"
-            PHP_TIMEZONE: "Asia/Seoul"
-            UPLOAD_MAX_SIZE: "10M"
-            SESSION_LIFETIME: "7200"
-          EOF
+          echo "apiVersion: v1" > configmap.yaml
+          echo "kind: ConfigMap" >> configmap.yaml
+          echo "metadata:" >> configmap.yaml
+          echo "  name: ${{ env.PROJECT_NAME }}-config" >> configmap.yaml
+          echo "  namespace: ${{ env.PROJECT_NAME }}" >> configmap.yaml
+          echo "data:" >> configmap.yaml
+          echo '  DB_HOST: "${{ env.RDS_ENDPOINT }}"' >> configmap.yaml
+          echo '  DB_PORT: "5432"' >> configmap.yaml
+          echo '  DB_NAME: "mydb"' >> configmap.yaml
+          echo '  DB_USER: "dbadmin"' >> configmap.yaml
+          echo '  AWS_REGION: "${{ secrets.AWS_REGION }}"' >> configmap.yaml
+          echo '  AWS_S3_BUCKET: "walb-app-files"' >> configmap.yaml
+          echo '  AWS_S3_REGION: "${{ secrets.AWS_REGION }}"' >> configmap.yaml
+          echo '  STORAGE_TYPE: "s3"' >> configmap.yaml
+          echo '  APP_ENV: "production"' >> configmap.yaml
+          echo '  APP_DEBUG: "false"' >> configmap.yaml
+          echo '  PHP_MEMORY_LIMIT: "256M"' >> configmap.yaml
+          echo '  PHP_MAX_EXECUTION_TIME: "30"' >> configmap.yaml
+          echo '  PHP_TIMEZONE: "Asia/Seoul"' >> configmap.yaml
+          echo '  UPLOAD_MAX_SIZE: "10M"' >> configmap.yaml
+          echo '  SESSION_LIFETIME: "7200"' >> configmap.yaml
         
           # Secret 생성 (DB 패스워드)
           cat <<EOF > secret.yaml
