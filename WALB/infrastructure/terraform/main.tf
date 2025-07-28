@@ -301,7 +301,9 @@ module "rds" {
   database_subnet_ids   = module.vpc.database_subnet_ids
  
   allowed_security_groups = [
-    module.eks.cluster_security_group_id
+    module.eks.cluster_security_group_id,
+    module.eks.node_group_security_group_id,
+    aws_security_group.bastion.id
   ]
   
   # 데이터베이스 설정

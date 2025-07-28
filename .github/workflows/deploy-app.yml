@@ -1319,7 +1319,7 @@ jobs:
     - name: Rollback on failure
       if: ${{ failure() && github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/terraform') }}
       run: |
-          echo "❌ 배포 실패 - 이전 버전으로 롤백 중..."
+          echo "❌ 배포 실패 - 이전 버전으로 롤백 중.."
           kubectl rollout undo deployment/${{ env.PROJECT_NAME }}-app -n ${{ env.PROJECT_NAME }} || true
           kubectl rollout status deployment/${{ env.PROJECT_NAME }}-app -n ${{ env.PROJECT_NAME }} --timeout=300s || true
           echo "✅ 롤백 시도 완료"
