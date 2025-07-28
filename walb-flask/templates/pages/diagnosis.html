@@ -1,0 +1,469 @@
+{% extends "layouts/base.html" %}
+{% set page_title = "보안 진단" %}
+
+{% block title %}{{ page_title }}{% endblock %}
+
+{% block content %}
+<div class="diagnosis-container">
+    <!-- 히어로 헤더 -->
+    <div class="hero-header">
+        <div class="floating-elements">
+            <div class="floating-circle circle-1"></div>
+            <div class="floating-circle circle-2"></div>
+            <div class="floating-circle circle-3"></div>
+        </div>
+        <div class="hero-content">
+            <div class="hero-icon">🔍</div>
+            <div class="hero-text">
+                <h1 class="hero-title">AWS 클라우드 보안 진단</h1>
+                <p class="hero-subtitle">SK Shieldus 2024 가이드라인 기준 41개 항목 자동 점검</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- 계정 선택 섹션 -->
+    <div class="account-selection-section">
+        <h2 class="section-title">
+            <span class="section-icon">☁️</span>
+            연결된 AWS 계정
+        </h2>
+        
+        {% if accounts %}
+            <div class="accounts-grid">
+                {% for account in accounts %}
+                <div class="account-card {% if selected_account and selected_account.account_id == account.account_id %}selected{% endif %}" 
+                     data-account-id="{{ account.account_id }}"
+                     onclick="selectAccount('{{ account.account_id }}')">
+                    <div class="account-header">
+                        <h3 class="account-name">{{ account.cloud_name }}</h3>
+                        <div class="account-type-badge">
+                            {% if account.connection_type == 'role' %}
+                                <span class="badge badge-role">Role</span>
+                            {% else %}
+                                <span class="badge badge-key">Key</span>
+                            {% endif %}
+                        </div>
+                    </div>
+                    <div class="account-details">
+                        <div class="account-detail">
+                            <span class="detail-label">계정 ID</span>
+                            <span class="detail-value">{{ account.account_id }}</span>
+                        </div>
+                        <div class="account-detail">
+                            <span class="detail-label">리전</span>
+                            <span class="detail-value">{{ account.primary_region }}</span>
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        {% else %}
+            <div class="empty-state">
+                <div class="empty-icon">📋</div>
+                <h3>등록된 AWS 계정이 없습니다</h3>
+                <p>보안 진단을 시작하려면 먼저 AWS 계정을 연결해주세요.</p>
+                <a href="{{ url_for('connection.index') }}" class="btn btn-primary">
+                    <span>💫</span> AWS 계정 연결하기
+                </a>
+            </div>
+        {% endif %}
+    </div>
+
+    <!-- 진단 제어 패널 -->
+    {% if selected_account %}
+    <div class="diagnosis-control-panel" id="controlPanel" style="display: none;">
+        <div class="panel-header">
+            <h2 class="panel-title">
+                <span class="panel-icon">🔍</span>
+                보안 진단 제어판
+            </h2>
+            <div class="panel-actions">
+                <button class="btn btn-secondary" onclick="testConnection()">
+                    <span>🔗</span> 연결 테스트
+                </button>
+                <button class="btn btn-primary" onclick="runAllDiagnosis()">
+                    <span>🚀</span> 전체 진단 시작
+                </button>
+            </div>
+        </div>
+        
+        <!-- 진단 통계 -->
+        <div class="diagnosis-stats">
+            <div class="stat-card">
+                <div class="stat-icon">📊</div>
+                <div class="stat-content">
+                    <div class="stat-number">41</div>
+                    <div class="stat-label">전체 항목</div>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon">🔴</div>
+                <div class="stat-content">
+                    <div class="stat-number">16</div>
+                    <div class="stat-label">상위험</div>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon">🟡</div>
+                <div class="stat-content">
+                    <div class="stat-number">22</div>
+                    <div class="stat-label">중위험</div>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon">🟢</div>
+                <div class="stat-content">
+                    <div class="stat-number">3</div>
+                    <div class="stat-label">저위험</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- 진단 항목 섹션 -->
+    {% if selected_account and sk_items %}
+    <div class="diagnosis-items-section" id="diagnosisItems" style="display: none;">
+        <h2 class="section-title">
+            <span class="section-icon">📋</span>
+            진단 항목 목록
+        </h2>
+        
+        {% for category, items in sk_items.items() %}
+        <div class="category-section">
+            <div class="category-header">
+                <h3 class="category-title">{{ category }}</h3>
+                <div class="category-meta">
+                    <span class="item-count">{{ items|length }}개 항목</span>
+                    <button class="btn btn-sm btn-outline" onclick="runCategoryDiagnosis('{{ category }}')">
+                        <span>🎯</span> 카테고리 진단
+                    </button>
+                </div>
+            </div>
+            
+            <div class="items-grid">
+                {% for item in items %}
+                <div class="diagnosis-item {% if not item.implemented %}item-not-implemented{% endif %}" data-item-code="{{ item.code }}" data-category="{{ category }}">
+                    <div class="item-header">
+                        <div class="item-code">{{ item.code }}</div>
+                        <div class="item-severity severity-{{ item.severity }}">
+                            {% if item.severity == '상' %}🔴{% elif item.severity == '중' %}🟡{% else %}🟢{% endif %}
+                            {{ item.severity }}
+                        </div>
+                        {% if not item.implemented %}
+                        <div class="item-implementation-status">
+                            <span class="badge badge-not-implemented">미구현</span>
+                        </div>
+                        {% endif %}
+                    </div>
+                    <div class="item-content">
+                        <h4 class="item-name">{{ item.name }}</h4>
+                        <p class="item-description">{{ item.description }}</p>
+                        {% if not item.implemented %}
+                        <p class="item-note">※ 현재 개발 중인 기능입니다.</p>
+                        {% endif %}
+                    </div>
+                    <div class="item-actions">
+                        {% if item.implemented %}
+                        <button class="btn btn-sm btn-primary" onclick="runSingleDiagnosis('{{ item.code }}')">
+                            <span>🔍</span> 진단 실행
+                        </button>
+                        <div class="item-status" id="status-{{ item.code }}">
+                            <span class="status-badge status-idle">대기</span>
+                        </div>
+                        {% else %}
+                        <button class="btn btn-sm btn-disabled" disabled>
+                            <span>🚧</span> 개발 중
+                        </button>
+                        <div class="item-status">
+                            <span class="status-badge status-not-implemented">미구현</span>
+                        </div>
+                        {% endif %}
+                    </div>
+                    
+                    <!-- 진단 결과 영역 -->
+                    {% if item.implemented %}
+                    <div class="diagnosis-result" id="result-{{ item.code }}" style="display: none;">
+                        <!-- 결과가 여기에 동적으로 로드됩니다 -->
+                    </div>
+                    {% endif %}
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    <!-- 진단 진행 상황 모달 -->
+    <div class="diagnosis-progress-modal" id="progressModal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>진단 진행 상황</h3>
+                <button class="modal-close" onclick="closeProgressModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="progress-stats">
+                    <div class="progress-stat">
+                        <span class="progress-label">진행률</span>
+                        <span class="progress-value" id="progressPercentage">0%</span>
+                    </div>
+                    <div class="progress-stat">
+                        <span class="progress-label">완료</span>
+                        <span class="progress-value" id="completedCount">0</span>
+                    </div>
+                    <div class="progress-stat">
+                        <span class="progress-label">실패</span>
+                        <span class="progress-value" id="failedCount">0</span>
+                    </div>
+                </div>
+                <div class="progress-bar">
+                    <div class="progress-fill" id="progressFill"></div>
+                </div>
+                <div class="current-item" id="currentItem">진단 준비 중...</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 로딩 스피너 템플릿 -->
+<div id="loadingTemplate" style="display: none;">
+    <div class="diagnosis-loading">
+        <div class="loading-spinner"></div>
+        <div class="loading-text">진단 진행 중...</div>
+    </div>
+</div>
+
+<!-- 결과 템플릿 -->
+<div id="resultTemplate" style="display: none;">
+    <div class="result-header">
+        <div class="result-status-badge"></div>
+        <div class="result-timestamp"></div>
+    </div>
+    <div class="result-content">
+        <!-- 결과 내용이 동적으로 삽입됩니다 -->
+    </div>
+    <div class="result-actions">
+        <button class="btn btn-sm btn-secondary" onclick="rediagnose(this)">
+            <span>🔄</span> 재진단
+        </button>
+    </div>
+</div>
+
+<script>
+let selectedAccountId = null;
+let diagnosisInProgress = false;
+
+// 계정 선택
+function selectAccount(accountId) {
+    selectedAccountId = accountId;
+    
+    // 기존 선택 해제
+    document.querySelectorAll('.account-card').forEach(card => {
+        card.classList.remove('selected');
+    });
+    
+    // 새 선택 적용
+    document.querySelector(`[data-account-id="${accountId}"]`).classList.add('selected');
+    
+    // 제어판과 진단 항목 표시
+    document.getElementById('controlPanel').style.display = 'block';
+    document.getElementById('diagnosisItems').style.display = 'block';
+    
+    // 부드러운 스크롤
+    setTimeout(() => {
+        document.getElementById('controlPanel').scrollIntoView({
+            behavior: 'smooth',
+            block: 'start'
+        });
+    }, 300);
+}
+
+// 연결 테스트
+async function testConnection() {
+    if (!selectedAccountId) {
+        alert('계정을 선택해주세요.');
+        return;
+    }
+    
+    try {
+        const response = await fetch('/diagnosis/api/test-session', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                account_id: selectedAccountId
+            })
+        });
+        
+        const result = await response.json();
+        
+        if (result.status === 'success') {
+            alert(`✅ 연결 테스트 성공!\n계정 ID: ${result.account_id}\n접근 가능 리전: ${result.regions}개`);
+        } else {
+            alert(`❌ 연결 테스트 실패\n${result.error_message}`);
+        }
+    } catch (error) {
+        alert(`연결 테스트 중 오류가 발생했습니다: ${error.message}`);
+    }
+}
+
+// 개별 진단 실행
+async function runSingleDiagnosis(itemCode) {
+    if (!selectedAccountId) {
+        alert('계정을 선택해주세요.');
+        return;
+    }
+    
+    const statusElement = document.getElementById(`status-${itemCode}`);
+    const resultElement = document.getElementById(`result-${itemCode}`);
+    
+    // 진행 상태로 변경
+    statusElement.innerHTML = '<span class="status-badge status-running">진행중</span>';
+    resultElement.style.display = 'none';
+    
+    try {
+        const response = await fetch('/diagnosis/api/run', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                account_id: selectedAccountId,
+                item_code: itemCode
+            })
+        });
+        
+        const result = await response.json();
+        
+        if (result.status === 'success') {
+            statusElement.innerHTML = '<span class="status-badge status-completed">완료</span>';
+            displayDiagnosisResult(itemCode, result);
+        } else {
+            statusElement.innerHTML = '<span class="status-badge status-failed">실패</span>';
+            resultElement.innerHTML = `<div class="error-message">❌ ${result.message}</div>`;
+            resultElement.style.display = 'block';
+        }
+    } catch (error) {
+        statusElement.innerHTML = '<span class="status-badge status-failed">실패</span>';
+        resultElement.innerHTML = `<div class="error-message">❌ 진단 중 오류가 발생했습니다: ${error.message}</div>`;
+        resultElement.style.display = 'block';
+    }
+}
+
+// 전체 진단 실행
+async function runAllDiagnosis() {
+    if (!selectedAccountId) {
+        alert('계정을 선택해주세요.');
+        return;
+    }
+    
+    if (diagnosisInProgress) {
+        alert('이미 진단이 진행 중입니다.');
+        return;
+    }
+    
+    diagnosisInProgress = true;
+    showProgressModal();
+    
+    try {
+        const response = await fetch('/diagnosis/api/run-all', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                account_id: selectedAccountId
+            })
+        });
+        
+        const result = await response.json();
+        
+        if (result.status === 'success') {
+            updateProgressModal(100, result.success_count, result.failed_count);
+            setTimeout(() => {
+                closeProgressModal();
+                alert(`✅ 전체 진단 완료!\n성공: ${result.success_count}개\n실패: ${result.failed_count}개`);
+            }, 1000);
+        } else {
+            alert(`❌ 전체 진단 실패\n${result.message}`);
+        }
+    } catch (error) {
+        alert(`전체 진단 중 오류가 발생했습니다: ${error.message}`);
+    } finally {
+        diagnosisInProgress = false;
+        closeProgressModal();
+    }
+}
+
+// 진단 결과 표시
+function displayDiagnosisResult(itemCode, result) {
+    const resultElement = document.getElementById(`result-${itemCode}`);
+    const diagnosisResult = result.result;
+    
+    let resultHTML = '<div class="result-summary">';
+    
+    if (diagnosisResult.status === 'success') {
+        resultHTML += `<div class="result-item">
+            <strong>위험도:</strong> <span class="risk-level risk-${diagnosisResult.risk_level}">${diagnosisResult.risk_level}</span>
+        </div>`;
+        
+        if (diagnosisResult.has_issues) {
+            resultHTML += '<div class="result-item"><strong>⚠️ 보안 이슈가 발견되었습니다</strong></div>';
+        } else {
+            resultHTML += '<div class="result-item"><strong>✅ 보안 이슈가 발견되지 않았습니다</strong></div>';
+        }
+        
+        // 추가 결과 정보
+        Object.keys(diagnosisResult).forEach(key => {
+            if (!['status', 'risk_level', 'has_issues'].includes(key)) {
+                resultHTML += `<div class="result-item"><strong>${key}:</strong> ${diagnosisResult[key]}</div>`;
+            }
+        });
+    } else {
+        resultHTML += `<div class="error-message">❌ ${diagnosisResult.error_message}</div>`;
+    }
+    
+    resultHTML += '</div>';
+    
+    resultElement.innerHTML = resultHTML;
+    resultElement.style.display = 'block';
+}
+
+// 진행 상황 모달 관련 함수들
+function showProgressModal() {
+    document.getElementById('progressModal').style.display = 'flex';
+    updateProgressModal(0, 0, 0);
+}
+
+function closeProgressModal() {
+    document.getElementById('progressModal').style.display = 'none';
+}
+
+function updateProgressModal(percentage, completed, failed) {
+    document.getElementById('progressPercentage').textContent = `${percentage}%`;
+    document.getElementById('completedCount').textContent = completed;
+    document.getElementById('failedCount').textContent = failed;
+    document.getElementById('progressFill').style.width = `${percentage}%`;
+}
+
+// 재진단
+function rediagnose(button) {
+    const itemElement = button.closest('.diagnosis-item');
+    const itemCode = itemElement.dataset.itemCode;
+    runSingleDiagnosis(itemCode);
+}
+
+// 페이지 로드 시 선택된 계정이 있으면 자동 선택
+document.addEventListener('DOMContentLoaded', function() {
+    {% if selected_account %}
+    selectAccount('{{ selected_account.account_id }}');
+    {% endif %}
+});
+</script>
+{% endblock %}
+
+{% block styles %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/pages/diagnosis.css') }}">
+{% endblock %}

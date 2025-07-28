@@ -27,3 +27,9 @@ terraform.tfplan
 # OS
 .DS_Store
 Thumbs.db
+
+.claude
+CLAUDE.md
+claude.md
+/.claude
+

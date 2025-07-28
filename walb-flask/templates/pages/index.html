@@ -1,0 +1,222 @@
+{% extends "base.html" %} {% block title %}WALB 대시보드{% endblock %} {% block content %}
+<!-- Hero Section -->
+<div class="bg-gradient-to-r from-blue-600 to-purple-600 rounded-2xl p-8 text-white mb-8 relative overflow-hidden">
+    <div class="relative z-10">
+        <div class="flex items-center mb-4">
+            <span class="text-4xl mr-4 animate-bounce">🛡️</span>
+            <div>
+                <h1 class="text-3xl font-bold mb-2">WALB 클라우드 보안 관리 솔루션</h1>
+                <p class="text-blue-100">멀티 클라우드 환경의 보안을 하나로 통합 관리하세요</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Background Pattern -->
+    <div class="absolute inset-0 opacity-10">
+        <div class="absolute top-10 right-10 w-20 h-20 bg-white rounded-full animate-pulse"></div>
+        <div class="absolute bottom-10 right-20 w-16 h-16 bg-white rounded-full animate-pulse delay-1000"></div>
+        <div class="absolute top-20 left-20 w-12 h-12 bg-white rounded-full animate-pulse delay-2000"></div>
+    </div>
+</div>
+
+<!-- Stats Grid -->
+<div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+    <div class="bg-white p-6 rounded-xl shadow-sm border">
+        <div class="flex items-center">
+            <div class="p-3 bg-blue-100 rounded-lg">
+                <span class="text-2xl">☁️</span>
+            </div>
+            <div class="ml-4">
+                <p class="text-sm text-gray-600">총 계정</p>
+                <p class="text-2xl font-bold text-gray-900">{{ stats.total_accounts }}</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="bg-white p-6 rounded-xl shadow-sm border">
+        <div class="flex items-center">
+            <div class="p-3 bg-green-100 rounded-lg">
+                <span class="text-2xl">✅</span>
+            </div>
+            <div class="ml-4">
+                <p class="text-sm text-gray-600">활성 계정</p>
+                <p class="text-2xl font-bold text-gray-900">{{ stats.active_accounts }}</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="bg-white p-6 rounded-xl shadow-sm border">
+        <div class="flex items-center">
+            <div class="p-3 bg-purple-100 rounded-lg">
+                <span class="text-2xl">🛡️</span>
+            </div>
+            <div class="ml-4">
+                <p class="text-sm text-gray-600">Role 기반</p>
+                <p class="text-2xl font-bold text-gray-900">{{ stats.role_based }}</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="bg-white p-6 rounded-xl shadow-sm border">
+        <div class="flex items-center">
+            <div class="p-3 bg-orange-100 rounded-lg">
+                <span class="text-2xl">🔑</span>
+            </div>
+            <div class="ml-4">
+                <p class="text-sm text-gray-600">Key 기반</p>
+                <p class="text-2xl font-bold text-gray-900">{{ stats.key_based }}</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Action Buttons -->
+<div class="flex gap-4 mb-8">
+    <a href="{{ url_for('connection.index') }}" class="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"> ➕ 새 AWS 계정 추가 </a>
+    <button onclick="location.reload()" class="px-6 py-3 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors font-medium">🔄 새로고침</button>
+</div>
+
+<!-- Accounts Section -->
+<div class="bg-white rounded-xl shadow-sm border p-6 mb-8">
+    <div class="flex items-center justify-between mb-6">
+        <h2 class="text-xl font-bold text-gray-900">☁️ 연결된 AWS 계정</h2>
+        <span class="text-sm text-gray-500">총 {{ accounts|length }}개</span>
+    </div>
+
+    {% if accounts %}
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {% for account in accounts %}
+        <div class="border rounded-lg p-6 hover:shadow-md transition-shadow">
+            <div class="flex items-center justify-between mb-4">
+                <div class="flex items-center">
+                    <span class="text-xl mr-3">☁️</span>
+                    <h3 class="font-semibold text-gray-900">{{ account.cloud_name }}</h3>
+                </div>
+                <span class="text-xs px-2 py-1 bg-green-100 text-green-700 rounded-full">연결됨</span>
+            </div>
+
+            <div class="grid grid-cols-2 gap-4 text-sm">
+                <div>
+                    <p class="text-gray-600">계정 ID</p>
+                    <p class="font-medium">{{ account.account_id }}</p>
+                </div>
+                <div>
+                    <p class="text-gray-600">리전</p>
+                    <p class="font-medium">{{ account.primary_region }}</p>
+                </div>
+                <div>
+                    <p class="text-gray-600">연결 방식</p>
+                    <p class="font-medium">{{ account.connection_display_name }}</p>
+                </div>
+                <div>
+                    <p class="text-gray-600">담당자</p>
+                    <p class="font-medium">{{ account.contact_email }}</p>
+                </div>
+            </div>
+
+            <div class="flex gap-2 mt-4">
+                <button onclick="window.location.href='{{ url_for('diagnosis.index') }}?account={{ account.account_id }}'" class="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium">🛡️ 보안 진단</button>
+                <button class="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors text-sm font-medium">📊 모니터링</button>
+                <button onclick="deleteAccount('{{ account.account_id }}', '{{ account.cloud_name }}')" class="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-sm font-medium">🗑️ 삭제</button>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="text-center py-12">
+        <div class="text-6xl mb-4">☁️</div>
+        <h3 class="text-lg font-medium text-gray-900 mb-2">연결된 AWS 계정이 없습니다</h3>
+        <p class="text-gray-600 mb-6">WALB 보안 관리를 시작하려면 AWS 계정을 먼저 연결해주세요</p>
+        <a href="{{ url_for('connection.index') }}" class="inline-block px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"> ➕ 첫 번째 계정 연결 </a>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Infrastructure Section -->
+<div class="bg-white rounded-xl shadow-sm border p-6">
+    <div class="flex items-center mb-6">
+        <span class="text-2xl mr-3">🏗️</span>
+        <h2 class="text-xl font-bold text-gray-900">안전한 클라우드 구축</h2>
+    </div>
+
+    <p class="text-gray-600 mb-6"><strong>Shift-Left Security 적용</strong> - 사전 보안이 내장된 새로운 AWS 환경을 자동 구축합니다.</p>
+
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+        <div class="flex items-center">
+            <span class="text-lg mr-2">🛡️</span>
+            <span class="text-sm">사전 보안 내장 인프라</span>
+        </div>
+        <div class="flex items-center">
+            <span class="text-lg mr-2">📋</span>
+            <span class="text-sm">IaC 기반 Terraform 템플릿</span>
+        </div>
+        <div class="flex items-center">
+            <span class="text-lg mr-2">✅</span>
+            <span class="text-sm">ISMS-P 컴플라이언스 자동 적용</span>
+        </div>
+    </div>
+
+    <button class="px-6 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors font-medium">🚀 새 환경 구축 시작</button>
+</div>
+{% endblock %} {% block extra_js %}
+<script>
+    // 실시간 시간 업데이트
+    function updateTime() {
+        const now = new Date();
+        const timeString = now.toLocaleString('ko-KR');
+        document.getElementById('current-time').textContent = timeString;
+    }
+
+    // 사이드바 통계 업데이트
+    function updateSidebarStats() {
+        document.getElementById('total-accounts').textContent = '{{ stats.total_accounts }}';
+        document.getElementById('active-accounts').textContent = '{{ stats.active_accounts }}';
+    }
+
+    // AWS 계정 삭제 함수
+    async function deleteAccount(accountId, cloudName) {
+        // 확인 모달
+        const confirmed = confirm(`정말로 "${cloudName}" (${accountId}) 계정을 삭제하시겠습니까?\n\n⚠️ 이 작업은 되돌릴 수 없습니다.`);
+        
+        if (!confirmed) {
+            return;
+        }
+
+        try {
+            const response = await fetch('/api/accounts/delete', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    account_id: accountId,
+                    cloud_name: cloudName
+                })
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                // 성공 메시지
+                alert(`✅ "${cloudName}" 계정이 성공적으로 삭제되었습니다.`);
+                
+                // 페이지 새로고침
+                window.location.reload();
+            } else {
+                // 실패 메시지
+                alert(`❌ 계정 삭제에 실패했습니다.\n오류: ${result.error || '알 수 없는 오류'}`);
+            }
+        } catch (error) {
+            console.error('Delete account error:', error);
+            alert('❌ 계정 삭제 중 오류가 발생했습니다.\n네트워크 연결을 확인해주세요.');
+        }
+    }
+
+    // 초기화
+    document.addEventListener('DOMContentLoaded', function () {
+        updateTime();
+        updateSidebarStats();
+        setInterval(updateTime, 1000);
+    });
+</script>
+{% endblock %}

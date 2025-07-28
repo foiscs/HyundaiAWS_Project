@@ -645,6 +645,30 @@ resource "aws_security_group" "alb" {
   })
 }
 
+# ALB에서 EKS 노드로의 트래픽 허용
+resource "aws_security_group_rule" "alb_to_eks_nodes" {
+  count                    = var.enable_load_balancer ? 1 : 0
+  type                     = "ingress"
+  from_port                = var.application_port
+  to_port                  = var.application_port
+  protocol                 = "tcp"
+  source_security_group_id = aws_security_group.alb[0].id
+  security_group_id        = module.eks.node_group_security_group_id
+  description              = "Allow ALB to access EKS nodes on application port"
+}
+
+# ALB에서 EKS 노드로의 Health Check 트래픽 허용 (포트 80)
+resource "aws_security_group_rule" "alb_to_eks_nodes_health" {
+  count                    = var.enable_load_balancer ? 1 : 0
+  type                     = "ingress"
+  from_port                = 80
+  to_port                  = 80
+  protocol                 = "tcp"
+  source_security_group_id = aws_security_group.alb[0].id
+  security_group_id        = module.eks.node_group_security_group_id
+  description              = "Allow ALB health check to EKS nodes on port 80"
+}
+
 # ALB Target Group
 resource "aws_lb_target_group" "eks_nodes" {
   count       = var.enable_load_balancer ? 1 : 0
@@ -657,12 +681,12 @@ resource "aws_lb_target_group" "eks_nodes" {
   health_check {
     enabled             = true
     healthy_threshold   = 2
-    unhealthy_threshold = 2
-    timeout             = 5
+    unhealthy_threshold = 3
+    timeout             = 10
     interval            = 30
-    path                = "/"
+    path                = "/healthcheck.php"
     matcher             = "200"
-    port                = "traffic-port"
+    port                = "80"
     protocol            = "HTTP"
   }
 

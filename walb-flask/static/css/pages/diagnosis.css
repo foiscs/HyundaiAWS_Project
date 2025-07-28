@@ -1,0 +1,890 @@
+/**
+ * diagnosis.css - SK Shieldus 보안 진단 페이지 스타일
+ * mainHub의 diagnosis_styles.py를 CSS로 이식
+ */
+
+/* Pretendard 폰트 임포트 */
+@import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css');
+
+/* 기본 컨테이너 */
+.diagnosis-container {
+    font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, Roboto, 'Helvetica Neue', 'Segoe UI', 'Apple SD Gothic Neo', 'Noto Sans KR', 'Malgun Gothic', sans-serif;
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 20px;
+}
+
+/* 히어로 헤더 스타일 */
+.hero-header {
+    background: linear-gradient(135deg, #2d3748 0%, #4a5568 100%);
+    color: white;
+    padding: 2.5rem 2rem;
+    border-radius: 16px;
+    margin: 1rem 0 2rem 0;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+    position: relative;
+    overflow: hidden;
+}
+
+.hero-header::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><defs><pattern id="grid" width="10" height="10" patternUnits="userSpaceOnUse"><path d="M 10 0 L 0 0 0 10" fill="none" stroke="rgba(255,255,255,0.1)" stroke-width="0.5"/></pattern></defs><rect width="100" height="100" fill="url(%23grid)"/></svg>');
+    opacity: 0.3;
+}
+
+.hero-content {
+    position: relative;
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    gap: 1.5rem;
+}
+
+.hero-icon {
+    font-size: 3.5rem;
+    filter: drop-shadow(0 4px 8px rgba(0,0,0,0.2));
+    animation: float 3s ease-in-out infinite;
+}
+
+.hero-text {
+    flex: 1;
+}
+
+.hero-title {
+    font-size: 2.25rem;
+    font-weight: 700;
+    margin: 0 0 0.5rem 0;
+    background: linear-gradient(45deg, #ffffff, #cbd5e0);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    text-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.hero-subtitle {
+    font-size: 1.1rem;
+    opacity: 0.9;
+    margin: 0;
+    font-weight: 400;
+}
+
+.floating-elements {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    pointer-events: none;
+    overflow: hidden;
+}
+
+.floating-circle {
+    position: absolute;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 50%;
+    animation: float-circle 6s ease-in-out infinite;
+}
+
+.circle-1 {
+    width: 60px;
+    height: 60px;
+    top: 20%;
+    right: 10%;
+    animation-delay: 0s;
+}
+
+.circle-2 {
+    width: 40px;
+    height: 40px;
+    top: 60%;
+    right: 20%;
+    animation-delay: 2s;
+}
+
+.circle-3 {
+    width: 80px;
+    height: 80px;
+    top: 10%;
+    left: 15%;
+    animation-delay: 4s;
+}
+
+/* 애니메이션 */
+@keyframes float {
+    0%, 100% { transform: translateY(0px); }
+    50% { transform: translateY(-10px); }
+}
+
+@keyframes float-circle {
+    0%, 100% { transform: translateY(0px) scale(1); opacity: 0.3; }
+    50% { transform: translateY(-20px) scale(1.1); opacity: 0.6; }
+}
+
+/* 계정 선택 섹션 */
+.account-selection-section {
+    background: white;
+    border-radius: 16px;
+    padding: 2rem;
+    margin-bottom: 2rem;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+    border: 1px solid #e2e8f0;
+}
+
+.section-title {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: #2d3748;
+    margin-bottom: 1.5rem;
+    display: flex;
+    align-items: center;
+}
+
+.section-icon {
+    margin-right: 0.75rem;
+    font-size: 1.75rem;
+}
+
+.accounts-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 1.5rem;
+}
+
+.account-card {
+    background: white;
+    border: 2px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 1.5rem;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    position: relative;
+}
+
+.account-card:hover {
+    border-color: #3182ce;
+    box-shadow: 0 8px 25px rgba(49, 130, 206, 0.15);
+    transform: translateY(-2px);
+}
+
+.account-card.selected {
+    border-color: #3182ce;
+    background: linear-gradient(135deg, #ebf8ff 0%, #bee3f8 100%);
+    box-shadow: 0 8px 25px rgba(49, 130, 206, 0.2);
+}
+
+.account-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+}
+
+.account-name {
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: #2d3748;
+    margin: 0;
+}
+
+.account-type-badge {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.badge {
+    padding: 0.25rem 0.75rem;
+    border-radius: 20px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.badge-role {
+    background: #e6fffa;
+    color: #065f46;
+}
+
+.badge-key {
+    background: #fef7e0;
+    color: #92400e;
+}
+
+.account-details {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.account-detail {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.detail-label {
+    font-size: 0.875rem;
+    color: #718096;
+    font-weight: 500;
+}
+
+.detail-value {
+    font-size: 0.875rem;
+    color: #2d3748;
+    font-weight: 600;
+    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+}
+
+/* 빈 상태 */
+.empty-state {
+    text-align: center;
+    padding: 3rem 2rem;
+    color: #718096;
+}
+
+.empty-icon {
+    font-size: 4rem;
+    margin-bottom: 1rem;
+}
+
+.empty-state h3 {
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: #2d3748;
+    margin-bottom: 0.5rem;
+}
+
+.empty-state p {
+    margin-bottom: 1.5rem;
+}
+
+/* 진단 제어 패널 */
+.diagnosis-control-panel {
+    background: white;
+    border-radius: 16px;
+    padding: 2rem;
+    margin-bottom: 2rem;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+    border: 1px solid #e2e8f0;
+}
+
+.panel-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 2rem;
+}
+
+.panel-title {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: #2d3748;
+    display: flex;
+    align-items: center;
+    margin: 0;
+}
+
+.panel-icon {
+    margin-right: 0.75rem;
+    font-size: 1.75rem;
+}
+
+.panel-actions {
+    display: flex;
+    gap: 1rem;
+}
+
+.diagnosis-stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1.5rem;
+}
+
+.stat-card {
+    background: linear-gradient(135deg, #f7fafc 0%, #edf2f7 100%);
+    border-radius: 12px;
+    padding: 1.5rem;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    border: 1px solid #e2e8f0;
+}
+
+.stat-icon {
+    font-size: 2.5rem;
+}
+
+.stat-content {
+    flex: 1;
+}
+
+.stat-number {
+    font-size: 2rem;
+    font-weight: 700;
+    color: #2d3748;
+    margin-bottom: 0.25rem;
+}
+
+.stat-label {
+    color: #718096;
+    font-size: 0.875rem;
+    font-weight: 500;
+}
+
+/* 진단 항목 섹션 */
+.diagnosis-items-section {
+    background: white;
+    border-radius: 16px;
+    padding: 2rem;
+    margin-bottom: 2rem;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+    border: 1px solid #e2e8f0;
+}
+
+.category-section {
+    margin-bottom: 3rem;
+}
+
+.category-section:last-child {
+    margin-bottom: 0;
+}
+
+.category-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1.5rem;
+    padding-bottom: 1rem;
+    border-bottom: 2px solid #e2e8f0;
+}
+
+.category-title {
+    font-size: 1.375rem;
+    font-weight: 700;
+    color: #2d3748;
+    margin: 0;
+}
+
+.category-meta {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+
+.item-count {
+    color: #718096;
+    font-size: 0.875rem;
+    font-weight: 500;
+}
+
+.items-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
+    gap: 1.5rem;
+}
+
+.diagnosis-item {
+    background: white;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 1.5rem;
+    transition: all 0.3s ease;
+}
+
+.diagnosis-item:hover {
+    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
+    transform: translateY(-2px);
+}
+
+.item-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+}
+
+.item-code {
+    background: #f7fafc;
+    color: #2d3748;
+    padding: 0.5rem 1rem;
+    border-radius: 8px;
+    font-weight: 700;
+    font-size: 0.875rem;
+    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+}
+
+.item-severity {
+    padding: 0.375rem 0.75rem;
+    border-radius: 20px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+}
+
+.severity-상 {
+    background: #fee2e2;
+    color: #991b1b;
+}
+
+.severity-중 {
+    background: #fef3c7;
+    color: #92400e;
+}
+
+.severity-하 {
+    background: #d1fae5;
+    color: #065f46;
+}
+
+.item-content {
+    margin-bottom: 1.5rem;
+}
+
+.item-name {
+    font-size: 1.125rem;
+    font-weight: 600;
+    color: #2d3748;
+    margin: 0 0 0.5rem 0;
+}
+
+.item-description {
+    color: #718096;
+    font-size: 0.875rem;
+    line-height: 1.5;
+    margin: 0;
+}
+
+.item-actions {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.item-status {
+    display: flex;
+    align-items: center;
+}
+
+.status-badge {
+    padding: 0.375rem 0.75rem;
+    border-radius: 20px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.status-idle {
+    background: #f7fafc;
+    color: #718096;
+}
+
+.status-running {
+    background: #dbeafe;
+    color: #1e40af;
+    animation: pulse 2s infinite;
+}
+
+.status-completed {
+    background: #d1fae5;
+    color: #065f46;
+}
+
+.status-failed {
+    background: #fee2e2;
+    color: #991b1b;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.7; }
+}
+
+/* 진단 결과 */
+.diagnosis-result {
+    margin-top: 1rem;
+    padding: 1rem;
+    border-radius: 8px;
+    border: 1px solid #e2e8f0;
+    background: #f9fafb;
+}
+
+.result-summary {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.result-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-bottom: 0.75rem;
+    border-bottom: 1px solid #e2e8f0;
+}
+
+.result-status {
+    font-weight: 600;
+    font-size: 0.875rem;
+}
+
+.result-status.success {
+    color: #065f46;
+}
+
+.result-status.error {
+    color: #991b1b;
+}
+
+.result-time {
+    font-size: 0.75rem;
+    color: #718096;
+}
+
+.result-content {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.result-item {
+    font-size: 0.875rem;
+    line-height: 1.5;
+}
+
+.result-item.success {
+    color: #065f46;
+}
+
+.result-item.warning {
+    color: #92400e;
+}
+
+.error-message {
+    color: #991b1b;
+    font-size: 0.875rem;
+    padding: 0.75rem;
+    background: #fee2e2;
+    border-radius: 6px;
+    border: 1px solid #fecaca;
+}
+
+.risk-level {
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.risk-high {
+    background: #fee2e2;
+    color: #991b1b;
+}
+
+.risk-medium {
+    background: #fef3c7;
+    color: #92400e;
+}
+
+.risk-low {
+    background: #d1fae5;
+    color: #065f46;
+}
+
+/* 진행 상황 모달 */
+.diagnosis-progress-modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+}
+
+.modal-content {
+    background: white;
+    border-radius: 16px;
+    padding: 2rem;
+    max-width: 500px;
+    width: 90%;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+}
+
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 2rem;
+}
+
+.modal-header h3 {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: #2d3748;
+    margin: 0;
+}
+
+.modal-close {
+    background: none;
+    border: none;
+    font-size: 2rem;
+    color: #718096;
+    cursor: pointer;
+    padding: 0;
+    width: 2rem;
+    height: 2rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.modal-close:hover {
+    color: #2d3748;
+}
+
+.progress-stats {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+}
+
+.progress-stat {
+    text-align: center;
+}
+
+.progress-label {
+    display: block;
+    font-size: 0.875rem;
+    color: #718096;
+    margin-bottom: 0.25rem;
+}
+
+.progress-value {
+    display: block;
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: #2d3748;
+}
+
+.progress-bar {
+    width: 100%;
+    height: 8px;
+    background: #e2e8f0;
+    border-radius: 4px;
+    overflow: hidden;
+    margin-bottom: 1rem;
+}
+
+.progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #3182ce 0%, #2b77cb 100%);
+    transition: width 0.3s ease;
+    border-radius: 4px;
+}
+
+.current-item {
+    text-align: center;
+    color: #718096;
+    font-size: 0.875rem;
+}
+
+/* 버튼 스타일 */
+.btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1.5rem;
+    border-radius: 8px;
+    font-weight: 600;
+    font-size: 0.875rem;
+    text-decoration: none;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    border: 1px solid transparent;
+}
+
+.btn:hover {
+    transform: translateY(-1px);
+    text-decoration: none;
+}
+
+.btn-primary {
+    background: linear-gradient(135deg, #3182ce 0%, #2b77cb 100%);
+    color: white;
+    box-shadow: 0 4px 12px rgba(49, 130, 206, 0.3);
+}
+
+.btn-primary:hover {
+    box-shadow: 0 6px 20px rgba(49, 130, 206, 0.4);
+    color: white;
+}
+
+.btn-secondary {
+    background: #f7fafc;
+    color: #2d3748;
+    border-color: #e2e8f0;
+}
+
+.btn-secondary:hover {
+    background: #edf2f7;
+    color: #2d3748;
+}
+
+.btn-outline {
+    background: transparent;
+    color: #3182ce;
+    border-color: #3182ce;
+}
+
+.btn-outline:hover {
+    background: #3182ce;
+    color: white;
+}
+
+.btn-sm {
+    padding: 0.5rem 1rem;
+    font-size: 0.8125rem;
+}
+
+/* 로딩 스피너 */
+.diagnosis-loading {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1rem;
+    padding: 2rem;
+}
+
+.loading-spinner {
+    width: 40px;
+    height: 40px;
+    border: 4px solid #e2e8f0;
+    border-top: 4px solid #3182ce;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+.loading-text {
+    color: #718096;
+    font-size: 0.875rem;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+/* 반응형 디자인 */
+@media (max-width: 768px) {
+    .diagnosis-container {
+        padding: 1rem;
+    }
+    
+    .hero-content {
+        flex-direction: column;
+        text-align: center;
+        gap: 1rem;
+    }
+    
+    .hero-title {
+        font-size: 1.875rem;
+    }
+    
+    .accounts-grid {
+        grid-template-columns: 1fr;
+    }
+    
+    .items-grid {
+        grid-template-columns: 1fr;
+    }
+    
+    .diagnosis-stats {
+        grid-template-columns: repeat(2, 1fr);
+    }
+    
+    .panel-header {
+        flex-direction: column;
+        gap: 1rem;
+        align-items: stretch;
+    }
+    
+    .panel-actions {
+        flex-direction: column;
+    }
+    
+    .category-header {
+        flex-direction: column;
+        gap: 1rem;
+        align-items: stretch;
+    }
+    
+    .item-actions {
+        flex-direction: column;
+        gap: 1rem;
+        align-items: stretch;
+    }
+}
+
+/* 미구현 항목 스타일 */
+.item-not-implemented {
+    opacity: 0.7;
+    position: relative;
+}
+
+.item-not-implemented .diagnosis-item {
+    background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+    border: 1px dashed #ced4da;
+}
+
+.item-implementation-status {
+    margin-left: auto;
+}
+
+.badge-not-implemented {
+    background: #6c757d;
+    color: white;
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+
+.item-note {
+    font-size: 0.8125rem;
+    color: #6c757d;
+    font-style: italic;
+    margin-top: 0.5rem;
+    margin-bottom: 0;
+}
+
+.btn-disabled {
+    background: #e9ecef;
+    color: #6c757d;
+    border-color: #ced4da;
+    cursor: not-allowed;
+}
+
+.btn-disabled:hover {
+    background: #e9ecef;
+    color: #6c757d;
+    transform: none;
+    box-shadow: none;
+}
+
+.status-not-implemented {
+    background: #e9ecef;
+    color: #6c757d;
+    border: 1px solid #ced4da;
+}
