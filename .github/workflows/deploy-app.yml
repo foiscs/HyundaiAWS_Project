@@ -512,6 +512,39 @@ jobs:
             --output text 2>/dev/null || echo "")
           
           echo "RDS Security Group: $RDS_SG"
+          
+          # RDS 보안 그룹에 Bastion 접근 규칙 추가
+          if [ -n "$BASTION_SG" ] && [ -n "$RDS_SG" ]; then
+            echo "🔧 RDS 보안 그룹에 Bastion 접근 규칙 추가 중..."
+            
+            if ! aws ec2 describe-security-groups --group-ids $RDS_SG --query "SecurityGroups[0].IpPermissions[?FromPort==\`5432\` && ToPort==\`5432\` && UserIdGroupPairs[?GroupId==\`$BASTION_SG\`]]" --output text | grep -q "5432"; then
+              aws ec2 authorize-security-group-ingress \
+                --group-id $RDS_SG \
+                --protocol tcp \
+                --port 5432 \
+                --source-group $BASTION_SG \
+                --no-cli-pager && echo "✅ RDS 인바운드 규칙 추가 완료"
+            else
+              echo "✅ RDS 인바운드 규칙이 이미 존재합니다"
+            fi
+          fi
+        fi
+        
+        # Bastion 보안 그룹에 아웃바운드 규칙 추가
+        if [ -n "$BASTION_SG" ]; then
+          echo "🔧 Bastion 보안 그룹 아웃바운드 규칙 추가 중..."
+          
+          if ! aws ec2 describe-security-groups --group-ids $BASTION_SG --query "SecurityGroups[0].IpPermissionsEgress[?FromPort==\`5432\` && ToPort==\`5432\` && IpRanges[?CidrIp==\`0.0.0.0/0\`]]" --output text | grep -q "5432"; then
+            aws ec2 authorize-security-group-egress \
+              --group-id $BASTION_SG \
+              --protocol tcp \
+              --port 5432 \
+              --cidr 0.0.0.0/0 \
+              --no-cli-pager && echo "✅ Bastion 아웃바운드 규칙 추가 완료"
+          else
+            echo "✅ Bastion 아웃바운드 규칙이 이미 존재합니다"
+          fi
+        fi
         
         # SSH 키를 Parameter Store에서 가져오기
         echo "🔑 SSH 키 가져오는 중..."
