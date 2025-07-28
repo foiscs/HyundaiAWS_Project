@@ -270,7 +270,7 @@ class DiagnosisService:
         try:
             # 체커 매핑 딕셔너리 (SHIELDUS-AWS-CHECKER에서 이식된 체커들)
             checker_mapping = {
-                # 계정 관리 (10개) - 모두 구현 완료
+                # 계정 관리 (13개) - 모두 구현 완료
                 "1.1": "app.checkers.account_management.user_account_1_1.UserAccountChecker",
                 "1.2": "app.checkers.account_management.iam_single_account_1_2.IAMSingleAccountChecker",
                 "1.3": "app.checkers.account_management.iam_identification_1_3.IAMIdentificationChecker",
@@ -281,11 +281,14 @@ class DiagnosisService:
                 "1.8": "app.checkers.account_management.access_key_mgmt_1_8.AccessKeyManagementChecker",
                 "1.9": "app.checkers.account_management.mfa_setting_1_9.MFASettingChecker",
                 "1.10": "app.checkers.account_management.password_policy_1_10.PasswordPolicyChecker",
+                "1.11": "app.checkers.account_management.eks_user_management_1_11.EKSUserManagementChecker",
+                "1.12": "app.checkers.account_management.eks_service_account_1_12.EKSServiceAccountChecker",
+                "1.13": "app.checkers.account_management.eks_anonymous_access_1_13.EKSAnonymousAccessChecker",
                 
-                # 권한 관리 (3개)
-                "2.1": "app.checkers.authorization.instance_service_policy_2_1.InstanceServicePolicyChecker",  # 구현 필요
-                "2.2": "app.checkers.authorization.network_service_policy_2_2.NetworkServicePolicyChecker",  # 구현 필요
-                "2.3": "app.checkers.authorization.other_service_policy_2_3.OtherServicePolicyChecker",  # 구현 필요
+                # 권한 관리 (3개) - 모두 구현 완료
+                "2.1": "app.checkers.authorization.instance_service_policy_2_1.InstanceServicePolicyChecker",
+                "2.2": "app.checkers.authorization.network_service_policy_2_2.NetworkServicePolicyChecker",
+                "2.3": "app.checkers.authorization.other_service_policy_2_3.OtherServicePolicyChecker",
                 
                 # 가상 자원 (2개)
                 "3.1": "app.checkers.virtual_resources.security_group_any_3_1.SecurityGroupAnyChecker",  # 구현 필요

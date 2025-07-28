@@ -43,13 +43,13 @@ class DiagnosisConfig:
                 {"code": "1.4", "name": "IAM 그룹 관리", "severity": "중", "description": "IAM 그룹의 권한 관리 상태를 점검합니다", "implemented": True},
                 {"code": "1.5", "name": "EC2 키 페어 접근 관리", "severity": "상", "description": "EC2 인스턴스의 키 페어 접근 권한을 점검합니다", "implemented": True},
                 {"code": "1.6", "name": "S3 키 페어 저장 관리", "severity": "상", "description": "S3에 저장된 키 페어의 보안을 점검합니다", "implemented": True},
-                {"code": "1.7", "name": "사용자 접근 키 주기적 변경", "severity": "중", "description": "사용자 접근 키의 주기적 변경 상태를 점검합니다", "implemented": False},
+                {"code": "1.7", "name": "루트 계정 사용", "severity": "중", "description": "AWS 루트 계정의 사용 현황을 점검합니다", "implemented": True},
                 {"code": "1.8", "name": "접근 키 관리", "severity": "상", "description": "AWS 접근 키의 관리 상태를 점검합니다", "implemented": True},
                 {"code": "1.9", "name": "MFA 설정", "severity": "상", "description": "다단계 인증(MFA) 설정 상태를 점검합니다", "implemented": True},
                 {"code": "1.10", "name": "패스워드 정책", "severity": "중", "description": "계정 패스워드 정책 설정을 점검합니다", "implemented": True},
-                {"code": "1.11", "name": "사용자 권한 검토", "severity": "중", "description": "사용자별 권한 할당 상태를 점검합니다", "implemented": False},
-                {"code": "1.12", "name": "사용자 활동 모니터링", "severity": "중", "description": "사용자 활동 로그 및 모니터링을 점검합니다", "implemented": False},
-                {"code": "1.13", "name": "계정 잠금 정책", "severity": "중", "description": "계정 잠금 및 해제 정책을 점검합니다", "implemented": False}
+                {"code": "1.11", "name": "EKS 사용자 관리", "severity": "중", "description": "EKS 클러스터의 사용자 관리를 점검합니다", "implemented": True},
+                {"code": "1.12", "name": "EKS 서비스 계정", "severity": "중", "description": "EKS 서비스 계정 보안을 점검합니다", "implemented": True},
+                {"code": "1.13", "name": "EKS 익명 접근", "severity": "중", "description": "EKS 클러스터의 익명 접근을 점검합니다", "implemented": True}
             ],
             "권한 관리": [
                 {"code": "2.1", "name": "인스턴스 서비스 정책", "severity": "상", "description": "EC2 인스턴스의 서비스 정책을 점검합니다", "implemented": True},

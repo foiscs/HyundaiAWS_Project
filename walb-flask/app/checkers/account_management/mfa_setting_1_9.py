@@ -166,6 +166,58 @@ class MFASettingChecker(BaseChecker):
         # 원본: MFA 설정은 사용자의 물리적/가상 디바이스 등록이 필요하므로 자동화할 수 없음
         return None
     
+    def _get_manual_guide(self, result):
+        """수동 조치 가이드 반환 - 원본 1.9 fix() 함수 내용"""
+        if not result.get('has_issues'):
+            return None
+        
+        # 원본 fix() 함수의 내용을 그대로 웹 UI로 변환
+        guide_steps = [
+            {
+                'type': 'warning',
+                'title': '[FIX] 1.9 MFA 설정 수동 조치',
+                'content': 'MFA 설정은 사용자의 물리적/가상 디바이스 등록이 필요하므로 자동화할 수 없습니다.'
+            }
+        ]
+        
+        # Root 계정 MFA가 비활성화된 경우
+        if not result.get('mfa_enabled', True):
+            guide_steps.append({
+                'type': 'step',
+                'title': '[Root 계정] MFA 설정',
+                'content': 'AWS Management Console에 Root로 로그인하여 [내 보안 자격 증명]에서 MFA 디바이스를 할당하세요.'
+            })
+        
+        # MFA가 없는 IAM 사용자가 있는 경우
+        users_without_mfa = result.get('users_without_mfa', [])
+        if users_without_mfa:
+            user_list = [user['username'] for user in users_without_mfa]
+            guide_steps.append({
+                'type': 'step',
+                'title': '[IAM 사용자] MFA 설정 안내',
+                'content': f'다음 사용자들에게 각자 로그인하여 [내 보안 자격 증명]에서 MFA를 설정하도록 안내하세요: {", ".join(user_list)}'
+            })
+        
+        # MFA 설정 상세 가이드 추가
+        guide_steps.extend([
+            {
+                'type': 'info',
+                'title': '📱 MFA 디바이스 유형',
+                'content': '• Virtual MFA (Google Authenticator, Authy 등)\n• Hardware MFA (YubiKey 등)\n• SMS MFA (텍스트 메시지)'
+            },
+            {
+                'type': 'step',
+                'title': 'MFA 설정 절차',
+                'content': '1. AWS Console 로그인\n2. 우상단 계정명 > "내 보안 자격 증명"\n3. "다중 인증(MFA)" 섹션\n4. "MFA 디바이스 할당" 클릭\n5. 디바이스 유형 선택 및 설정'
+            }
+        ])
+        
+        return {
+            'title': '1.9 MFA 설정 수동 조치 가이드',
+            'description': '원본 팀원이 작성한 수동 조치 절차를 따라 MFA 보안을 강화하세요.',
+            'steps': guide_steps
+        }
+    
     def execute_fix(self, selected_items):
         """자동 조치 실행"""
         # 원본: MFA 설정은 사용자의 물리적/가상 디바이스 등록이 필요하므로 자동화할 수 없음

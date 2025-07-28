@@ -400,6 +400,41 @@
     transform: translateY(-2px);
 }
 
+/* 현재 진단 중인 항목 강조 효과 */
+.diagnosis-item.current-diagnosing {
+    transform: scale(1.02) translateY(-4px);
+    box-shadow: 0 12px 40px rgba(59, 130, 246, 0.25);
+    border: 2px solid #3b82f6;
+    background: linear-gradient(135deg, #dbeafe 0%, #eff6ff 100%);
+    z-index: 10;
+    position: relative;
+}
+
+.diagnosis-item.current-diagnosing::before {
+    content: '';
+    position: absolute;
+    top: -3px;
+    left: -3px;
+    right: -3px;
+    bottom: -3px;
+    background: linear-gradient(45deg, #3b82f6, #1d4ed8, #3b82f6, #1d4ed8);
+    background-size: 400% 400%;
+    border-radius: 15px;
+    z-index: -1;
+    animation: gradient-pulse 2s ease-in-out infinite;
+}
+
+@keyframes gradient-pulse {
+    0%, 100% {
+        background-position: 0% 50%;
+        opacity: 0.8;
+    }
+    50% {
+        background-position: 100% 50%;
+        opacity: 1;
+    }
+}
+
 .item-header {
     display: flex;
     justify-content: space-between;
@@ -990,4 +1025,309 @@
 .btn-warning {
     background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
     color: white;
+}
+
+/* 수동 조치 가이드 박스 스타일 */
+.manual-guide-box {
+    background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+    border: 2px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 1.5rem;
+    margin: 1rem 0;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.manual-guide-header {
+    margin-bottom: 1.5rem;
+    padding-bottom: 1rem;
+    border-bottom: 2px solid #e2e8f0;
+}
+
+.manual-guide-header h4 {
+    color: #1e293b;
+    font-size: 1.2rem;
+    font-weight: 700;
+    margin: 0 0 0.5rem 0;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.manual-guide-description {
+    color: #64748b;
+    font-size: 0.95rem;
+    margin: 0;
+    line-height: 1.5;
+}
+
+.manual-guide-steps {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.manual-step {
+    background: white;
+    border-radius: 8px;
+    padding: 1rem;
+    border-left: 4px solid #94a3b8;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+.manual-step.step-warning {
+    border-left-color: #f59e0b;
+    background: #fffbeb;
+}
+
+.manual-step.step-danger {
+    border-left-color: #ef4444;
+    background: #fef2f2;
+}
+
+.manual-step.step-info {
+    border-left-color: #3b82f6;
+    background: #eff6ff;
+}
+
+.manual-step.step-action {
+    border-left-color: #10b981;
+    background: #f0fdf4;
+}
+
+.manual-step.step-commands {
+    border-left-color: #6366f1;
+    background: #f8faff;
+}
+
+.step-title {
+    font-weight: 600;
+    color: #1e293b;
+    margin-bottom: 0.5rem;
+    font-size: 0.95rem;
+}
+
+.step-content {
+    color: #475569;
+    font-size: 0.9rem;
+    line-height: 1.5;
+}
+
+.commands-content {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.command-line {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: #1e293b;
+    border-radius: 6px;
+    padding: 0.75rem;
+}
+
+.command-line code {
+    flex: 1;
+    background: none;
+    color: #f1f5f9;
+    font-family: 'Fira Code', 'Monaco', 'Consolas', 'Liberation Mono', 'Courier New', monospace;
+    font-size: 0.85rem;
+    white-space: pre-wrap;
+    word-break: break-all;
+}
+
+.command-separator {
+    height: 0.5rem;
+}
+
+/* 실시간 진행 상태 사이드바 */
+.diagnosis-progress-sidebar {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    border-radius: 12px;
+    padding: 1.5rem;
+    margin-top: 1.5rem;
+    color: white;
+    box-shadow: 0 4px 20px rgba(102, 126, 234, 0.15);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.progress-sidebar-header {
+    margin-bottom: 1rem;
+}
+
+.progress-sidebar-title {
+    font-size: 1.1rem;
+    font-weight: 600;
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    color: #ffffff;
+}
+
+.progress-icon {
+    font-size: 1.2rem;
+}
+
+.progress-sidebar-content {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.progress-stats-mini {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.75rem;
+}
+
+.stat-mini {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    padding: 0.75rem;
+    text-align: center;
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.stat-mini-value {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: #ffffff;
+    margin-bottom: 0.25rem;
+    display: block;
+}
+
+.stat-mini-label {
+    font-size: 0.75rem;
+    color: rgba(255, 255, 255, 0.8);
+    font-weight: 500;
+}
+
+.progress-bar-mini {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    padding: 0.75rem;
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.progress-bar {
+    width: 100%;
+    height: 8px;
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #10b981, #34d399);
+    border-radius: 4px;
+    transition: width 0.3s ease;
+    width: 0%;
+}
+
+.current-status-mini {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    padding: 0.75rem;
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.status-mini-title {
+    font-size: 0.9rem;
+    font-weight: 600;
+    margin: 0 0 0.5rem 0;
+    color: #ffffff;
+}
+
+.status-mini-message {
+    font-size: 0.8rem;
+    color: rgba(255, 255, 255, 0.9);
+    font-family: 'Fira Code', monospace;
+    background: rgba(0, 0, 0, 0.2);
+    padding: 0.5rem;
+    border-radius: 4px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    line-height: 1.3;
+}
+
+.debug-log-mini {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    padding: 0.75rem;
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.log-mini-title {
+    font-size: 0.9rem;
+    font-weight: 600;
+    margin: 0 0 0.5rem 0;
+    color: #ffffff;
+}
+
+.log-mini-container {
+    background: rgba(0, 0, 0, 0.3);
+    border-radius: 6px;
+    padding: 0.5rem;
+    max-height: 120px;
+    overflow-y: auto;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.log-mini-entry {
+    font-family: 'Fira Code', monospace;
+    font-size: 0.7rem;
+    color: rgba(255, 255, 255, 0.9);
+    margin-bottom: 0.25rem;
+    line-height: 1.3;
+}
+
+.log-mini-entry:last-child {
+    margin-bottom: 0;
+}
+
+/* 미니 스크롤바 스타일링 */
+.log-mini-container::-webkit-scrollbar {
+    width: 4px;
+}
+
+.log-mini-container::-webkit-scrollbar-track {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 2px;
+}
+
+.log-mini-container::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.3);
+    border-radius: 2px;
+}
+
+.log-mini-container::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.5);
+}
+
+.btn-copy {
+    background: #475569;
+    color: white;
+    border: none;
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    cursor: pointer;
+    transition: all 0.2s;
+    min-width: 2rem;
+}
+
+.btn-copy:hover {
+    background: #64748b;
+    transform: scale(1.05);
+}
+
+.btn-xs {
+    font-size: 0.7rem;
+    padding: 0.2rem 0.4rem;
 }

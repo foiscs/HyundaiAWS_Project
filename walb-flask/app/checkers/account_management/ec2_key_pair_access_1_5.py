@@ -149,6 +149,54 @@ class KeyPairAccessChecker(BaseChecker):
         # Key Pair 할당은 인스턴스 재시작 또는 재배포가 필요하므로 자동 조치가 불가능함
         return None
     
+    def _get_manual_guide(self, result):
+        """수동 조치 가이드 반환 - 원본 1.5 fix() 함수 내용"""
+        if not result.get('has_issues'):
+            return None
+        
+        unassigned_instances = result.get('instances_without_keypair', [])
+        if not unassigned_instances:
+            return None
+        
+        # 원본 fix() 함수의 내용을 그대로 웹 UI로 변환
+        guide_steps = [
+            {
+                'type': 'warning',
+                'title': '[FIX] 1.5 Key Pair가 없는 인스턴스 조치',
+                'content': 'Key Pair가 없는 인스턴스에 대한 조치는 자동화할 수 없습니다.'
+            },
+            {
+                'type': 'info',
+                'title': '수동 조치 안내',
+                'content': '실행 중인 인스턴스에 Key Pair를 추가하는 것은 직접적인 방법이 없으므로 아래의 수동 절차를 따르세요.'
+            },
+            {
+                'type': 'step',
+                'title': '방법 1. Authorized Keys 직접 수정',
+                'content': '실행 중인 인스턴스에 SSH로 접속하여 ~/.ssh/authorized_keys 파일에 새 key pair의 public key를 수동으로 추가합니다.'
+            },
+            {
+                'type': 'step',
+                'title': '방법 2. AMI로 새 인스턴스 생성',
+                'content': '기존 인스턴스에서 AMI 이미지를 만들어 새로운 인스턴스를 생성할 때 새 key pair를 지정합니다.'
+            }
+        ]
+        
+        # 문제가 있는 인스턴스 목록 추가
+        if unassigned_instances:
+            instance_list = [f"• {inst['instance_id']} ({inst['state']})" for inst in unassigned_instances]
+            guide_steps.append({
+                'type': 'info',
+                'title': f'조치가 필요한 인스턴스 ({len(unassigned_instances)}개)',
+                'content': '\n'.join(instance_list)
+            })
+        
+        return {
+            'title': '1.5 EC2 Key Pair 접근 관리 수동 조치 가이드',
+            'description': '원본 팀원이 작성한 수동 조치 절차를 따라 인스턴스 접근 보안을 강화하세요.',
+            'steps': guide_steps
+        }
+    
     def execute_fix(self, selected_items):
         """자동 조치 실행"""
         # 원본 팀원 코드: 자동 조치가 불가능함

@@ -35,11 +35,15 @@ def index():
 def run_diagnosis():
     """개별 진단 실행 API"""
     try:
+        print(f"[DEBUG] 진단 API 호출됨")
         data = request.get_json()
+        print(f"[DEBUG] 요청 데이터: {data}")
+        
         account_id = data.get('account_id')
         item_code = data.get('item_code')
         
         if not account_id or not item_code:
+            print(f"[DEBUG] 필수 파라미터 누락: account_id={account_id}, item_code={item_code}")
             return jsonify({
                 'status': 'error',
                 'message': '계정 ID와 진단 항목 코드가 필요합니다.'
@@ -48,20 +52,28 @@ def run_diagnosis():
         # 계정 정보 조회
         account = AWSAccount.find_by_id(account_id)
         if not account:
+            print(f"[DEBUG] 계정 조회 실패: {account_id}")
             return jsonify({
                 'status': 'error',
                 'message': '계정을 찾을 수 없습니다.'
             }), 404
         
+        print(f"[DEBUG] 계정 조회 성공: {account.cloud_name}")
+        
         # 진단 서비스 초기화
         diagnosis_service = DiagnosisService()
         
         # 진단 실행
+        print(f"[DEBUG] 진단 실행 시작: {item_code}")
         result = diagnosis_service.run_single_diagnosis(account, item_code)
+        print(f"[DEBUG] 진단 실행 완료: {result['status']}")
         
         return jsonify(result)
         
     except Exception as e:
+        print(f"[DEBUG] 진단 API 오류: {str(e)}")
+        import traceback
+        traceback.print_exc()
         return jsonify({
             'status': 'error',
             'message': str(e)

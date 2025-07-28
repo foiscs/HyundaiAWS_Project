@@ -195,35 +195,6 @@
     </div>
     {% endif %}
 
-    <!-- 진단 진행 상황 모달 -->
-    <div class="diagnosis-progress-modal" id="progressModal" style="display: none;">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h3>진단 진행 상황</h3>
-                <button class="modal-close" onclick="closeProgressModal()">&times;</button>
-            </div>
-            <div class="modal-body">
-                <div class="progress-stats">
-                    <div class="progress-stat">
-                        <span class="progress-label">진행률</span>
-                        <span class="progress-value" id="progressPercentage">0%</span>
-                    </div>
-                    <div class="progress-stat">
-                        <span class="progress-label">완료</span>
-                        <span class="progress-value" id="completedCount">0</span>
-                    </div>
-                    <div class="progress-stat">
-                        <span class="progress-label">실패</span>
-                        <span class="progress-value" id="failedCount">0</span>
-                    </div>
-                </div>
-                <div class="progress-bar">
-                    <div class="progress-fill" id="progressFill"></div>
-                </div>
-                <div class="current-item" id="currentItem">진단 준비 중...</div>
-            </div>
-        </div>
-    </div>
 </div>
 
 <!-- 로딩 스피너 템플릿 -->
@@ -318,6 +289,14 @@ async function runSingleDiagnosis(itemCode) {
             })
         });
         
+        // 응답이 JSON인지 확인
+        const contentType = response.headers.get('content-type');
+        if (!contentType || !contentType.includes('application/json')) {
+            const text = await response.text();
+            console.error('JSON이 아닌 응답:', text);
+            throw new Error(`서버에서 HTML을 반환했습니다. Flask 서버가 올바르게 실행되고 있는지 확인하세요.`);
+        }
+        
         const result = await response.json();
         
         if (result.status === 'success') {
@@ -335,7 +314,25 @@ async function runSingleDiagnosis(itemCode) {
     }
 }
 
-// 전체 진단 실행
+// 서버 상태 체크
+async function checkServerStatus() {
+    try {
+        const response = await fetch('/diagnosis/api/test-session', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                account_id: 'test'
+            })
+        });
+        return response.headers.get('content-type')?.includes('application/json');
+    } catch (error) {
+        return false;
+    }
+}
+
+// 전체 진단 실행 (개별 순차 실행으로 변경)
 async function runAllDiagnosis() {
     if (!selectedAccountId) {
         alert('계정을 선택해주세요.');
@@ -347,36 +344,87 @@ async function runAllDiagnosis() {
         return;
     }
     
+    // 서버 상태 체크
+    const serverOk = await checkServerStatus();
+    if (!serverOk) {
+        alert('⚠️ Flask 서버가 실행되지 않았거나 API 엔드포인트에 접근할 수 없습니다.\n\n다음을 확인해주세요:\n1. Flask 서버가 실행 중인지 확인\n2. python run.py 명령으로 서버 시작\n3. 브라우저 콘솔에서 오류 메시지 확인');
+        return;
+    }
+    
     diagnosisInProgress = true;
-    showProgressModal();
+    
+    // 진행 상태 패널 표시
+    showProgressPanel();
+    
+    // 모든 진단 항목을 대기 상태로 변경
+    const allItems = document.querySelectorAll('.diagnosis-item');
+    const itemCodes = Array.from(allItems).map(item => item.dataset.itemCode);
+    
+    // 진단 항목들을 대기 상태로 설정
+    itemCodes.forEach(itemCode => {
+        setItemStatus(itemCode, 'waiting');
+    });
+    
+    let completedCount = 0;
+    let failedCount = 0;
+    const totalItems = itemCodes.length;
+    
+    addDebugLog(`전체 진단 시작 - 총 ${totalItems}개 항목`);
+    updateCurrentStatus('전체 진단 시작 중...');
     
     try {
-        const response = await fetch('/diagnosis/api/run-all', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                account_id: selectedAccountId
-            })
-        });
-        
-        const result = await response.json();
-        
-        if (result.status === 'success') {
-            updateProgressModal(100, result.success_count, result.failed_count);
-            setTimeout(() => {
-                closeProgressModal();
-                alert(`✅ 전체 진단 완료!\n성공: ${result.success_count}개\n실패: ${result.failed_count}개`);
-            }, 1000);
-        } else {
-            alert(`❌ 전체 진단 실패\n${result.message}`);
+        // 각 항목을 순차적으로 실행
+        for (let i = 0; i < itemCodes.length; i++) {
+            const itemCode = itemCodes[i];
+            const itemName = getItemNameByCode(itemCode);
+            
+            // 현재 실행 중인 항목 표시
+            setItemStatus(itemCode, 'running');
+            updateCurrentStatus(`[${i + 1}/${totalItems}] ${itemCode} ${itemName} 진단 중...`);
+            addDebugLog(`📋 [${itemCode}] ${itemName} 진단 시작`);
+            
+            // 현재 진단 중인 항목으로 스크롤 이동
+            scrollToCurrentItem(itemCode);
+            
+            try {
+                await runSingleDiagnosisQuiet(itemCode);
+                setItemStatus(itemCode, 'completed');
+                completedCount++;
+                addDebugLog(`✅ [${itemCode}] 진단 완료`);
+            } catch (error) {
+                setItemStatus(itemCode, 'completed'); // 실패해도 버튼은 복구
+                failedCount++;
+                addDebugLog(`❌ [${itemCode}] 진단 실패: ${error.message}`);
+            }
+            
+            // 진행률 업데이트
+            const progressPercentage = Math.round(((i + 1) / totalItems) * 100);
+            updateProgressStats(progressPercentage, completedCount, failedCount);
+            
+            // 진단 간 잠시 대기 (UI 업데이트를 위해)
+            await new Promise(resolve => setTimeout(resolve, 200));
         }
+        
+        // 완료 처리
+        updateCurrentStatus(`전체 진단 완료! 성공: ${completedCount}개, 실패: ${failedCount}개`);
+        addDebugLog(`🎉 전체 진단 완료 - 성공: ${completedCount}개, 실패: ${failedCount}개`);
+        
+        // 진단 완료 상태로 변경 (패널은 숨기지 않음)
+        markDiagnosisCompleted(completedCount, failedCount, totalItems);
+        
+        // 전체 진단 완료 후 맨 위로 부드럽게 스크롤
+        setTimeout(() => {
+            window.scrollTo({
+                top: 0,
+                behavior: 'smooth'
+            });
+        }, 1000);
+        
     } catch (error) {
-        alert(`전체 진단 중 오류가 발생했습니다: ${error.message}`);
+        addDebugLog(`❌ 전체 진단 중 오류 발생: ${error.message}`);
+        updateCurrentStatus(`진단 중 오류 발생: ${error.message}`);
     } finally {
         diagnosisInProgress = false;
-        closeProgressModal();
     }
 }
 
@@ -453,6 +501,57 @@ function displayDiagnosisResult(itemCode, result) {
             });
             resultHTML += '</div>';
         }
+        
+        // 수동 조치 가이드 표시
+        if (diagnosisResult.manual_guide) {
+            const guide = diagnosisResult.manual_guide;
+            resultHTML += '<div class="manual-guide-box">';
+            resultHTML += `<div class="manual-guide-header">
+                <h4>📋 ${guide.title}</h4>
+                <p class="manual-guide-description">${guide.description}</p>
+            </div>`;
+            
+            if (guide.steps && Array.isArray(guide.steps)) {
+                resultHTML += '<div class="manual-guide-steps">';
+                guide.steps.forEach((step, index) => {
+                    let stepClass = 'manual-step';
+                    if (step.type === 'warning') stepClass += ' step-warning';
+                    else if (step.type === 'danger') stepClass += ' step-danger';
+                    else if (step.type === 'info') stepClass += ' step-info';
+                    else if (step.type === 'step') stepClass += ' step-action';
+                    else if (step.type === 'commands') stepClass += ' step-commands';
+                    
+                    resultHTML += `<div class="${stepClass}">`;
+                    resultHTML += `<div class="step-title">${step.title}</div>`;
+                    
+                    if (step.type === 'commands' && Array.isArray(step.content)) {
+                        resultHTML += '<div class="step-content commands-content">';
+                        step.content.forEach(command => {
+                            // 빈 문자열이거나 공백만 있는 경우 줄바꿈으로 처리
+                            if (!command || command.trim() === '') {
+                                resultHTML += '<div class="command-separator"></div>';
+                                return;
+                            }
+                            
+                            // HTML과 JavaScript에서 안전하게 사용하기 위해 이스케이프 처리
+                            const escapedCommand = command.replace(/'/g, '&#39;').replace(/"/g, '&quot;');
+                            const safeCommand = command.replace(/'/g, "\\'").replace(/"/g, '\\"');
+                            
+                            resultHTML += `<div class="command-line">
+                                <code>${escapedCommand}</code>
+                                <button class="btn btn-xs btn-copy" onclick="copyToClipboard('${safeCommand}')">📋</button>
+                            </div>`;
+                        });
+                        resultHTML += '</div>';
+                    } else {
+                        resultHTML += `<div class="step-content">${step.content}</div>`;
+                    }
+                    resultHTML += '</div>';
+                });
+                resultHTML += '</div>';
+            }
+            resultHTML += '</div>';
+        }
     } else {
         resultHTML += `<div class="error-message">❌ ${diagnosisResult.error_message}</div>`;
     }
@@ -463,22 +562,6 @@ function displayDiagnosisResult(itemCode, result) {
     resultElement.style.display = 'block';
 }
 
-// 진행 상황 모달 관련 함수들
-function showProgressModal() {
-    document.getElementById('progressModal').style.display = 'flex';
-    updateProgressModal(0, 0, 0);
-}
-
-function closeProgressModal() {
-    document.getElementById('progressModal').style.display = 'none';
-}
-
-function updateProgressModal(percentage, completed, failed) {
-    document.getElementById('progressPercentage').textContent = `${percentage}%`;
-    document.getElementById('completedCount').textContent = completed;
-    document.getElementById('failedCount').textContent = failed;
-    document.getElementById('progressFill').style.width = `${percentage}%`;
-}
 
 // 자동 조치 실행
 async function executeFix(itemCode, optionId) {
@@ -577,6 +660,253 @@ function rediagnose(button) {
     const itemElement = button.closest('.diagnosis-item');
     const itemCode = itemElement.dataset.itemCode;
     runSingleDiagnosis(itemCode);
+}
+
+// 진행 상태 사이드바 표시/숨기기
+function showProgressPanel() {
+    document.getElementById('progressSidebar').style.display = 'block';
+    resetProgressStats();
+}
+
+function hideProgressPanel() {
+    document.getElementById('progressSidebar').style.display = 'none';
+}
+
+// 진단 완료 상태로 변경
+function markDiagnosisCompleted(completedCount, failedCount, totalItems) {
+    // 사이드바 제목을 완료 상태로 변경
+    const sidebarTitle = document.querySelector('#progressSidebar h4');
+    if (sidebarTitle) {
+        sidebarTitle.innerHTML = `
+            <span class="text-lg mr-2">✅</span>
+            진단 완료
+        `;
+    }
+    
+    // 완료 요약 정보 추가
+    const completionRate = Math.round((completedCount / totalItems) * 100);
+    addDebugLog(`📊 완료율: ${completionRate}% (${completedCount}/${totalItems})`);
+    
+    // 현재 상태를 완료 상태로 고정
+    updateCurrentStatus(`진단 완료 - 성공률: ${completionRate}%`);
+    
+    // 사이드바 배경색을 완료 상태로 변경
+    const progressSidebar = document.getElementById('progressSidebar');
+    if (progressSidebar) {
+        progressSidebar.style.borderLeft = '4px solid #10b981';
+        progressSidebar.style.backgroundColor = '#f0fdf4';
+    }
+}
+
+// 진행 상태 초기화
+function resetProgressStats() {
+    updateProgressStats(0, 0, 0);
+    updateCurrentStatus('진단 준비 중...');
+    clearDebugLog();
+    addDebugLog('진단 시작 준비 중...');
+    
+    // 사이드바 초기 상태로 리셋
+    const sidebarTitle = document.querySelector('#progressSidebar h4');
+    if (sidebarTitle) {
+        sidebarTitle.innerHTML = `
+            <span class="text-lg mr-2">🚀</span>
+            진단 진행 상황
+        `;
+    }
+    
+    // 사이드바 배경색 초기화
+    const progressSidebar = document.getElementById('progressSidebar');
+    if (progressSidebar) {
+        progressSidebar.style.borderLeft = '';
+        progressSidebar.style.backgroundColor = '';
+    }
+}
+
+// 진행 상태 업데이트
+function updateProgressStats(percentage, completed, failed) {
+    document.getElementById('progressPercentageValue').textContent = `${percentage}%`;
+    document.getElementById('completedCountValue').textContent = completed;
+    document.getElementById('failedCountValue').textContent = failed;
+    document.getElementById('progressFillBar').style.width = `${percentage}%`;
+}
+
+// 현재 상태 메시지 업데이트
+function updateCurrentStatus(message) {
+    document.getElementById('currentStatusText').textContent = message;
+}
+
+// 디버그 로그 추가
+function addDebugLog(message) {
+    const logContainer = document.getElementById('debugLogList');
+    const logEntry = document.createElement('div');
+    
+    // 메시지 타입에 따라 색상 결정
+    let colorClass = 'text-gray-300'; // 기본
+    if (message.includes('✅') || message.includes('완료')) {
+        colorClass = 'text-green-400';
+    } else if (message.includes('❌') || message.includes('실패')) {
+        colorClass = 'text-red-400';
+    } else if (message.includes('📋') || message.includes('시작')) {
+        colorClass = 'text-blue-400';
+    } else if (message.includes('🎉')) {
+        colorClass = 'text-yellow-400';
+    }
+    
+    logEntry.className = `${colorClass} font-mono mb-1 text-xs`;
+    logEntry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+    logContainer.appendChild(logEntry);
+    
+    // 스크롤을 맨 아래로
+    logContainer.scrollTop = logContainer.scrollHeight;
+    
+    // 로그 항목이 너무 많으면 오래된 것 제거
+    const logEntries = logContainer.children;
+    if (logEntries.length > 20) {
+        logContainer.removeChild(logEntries[0]);
+    }
+}
+
+// 디버그 로그 초기화
+function clearDebugLog() {
+    const logContainer = document.getElementById('debugLogList');
+    logContainer.innerHTML = '<div class="text-green-400 font-mono">진단 시작 준비 중...</div>';
+}
+
+// 항목 상태 설정
+function setItemStatus(itemCode, status) {
+    const itemElement = document.querySelector(`[data-item-code="${itemCode}"]`);
+    if (!itemElement) {
+        console.warn(`항목을 찾을 수 없습니다: ${itemCode}`);
+        return;
+    }
+    
+    const actionButton = itemElement.querySelector('.item-actions .btn:not(.btn-disabled)');
+    if (!actionButton) {
+        console.warn(`진단 버튼을 찾을 수 없습니다: ${itemCode}`);
+        return;
+    }
+    
+    const resultElement = document.getElementById(`result-${itemCode}`);
+    
+    if (status === 'waiting') {
+        actionButton.innerHTML = '<span>⏳</span> 대기 중';
+        actionButton.disabled = true;
+        if (resultElement) {
+            resultElement.style.display = 'none';
+        }
+    } else if (status === 'running') {
+        actionButton.innerHTML = '<span>🔄</span> 실행 중';
+        actionButton.disabled = true;
+    } else if (status === 'completed') {
+        actionButton.innerHTML = '<span>🎯</span> 진단 실행';
+        actionButton.disabled = false;
+    }
+}
+
+// 항목 코드로 이름 조회
+function getItemNameByCode(itemCode) {
+    const itemElement = document.querySelector(`[data-item-code="${itemCode}"]`);
+    if (!itemElement) return itemCode;
+    
+    const titleElement = itemElement.querySelector('.item-name');
+    return titleElement ? titleElement.textContent.trim() : itemCode;
+}
+
+// 현재 진단 중인 항목으로 스크롤 이동
+function scrollToCurrentItem(itemCode) {
+    const itemElement = document.querySelector(`[data-item-code="${itemCode}"]`);
+    if (itemElement) {
+        // 부드럽게 스크롤하면서 항목을 화면 중앙에 배치
+        itemElement.scrollIntoView({
+            behavior: 'smooth',
+            block: 'center',
+            inline: 'nearest'
+        });
+        
+        // 현재 진단 중인 항목 강조 효과
+        highlightCurrentItem(itemCode);
+    }
+}
+
+// 현재 진단 중인 항목 강조 효과
+function highlightCurrentItem(itemCode) {
+    // 기존 강조 효과 제거
+    document.querySelectorAll('.diagnosis-item').forEach(item => {
+        item.classList.remove('current-diagnosing');
+    });
+    
+    // 현재 항목에 강조 효과 추가
+    const currentItem = document.querySelector(`[data-item-code="${itemCode}"]`);
+    if (currentItem) {
+        currentItem.classList.add('current-diagnosing');
+        
+        // 3초 후 강조 효과 제거 (진단이 완료되면)
+        setTimeout(() => {
+            currentItem.classList.remove('current-diagnosing');
+        }, 3000);
+    }
+}
+
+// 조용한 단일 진단 (로그 없이)
+async function runSingleDiagnosisQuiet(itemCode) {
+    const response = await fetch('/diagnosis/api/run', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+            account_id: selectedAccountId,
+            item_code: itemCode
+        })
+    });
+    
+    // 응답이 JSON인지 확인
+    const contentType = response.headers.get('content-type');
+    if (!contentType || !contentType.includes('application/json')) {
+        const text = await response.text();
+        console.error('JSON이 아닌 응답:', text);
+        throw new Error(`서버에서 HTML을 반환했습니다. Flask 서버가 올바르게 실행되고 있는지 확인하세요.`);
+    }
+    
+    const result = await response.json();
+    
+    if (result.status === 'success') {
+        displayDiagnosisResult(itemCode, result);
+    } else {
+        throw new Error(result.message || '진단 실패');
+    }
+}
+
+// 클립보드 복사
+async function copyToClipboard(text) {
+    try {
+        await navigator.clipboard.writeText(text);
+        // 임시 알림 표시 (선택사항)
+        const button = event.target;
+        const originalText = button.textContent;
+        button.textContent = '✅';
+        setTimeout(() => {
+            button.textContent = originalText;
+        }, 1000);
+    } catch (err) {
+        // 클립보드 API가 지원되지 않는 경우 fallback
+        const textArea = document.createElement('textarea');
+        textArea.value = text;
+        document.body.appendChild(textArea);
+        textArea.select();
+        try {
+            document.execCommand('copy');
+            const button = event.target;
+            const originalText = button.textContent;
+            button.textContent = '✅';
+            setTimeout(() => {
+                button.textContent = originalText;
+            }, 1000);
+        } catch (err) {
+            alert('클립보드 복사에 실패했습니다.');
+        }
+        document.body.removeChild(textArea);
+    }
 }
 
 // 페이지 로드 시 선택된 계정이 있으면 자동 선택
