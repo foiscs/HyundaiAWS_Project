@@ -1,13 +1,13 @@
 """
-1.4 IAM 그룹 사용자 계정 관리 진단 (Flask용)
-mainHub의 iam_group_1_4.py를 Streamlit 종속성 제거하여 이식
+1.4 IAM 그룹 관리 체커
+IAM 그룹의 권한 관리 상태를 점검합니다.
 """
 import boto3
-from ..base_checker import BaseChecker
 from botocore.exceptions import ClientError
+from ..base_checker import BaseChecker
 
 class IAMGroupChecker(BaseChecker):
-    """1.4 IAM 그룹 사용자 계정 관리 진단"""
+    """1.4 IAM 그룹 관리 체커"""
     
     @property
     def item_code(self):
@@ -15,79 +15,135 @@ class IAMGroupChecker(BaseChecker):
     
     @property 
     def item_name(self):
-        return "IAM 그룹 사용자 계정 관리"
+        return "IAM 그룹 관리"
     
     def run_diagnosis(self):
-        """
-        진단 수행
-        - 모든 IAM 사용자가 하나 이상의 그룹에 속해 있는지 점검하고, 미소속 사용자 목록을 반환
-        """
+        """진단 실행"""
         try:
             if self.session:
                 iam = self.session.client('iam')
             else:
                 iam = boto3.client('iam')
-                
-            users_not_in_group = []
-            total_users = 0
-
+            
+            ungrouped_users = []
+            all_users = []
+            group_stats = {}
+            
+            # IAM 사용자 목록 조회
             paginator = iam.get_paginator('list_users')
             for page in paginator.paginate():
                 for user in page['Users']:
-                    total_users += 1
                     user_name = user['UserName']
+                    all_users.append(user_name)
                     
-                    # 사용자가 속한 그룹 확인
-                    groups_response = iam.list_groups_for_user(UserName=user_name)
-                    if not groups_response.get('Groups'):
-                        users_not_in_group.append(user_name)
-
-            # 위험도 계산
-            unassigned_count = len(users_not_in_group)
-            risk_level = self.calculate_risk_level(
-                unassigned_count,
-                2 if unassigned_count > 3 else 1  # 많은 미소속 사용자는 더 심각
-            )
-
+                    try:
+                        # 사용자가 속한 그룹 확인
+                        groups_response = iam.get_groups_for_user(UserName=user_name)
+                        user_groups = groups_response.get('Groups', [])
+                        
+                        if not user_groups:
+                            ungrouped_users.append({
+                                'username': user_name,
+                                'creation_date': user['CreateDate'].strftime('%Y-%m-%d'),
+                                'user_id': user.get('UserId', 'N/A')
+                            })
+                        else:
+                            # 그룹별 사용자 수 통계
+                            for group in user_groups:
+                                group_name = group['GroupName']
+                                if group_name not in group_stats:
+                                    group_stats[group_name] = []
+                                group_stats[group_name].append(user_name)
+                                
+                    except Exception:
+                        # 개별 사용자 그룹 조회 실패 시 그룹 없음으로 간주
+                        ungrouped_users.append({
+                            'username': user_name,
+                            'creation_date': user['CreateDate'].strftime('%Y-%m-%d'),
+                            'user_id': user.get('UserId', 'N/A')
+                        })
+            
+            # IAM 그룹 정보 조회
+            try:
+                groups_paginator = iam.get_paginator('list_groups')
+                total_groups = 0
+                for groups_page in groups_paginator.paginate():
+                    total_groups += len(groups_page['Groups'])
+            except Exception:
+                total_groups = len(group_stats)
+            
+            # 결과 분석
+            has_issues = len(ungrouped_users) > 0
+            risk_level = self.calculate_risk_level(len(ungrouped_users))
+            
             return {
-                "status": "success",
-                "users_not_in_group": users_not_in_group,
-                "unassigned_count": unassigned_count,
-                "total_users": total_users,
-                "risk_level": risk_level,
-                "has_issues": unassigned_count > 0
+                'status': 'success',
+                'has_issues': has_issues,
+                'risk_level': risk_level,
+                'total_users': len(all_users),
+                'total_groups': total_groups,
+                'ungrouped_users': ungrouped_users,
+                'ungrouped_count': len(ungrouped_users),
+                'grouped_count': len(all_users) - len(ungrouped_users),
+                'group_stats': group_stats,
+                'recommendation': "모든 IAM 사용자는 적절한 권한 그룹에 속해야 합니다. 개별 사용자에게 직접 정책을 할당하는 것보다 그룹을 통한 권한 관리를 권장합니다."
             }
-
+            
         except ClientError as e:
             return {
-                "status": "error",
-                "error_message": str(e)
+                'status': 'error',
+                'error_message': f'IAM 정보를 조회하는 중 오류가 발생했습니다: {str(e)}'
+            }
+        except Exception as e:
+            return {
+                'status': 'error',
+                'error_message': f'진단 수행 중 예상치 못한 오류가 발생했습니다: {str(e)}'
             }
     
     def _format_result_summary(self, result):
         """결과 요약 포맷팅"""
-        total_users = result.get('total_users', 0)
-        unassigned_count = result.get('unassigned_count', 0)
-        
-        if unassigned_count > 0:
-            return f"⚠️ 전체 {total_users}개 사용자 중 {unassigned_count}개가 IAM 그룹에 속하지 않습니다."
+        if result.get('has_issues'):
+            ungrouped_count = result.get('ungrouped_count', 0)
+            total_count = result.get('total_users', 0)
+            return f"⚠️ 전체 {total_count}개 사용자 중 {ungrouped_count}개가 IAM 그룹에 속하지 않습니다."
         else:
-            return f"✅ 모든 {total_users}개 사용자가 IAM 그룹에 속해 있습니다."
+            total_count = result.get('total_users', 0)
+            return f"✅ 모든 {total_count}개 사용자가 적절한 IAM 그룹에 속해 있습니다."
     
     def _format_result_details(self, result):
         """결과 상세 정보 포맷팅"""
         details = {
-            "사용자 통계": {
-                "전체 사용자 수": result.get('total_users', 0),
-                "그룹 미소속 사용자": result.get('unassigned_count', 0),
-                "recommendation": "모든 IAM 사용자는 적절한 권한 관리를 위해 그룹에 속해야 합니다."
+            'total_users': {
+                'count': result.get('total_users', 0),
+                'description': '전체 IAM 사용자 수'
+            },
+            'total_groups': {
+                'count': result.get('total_groups', 0),
+                'description': '전체 IAM 그룹 수'
+            },
+            'grouped_users': {
+                'count': result.get('grouped_count', 0),
+                'description': '그룹에 속한 사용자 수'
             }
         }
         
-        if result.get('users_not_in_group'):
-            details["그룹 미소속 사용자 목록"] = {
-                "users": result['users_not_in_group'],
-                "recommendation": "해당 사용자들을 적절한 IAM 그룹에 할당하여 권한을 관리하세요."
+        if result.get('has_issues'):
+            ungrouped_users = result.get('ungrouped_users', [])
+            details['ungrouped_users'] = {
+                'count': len(ungrouped_users),
+                'users': [user['username'] for user in ungrouped_users],
+                'description': 'IAM 그룹에 속하지 않은 사용자',
+                'details': ungrouped_users,
+                'recommendation': result.get('recommendation', '')
+            }
+        
+        # 그룹별 통계 정보 추가
+        group_stats = result.get('group_stats', {})
+        if group_stats:
+            details['group_distribution'] = {
+                'groups': len(group_stats),
+                'details': {group: len(users) for group, users in group_stats.items()},
+                'description': '그룹별 사용자 분포'
             }
         
         return details
@@ -97,51 +153,21 @@ class IAMGroupChecker(BaseChecker):
         if not result.get('has_issues'):
             return None
         
-        users_not_in_group = result.get('users_not_in_group', [])
+        ungrouped_users = result.get('ungrouped_users', [])
+        if not ungrouped_users:
+            return None
         
-        if users_not_in_group:
-            return [{
-                "type": "assign_to_groups",
-                "title": "IAM 그룹 할당",
-                "description": f"{len(users_not_in_group)}개 사용자를 IAM 그룹에 할당합니다.",
-                "items": [{"user": user, "action": "IAM 그룹에 할당"} 
-                         for user in users_not_in_group],
-                "severity": "medium",
-                "requires_group_selection": True
-            }]
-        
-        return None
-    
-    def get_available_groups(self):
-        """사용 가능한 IAM 그룹 목록 반환"""
-        try:
-            if self.session:
-                iam = self.session.client('iam')
-            else:
-                iam = boto3.client('iam')
-            
-            groups_response = iam.list_groups()
-            return [group['GroupName'] for group in groups_response['Groups']]
-            
-        except ClientError as e:
-            return []
-    
-    def create_group(self, group_name):
-        """새 IAM 그룹 생성"""
-        try:
-            if self.session:
-                iam = self.session.client('iam')
-            else:
-                iam = boto3.client('iam')
-            
-            iam.create_group(GroupName=group_name)
-            return {"status": "success", "message": f"그룹 '{group_name}' 생성 완료"}
-            
-        except ClientError as e:
-            return {"status": "error", "message": str(e)}
+        # 기본 그룹 생성 및 할당 옵션 제공
+        return [{
+            'id': 'assign_to_default_group',
+            'title': '기본 그룹에 사용자 할당',
+            'description': f'{len(ungrouped_users)}개의 사용자를 기본 그룹(ReadOnlyUsers)에 할당합니다.',
+            'items': [{'id': user['username'], 'name': user['username'], 'description': f"{user['username']} (생성일: {user['creation_date']})"} for user in ungrouped_users],
+            'action_type': 'assign_group'
+        }]
     
     def execute_fix(self, selected_items):
-        """조치 실행"""
+        """자동 조치 실행"""
         try:
             if self.session:
                 iam = self.session.client('iam')
@@ -149,30 +175,68 @@ class IAMGroupChecker(BaseChecker):
                 iam = boto3.client('iam')
             
             results = []
-            user_group_assignments = selected_items.get('user_group_assignments', {})
+            default_group_name = 'ReadOnlyUsers'
             
-            for user_name, group_name in user_group_assignments.items():
-                try:
-                    iam.add_user_to_group(UserName=user_name, GroupName=group_name)
-                    results.append({
-                        "user": user_name,
-                        "action": f"그룹 '{group_name}'에 추가",
-                        "status": "success"
-                    })
-                except ClientError as e:
-                    results.append({
-                        "user": user_name,
-                        "action": f"그룹 '{group_name}'에 추가",
-                        "status": "error",
-                        "error": str(e)
-                    })
+            for fix_id, items in selected_items.items():
+                if fix_id == 'assign_to_default_group':
+                    # 기본 그룹이 존재하는지 확인하고 없으면 생성
+                    try:
+                        iam.get_group(GroupName=default_group_name)
+                    except ClientError as e:
+                        if e.response['Error']['Code'] == 'NoSuchEntity':
+                            try:
+                                # 기본 그룹 생성
+                                iam.create_group(
+                                    GroupName=default_group_name,
+                                    Path='/'
+                                )
+                                
+                                # ReadOnly 정책 연결
+                                iam.attach_group_policy(
+                                    GroupName=default_group_name,
+                                    PolicyArn='arn:aws:iam::aws:policy/ReadOnlyAccess'
+                                )
+                                
+                                results.append({
+                                    'item': 'system',
+                                    'status': 'success',
+                                    'message': f'{default_group_name} 그룹이 생성되었습니다.'
+                                })
+                            except Exception as create_error:
+                                results.append({
+                                    'item': 'system',
+                                    'status': 'error',
+                                    'message': f'기본 그룹 생성 실패: {str(create_error)}'
+                                })
+                                continue
+                    
+                    # 사용자를 그룹에 할당
+                    for item in items:
+                        user_name = item['id']
+                        try:
+                            iam.add_user_to_group(
+                                GroupName=default_group_name,
+                                UserName=user_name
+                            )
+                            
+                            results.append({
+                                'item': user_name,
+                                'status': 'success',
+                                'message': f'{user_name} 사용자가 {default_group_name} 그룹에 추가되었습니다.'
+                            })
+                            
+                        except ClientError as e:
+                            results.append({
+                                'item': user_name,
+                                'status': 'error',
+                                'message': f'{user_name} 그룹 할당 실패: {str(e)}'
+                            })
             
             return results
             
         except Exception as e:
             return [{
-                "user": "전체",
-                "action": "그룹 할당",
-                "status": "error",
-                "error": str(e)
+                'item': 'system',
+                'status': 'error',
+                'message': f'조치 실행 중 오류가 발생했습니다: {str(e)}'
             }]

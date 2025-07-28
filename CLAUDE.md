@@ -2,27 +2,30 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+**언어 설정**: 앞으로 모든 질의응답은 한글로 수행합니다.
+
 ## Project Overview
 
 This is a multi-component AWS security management project with three main components:
 
 1. **SHIELDUS-AWS-CHECKER** - Automated AWS security compliance checker based on SK Shieldus cloud security guidelines
-2. **mainHub** - Streamlit-based web UI for integrated security management platform (WALB)
+2. **walb-flask** - Flask 기반 웹 UI로 통합 보안 관리 플랫폼 (WALB) - mainHub에서 이식 완료
 3. **WALB** - Terraform infrastructure-as-code for secure AWS environment provisioning
 
 ## Development Environment
 
 **Python Version**: 3.9.0
 
-**Dependencies**: Install from root requirements.txt:
+**Dependencies**: 
 
+### walb-flask 요구사항:
 ```bash
+cd walb-flask
 pip install -r requirements.txt
 ```
 
-Required packages:
-
--   streamlit>=1.28.0
+주요 패키지:
+-   Flask>=2.3.0
 -   boto3>=1.20.0
 -   botocore>=1.23.0
 -   python-dateutil>=2.8.2
@@ -42,18 +45,17 @@ python main.py
 python -c "from account_management.1_1_user_account import check; check()"
 ```
 
-### mainHub (Streamlit Web UI)
+### walb-flask (Flask Web UI)
 
 ```bash
-# Navigate to mainHub directory
-cd mainHub
+# Navigate to walb-flask directory
+cd walb-flask
 
-# Run the web application
-streamlit run main.py
+# Run the Flask application
+python run.py
 
-# Run specific page for development/testing
-streamlit run pages/connection.py
-streamlit run pages/diagnosis.py
+# Or using Flask CLI
+flask run --host=0.0.0.0 --port=5000
 ```
 
 ### WALB (Terraform Infrastructure)
@@ -284,12 +286,13 @@ python -c "from operation.4_1_ebs_encryption import check; print(check())"
 python -c "from aws_client import AWSClientManager; mgr = AWSClientManager(); print(mgr.validate_credentials())"
 ```
 
-### mainHub Testing
+### walb-flask Testing
 
 ```bash
-# Test Streamlit components locally
-streamlit run main.py
-# Navigate through connection and diagnosis workflows
+# Flask 애플리케이션 테스트
+cd walb-flask
+python run.py
+# 브라우저에서 http://localhost:5000 접속하여 연결 및 진단 워크플로우 테스트
 ```
 
 ### WALB Testing
@@ -312,53 +315,33 @@ terraform plan -var-file="terraform.tfvars"
 
 ## Development Guidelines
 
-**IMPORTANT**: Only work within the `mainHub/` directory. Other directories (`SHIELDUS-AWS-CHECKER/`, `WALB/`) are managed by team members and should not be modified.
+**IMPORTANT**: 주로 `walb-flask/` 디렉토리에서 작업합니다. `SHIELDUS-AWS-CHECKER/`와 `WALB/` 디렉토리는 팀원들이 관리하므로 수정하지 마세요.
 
-**BACKUP FILES**: Never modify files in the `mainHub/backup/` directory. These are legacy files from before refactoring:
-- `backup/connection_backup.py` - Legacy connection page (pre-refactoring)
-- `backup/diagnosis_backup.py` - Legacy diagnosis page (pre-refactoring)
+**참고사항**: `mainHub/` 디렉토리는 레거시 Streamlit 기반 코드로, 현재는 `walb-flask/`로 완전히 이식되었습니다.
 
-These backup files are kept for reference only and should not be used or modified. The current active files are in `mainHub/pages/` and `mainHub/components/`.
+### Flask 개발 가이드라인
 
-### CSS Styling Guidelines
+**체커 구현 규칙:**
+- 모든 체커는 `BaseChecker` 클래스를 상속받아야 합니다
+- `run_diagnosis()`, `execute_fix()` 메서드를 필수로 구현해야 합니다
+- CLI 입력 대신 웹 인터페이스에서 사용자 상호작용을 처리해야 합니다
+- `print()` 문 대신 구조화된 데이터를 반환해야 합니다
 
-When working with CSS styles in Streamlit applications, **ALWAYS use specific `data-testid` selectors** for better reliability and maintainability:
+**CSS 스타일링 가이드라인:**
+- Tailwind CSS 클래스를 우선적으로 사용합니다
+- 커스텀 CSS는 `static/css/` 디렉토리에 모듈별로 분리합니다
+- 반응형 디자인을 고려하여 모바일/데스크톱 호환성을 유지합니다
 
-**Preferred CSS Selectors:**
-```css
-/* Use data-testid for precise targeting */
-div[data-testid="stRadio"] { }
-div[data-testid="stSelectbox"] { }
-div[data-testid="stButton"] { }
-div[data-testid="stExpander"] { }
-div[data-testid="stExpanderHeader"] { }
-div[data-testid="stExpanderDetails"] { }
-div[data-testid="stSidebar"] { }
-div[data-testid="stVerticalBlock"] { }
-div[data-testid="stHorizontalBlock"] { }
-div[data-testid="stColumn"] { }
-div[data-testid="metric-container"] { }
-```
-
-**Avoid Generic Selectors:**
-```css
-/* Avoid these - they may break with Streamlit updates */
-.streamlit-expanderHeader { } /* Use div[data-testid="stExpanderHeader"] instead */
-.stExpander { } /* Use div[data-testid="stExpander"] instead */
-.stButton { } /* Use div[data-testid="stButton"] instead */
-```
-
-**Best Practices:**
-- Always inspect browser DevTools to find the exact `data-testid` values
-- Use combination selectors when needed: `div[data-testid="stSidebar"] div[data-testid="stButton"]`
-- Add `!important` only when absolutely necessary for Streamlit override
-- Test CSS changes across different browsers and Streamlit versions
-- Document any custom selectors for future reference
+**JavaScript 가이드라인:**
+- 바닐라 JavaScript를 사용하며 jQuery 등 외부 라이브러리는 피합니다
+- AJAX 요청은 fetch API를 사용합니다
+- 에러 처리와 로딩 상태 표시를 필수로 구현합니다
 
 ## Project-Specific Notes
 
 -   SHIELDUS-AWS-CHECKER contains 41 security check items based on SK Shieldus guidelines
 -   Some checks (EKS-related) require manual verification with kubectl
--   mainHub provides both UI-driven diagnosis and automated infrastructure provisioning
+-   walb-flask provides web-based UI for diagnosis and AWS account management
 -   Terraform modules are designed for production-ready secure deployments
 -   The codebase supports Korean language output for SK Shieldus integration
+-   현재 15개 체커만 Flask용으로 구현되어 있으며, 나머지 26개는 추가 구현이 필요합니다

@@ -268,27 +268,28 @@ class DiagnosisService:
             BaseChecker instance or None: 체커 인스턴스
         """
         try:
-            # 체커 매핑 딕셔너리 (mainHub에 실제로 있는 15개만)
+            # 체커 매핑 딕셔너리 (SHIELDUS-AWS-CHECKER에서 이식된 체커들)
             checker_mapping = {
-                # 계정 관리 (9개)
+                # 계정 관리 (10개) - 모두 구현 완료
                 "1.1": "app.checkers.account_management.user_account_1_1.UserAccountChecker",
                 "1.2": "app.checkers.account_management.iam_single_account_1_2.IAMSingleAccountChecker",
                 "1.3": "app.checkers.account_management.iam_identification_1_3.IAMIdentificationChecker",
                 "1.4": "app.checkers.account_management.iam_group_1_4.IAMGroupChecker",
                 "1.5": "app.checkers.account_management.ec2_key_pair_access_1_5.KeyPairAccessChecker",
-                "1.6": "app.checkers.account_management.s3_key_pair_storage_1_6.KeyPairStorageChecker",
-                "1.8": "app.checkers.account_management.access_key_mgmt_1_8.AccessKeyManagement18",
+                "1.6": "app.checkers.account_management.s3_key_storage_1_6.S3KeyStorageChecker",
+                "1.7": "app.checkers.account_management.root_account_usage_1_7.RootAccountUsageChecker",
+                "1.8": "app.checkers.account_management.access_key_mgmt_1_8.AccessKeyManagementChecker",
                 "1.9": "app.checkers.account_management.mfa_setting_1_9.MFASettingChecker",
                 "1.10": "app.checkers.account_management.password_policy_1_10.PasswordPolicyChecker",
                 
                 # 권한 관리 (3개)
-                "2.1": "app.checkers.authorization.instance_service_policy_2_1.InstanceServicePolicyChecker",
-                "2.2": "app.checkers.authorization.network_service_policy_2_2.NetworkServicePolicyChecker",
-                "2.3": "app.checkers.authorization.other_service_policy_2_3.OtherServicePolicyChecker",
+                "2.1": "app.checkers.authorization.instance_service_policy_2_1.InstanceServicePolicyChecker",  # 구현 필요
+                "2.2": "app.checkers.authorization.network_service_policy_2_2.NetworkServicePolicyChecker",  # 구현 필요
+                "2.3": "app.checkers.authorization.other_service_policy_2_3.OtherServicePolicyChecker",  # 구현 필요
                 
                 # 가상 자원 (2개)
-                "3.1": "app.checkers.virtual_resources.security_group_any_3_1.SecurityGroupAnyChecker",
-                "3.2": "app.checkers.virtual_resources.security_group_unnecessary_3_2.SecurityGroupUnnecessaryChecker"
+                "3.1": "app.checkers.virtual_resources.security_group_any_3_1.SecurityGroupAnyChecker",  # 구현 필요
+                "3.2": "app.checkers.virtual_resources.security_group_unnecessary_3_2.SecurityGroupUnnecessaryChecker"  # 구현 필요
             }
             
             # 체커 클래스 경로 조회
@@ -302,8 +303,11 @@ class DiagnosisService:
             
             try:
                 import importlib
+                print(f"[DEBUG] 임포트 시도: {module_path}.{class_name}")
                 module = importlib.import_module(module_path)
+                print(f"[DEBUG] 모듈 임포트 성공: {module_path}")
                 checker_class = getattr(module, class_name)
+                print(f"[DEBUG] 클래스 조회 성공: {class_name}")
                 return checker_class(session=aws_session)
             except ImportError as e:
                 print(f"체커 모듈 임포트 실패 ({module_path}): {str(e)}")

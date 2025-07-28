@@ -1,4 +1,4 @@
-{% extends "layouts/base.html" %}
+{% extends "base.html" %}
 {% set page_title = "보안 진단" %}
 
 {% block title %}{{ page_title }}{% endblock %}
@@ -258,25 +258,8 @@ let diagnosisInProgress = false;
 function selectAccount(accountId) {
     selectedAccountId = accountId;
     
-    // 기존 선택 해제
-    document.querySelectorAll('.account-card').forEach(card => {
-        card.classList.remove('selected');
-    });
-    
-    // 새 선택 적용
-    document.querySelector(`[data-account-id="${accountId}"]`).classList.add('selected');
-    
-    // 제어판과 진단 항목 표시
-    document.getElementById('controlPanel').style.display = 'block';
-    document.getElementById('diagnosisItems').style.display = 'block';
-    
-    // 부드러운 스크롤
-    setTimeout(() => {
-        document.getElementById('controlPanel').scrollIntoView({
-            behavior: 'smooth',
-            block: 'start'
-        });
-    }, 300);
+    // 페이지 새로고침으로 서버에서 데이터 받아오기
+    window.location.href = `/diagnosis?account=${accountId}`;
 }
 
 // 연결 테스트
@@ -415,12 +398,61 @@ function displayDiagnosisResult(itemCode, result) {
             resultHTML += '<div class="result-item"><strong>✅ 보안 이슈가 발견되지 않았습니다</strong></div>';
         }
         
-        // 추가 결과 정보
-        Object.keys(diagnosisResult).forEach(key => {
-            if (!['status', 'risk_level', 'has_issues'].includes(key)) {
-                resultHTML += `<div class="result-item"><strong>${key}:</strong> ${diagnosisResult[key]}</div>`;
-            }
-        });
+        // 요약 정보 표시
+        if (diagnosisResult.summary) {
+            resultHTML += `<div class="result-item"><strong>summary:</strong> ${diagnosisResult.summary}</div>`;
+        }
+        
+        // 상세 정보가 있으면 구조화된 형태로 표시
+        if (diagnosisResult.details && typeof diagnosisResult.details === 'object') {
+            resultHTML += '<div class="result-details">';
+            Object.entries(diagnosisResult.details).forEach(([key, value]) => {
+                if (typeof value === 'object' && value !== null) {
+                    resultHTML += `<div class="detail-section"><strong>${key}:</strong>`;
+                    if (value.count !== undefined) {
+                        resultHTML += ` ${value.count}개`;
+                    }
+                    if (value.users && Array.isArray(value.users)) {
+                        resultHTML += ` (${value.users.join(', ')})`;
+                    }
+                    if (value.description) {
+                        resultHTML += ` - ${value.description}`;
+                    }
+                    resultHTML += '</div>';
+                } else {
+                    resultHTML += `<div class="result-item"><strong>${key}:</strong> ${value}</div>`;
+                }
+            });
+            resultHTML += '</div>';
+        }
+        
+        // 자동 조치 옵션 표시
+        if (diagnosisResult.fix_options && Array.isArray(diagnosisResult.fix_options)) {
+            resultHTML += '<div class="fix-options">';
+            resultHTML += '<strong>자동 조치 옵션:</strong>';
+            diagnosisResult.fix_options.forEach((option, index) => {
+                resultHTML += `
+                    <div class="fix-option">
+                        <div class="fix-option-header">
+                            <h4>${option.title}</h4>
+                            <p>${option.description}</p>
+                        </div>
+                        <div class="fix-option-items">
+                            ${option.items.map(item => `
+                                <label class="fix-item">
+                                    <input type="checkbox" value="${item.id}" data-option-id="${option.id}" checked>
+                                    <span>${item.name} - ${item.description}</span>
+                                </label>
+                            `).join('')}
+                        </div>
+                        <button class="btn btn-warning btn-fix" onclick="executeFix('${itemCode}', '${option.id}')">
+                            <span>⚡</span> ${option.title} 실행
+                        </button>
+                    </div>
+                `;
+            });
+            resultHTML += '</div>';
+        }
     } else {
         resultHTML += `<div class="error-message">❌ ${diagnosisResult.error_message}</div>`;
     }
@@ -448,6 +480,98 @@ function updateProgressModal(percentage, completed, failed) {
     document.getElementById('progressFill').style.width = `${percentage}%`;
 }
 
+// 자동 조치 실행
+async function executeFix(itemCode, optionId) {
+    if (!selectedAccountId) {
+        alert('계정을 선택해주세요.');
+        return;
+    }
+    
+    // 선택된 항목들 수집
+    const checkboxes = document.querySelectorAll(`input[data-option-id="${optionId}"]:checked`);
+    if (checkboxes.length === 0) {
+        alert('조치할 항목을 선택해주세요.');
+        return;
+    }
+    
+    const selectedItems = {};
+    selectedItems[optionId] = Array.from(checkboxes).map(cb => ({
+        id: cb.value,
+        name: cb.value,
+        description: cb.parentElement.textContent.trim()
+    }));
+    
+    // 확인 메시지
+    const itemCount = checkboxes.length;
+    const confirmMessage = `정말로 ${itemCount}개 항목에 대해 자동 조치를 실행하시겠습니까?\n\n⚠️ 이 작업은 되돌릴 수 없습니다.`;
+    
+    if (!confirm(confirmMessage)) {
+        return;
+    }
+    
+    try {
+        // 실행 버튼 비활성화
+        const executeButton = event.target;
+        const originalText = executeButton.innerHTML;
+        executeButton.disabled = true;
+        executeButton.innerHTML = '<span>⏳</span> 실행 중...';
+        
+        const response = await fetch('/diagnosis/api/fix', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                account_id: selectedAccountId,
+                item_code: itemCode,
+                selected_items: selectedItems
+            })
+        });
+        
+        const result = await response.json();
+        
+        if (result.status === 'success') {
+            let successCount = 0;
+            let failCount = 0;
+            let message = '자동 조치 실행 결과:\n\n';
+            
+            result.results.forEach(res => {
+                if (res.status === 'success') {
+                    successCount++;
+                    message += `✅ ${res.message}\n`;
+                } else {
+                    failCount++;
+                    message += `❌ ${res.message}\n`;
+                }
+            });
+            
+            message += `\n성공: ${successCount}개, 실패: ${failCount}개`;
+            alert(message);
+            
+            // 성공했으면 해당 항목 재진단
+            if (successCount > 0) {
+                setTimeout(() => {
+                    runSingleDiagnosis(itemCode);
+                }, 1000);
+            }
+        } else {
+            alert(`❌ 자동 조치 실패\n${result.message}`);
+        }
+        
+        // 버튼 복구
+        executeButton.disabled = false;
+        executeButton.innerHTML = originalText;
+        
+    } catch (error) {
+        alert(`자동 조치 실행 중 오류가 발생했습니다: ${error.message}`);
+        
+        // 버튼 복구
+        const executeButton = event.target;
+        executeButton.disabled = false;
+        executeButton.innerHTML = originalText;
+    }
+}
+
 // 재진단
 function rediagnose(button) {
     const itemElement = button.closest('.diagnosis-item');
@@ -458,12 +582,23 @@ function rediagnose(button) {
 // 페이지 로드 시 선택된 계정이 있으면 자동 선택
 document.addEventListener('DOMContentLoaded', function() {
     {% if selected_account %}
-    selectAccount('{{ selected_account.account_id }}');
+    selectedAccountId = '{{ selected_account.account_id }}';
+    
+    // 제어판과 진단 항목이 존재하면 표시
+    const controlPanel = document.getElementById('controlPanel');
+    const diagnosisItems = document.getElementById('diagnosisItems');
+    
+    if (controlPanel) {
+        controlPanel.style.display = 'block';
+    }
+    if (diagnosisItems) {
+        diagnosisItems.style.display = 'block';
+    }
     {% endif %}
 });
 </script>
 {% endblock %}
 
-{% block styles %}
+{% block extra_css %}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/pages/diagnosis.css') }}">
 {% endblock %}
