@@ -807,87 +807,22 @@ jobs:
             CLUSTER_ENDPOINT=$(aws eks describe-cluster --name "$EKS_CLUSTER_NAME" --region ${{ secrets.AWS_REGION }} --query 'cluster.endpoint' --output text)
             echo "클러스터 엔드포인트: $CLUSTER_ENDPOINT"
             
-            # aws-auth ConfigMap 확인 및 GitHub Actions 역할 추가
-            echo "🔍 aws-auth ConfigMap 확인 및 GitHub Actions 역할 추가..."
-            
-            # kubeconfig 다시 설정 (실패시를 위해)
+            # kubeconfig 다시 설정
             echo "🔧 kubeconfig 재설정..."
             aws eks update-kubeconfig --region ${{ secrets.AWS_REGION }} --name "$EKS_CLUSTER_NAME" --verbose
             
-            # 현재 aws-auth ConfigMap 백업
-            kubectl get configmap aws-auth -n kube-system -o yaml > aws-auth-backup.yaml 2>/dev/null || echo "기존 aws-auth ConfigMap 없음"
-            
-            # GitHub Actions OIDC 역할을 aws-auth에 추가
-            GITHUB_ROLE_ARN="arn:aws:iam::253157413163:role/walb-github"
-            
-            # aws-auth ConfigMap YAML 파일 생성
-            echo "apiVersion: v1" > aws-auth-temp.yaml
-            echo "kind: ConfigMap" >> aws-auth-temp.yaml
-            echo "metadata:" >> aws-auth-temp.yaml
-            echo "  name: aws-auth" >> aws-auth-temp.yaml
-            echo "  namespace: kube-system" >> aws-auth-temp.yaml
-            echo "data:" >> aws-auth-temp.yaml
-            echo "  mapRoles: |" >> aws-auth-temp.yaml
-            echo "    - rolearn: arn:aws:iam::253157413163:role/walb-github" >> aws-auth-temp.yaml
-            echo "      username: github-actions" >> aws-auth-temp.yaml
-            echo "      groups:" >> aws-auth-temp.yaml
-            echo "        - system:masters" >> aws-auth-temp.yaml
-            echo "    - rolearn: arn:aws:iam::253157413163:role/walb-eks-cluster-eks-node-group-role" >> aws-auth-temp.yaml
-            echo "      username: system:node:{{EC2PrivateDNSName}}" >> aws-auth-temp.yaml
-            echo "      groups:" >> aws-auth-temp.yaml
-            echo "        - system:bootstrappers" >> aws-auth-temp.yaml
-            echo "        - system:nodes" >> aws-auth-temp.yaml
-            
-            # 임시 파일로 kubectl apply 실행
-            kubectl apply -f aws-auth-temp.yaml
-            rm -f aws-auth-temp.yaml
-            
-            echo "✅ GitHub Actions 역할을 aws-auth ConfigMap에 추가"
-            
-            # 잠시 대기 후 재시도
-            echo "⏳ 설정 적용 대기 중..."
-            sleep 10
+            # aws-auth ConfigMap 상태 확인
+            echo "🔍 aws-auth ConfigMap 확인..."
+            kubectl get configmap aws-auth -n kube-system -o yaml || echo "aws-auth ConfigMap 없음"
             
             exit 1
           fi
 
-          # GitHub Actions 역할이 aws-auth에 등록되어 있는지 확인
-          echo "🔍 aws-auth ConfigMap에서 GitHub Actions 역할 확인..."
-          GITHUB_ROLE_ARN="arn:aws:iam::253157413163:role/walb-github"
+          # aws-auth ConfigMap 상태 확인 (정보성)
+          echo "🔍 aws-auth ConfigMap 상태 확인..."
+          kubectl get configmap aws-auth -n kube-system -o yaml | head -20 || echo "aws-auth ConfigMap 조회 실패"
           
-          if ! kubectl get configmap aws-auth -n kube-system -o yaml | grep -q "$GITHUB_ROLE_ARN"; then
-            echo "⚠️ GitHub Actions 역할이 aws-auth에 없습니다. 추가 중..."
-            
-            # 현재 aws-auth ConfigMap 백업
-            kubectl get configmap aws-auth -n kube-system -o yaml > aws-auth-backup.yaml
-            
-            # GitHub Actions OIDC 역할을 aws-auth에 추가
-            # aws-auth ConfigMap YAML 파일 생성
-            echo "apiVersion: v1" > aws-auth-temp2.yaml
-            echo "kind: ConfigMap" >> aws-auth-temp2.yaml
-            echo "metadata:" >> aws-auth-temp2.yaml
-            echo "  name: aws-auth" >> aws-auth-temp2.yaml
-            echo "  namespace: kube-system" >> aws-auth-temp2.yaml
-            echo "data:" >> aws-auth-temp2.yaml
-            echo "  mapRoles: |" >> aws-auth-temp2.yaml
-            echo "    - rolearn: arn:aws:iam::253157413163:role/walb-github" >> aws-auth-temp2.yaml
-            echo "      username: github-actions" >> aws-auth-temp2.yaml
-            echo "      groups:" >> aws-auth-temp2.yaml
-            echo "        - system:masters" >> aws-auth-temp2.yaml
-            echo "    - rolearn: arn:aws:iam::253157413163:role/walb-eks-cluster-eks-node-group-role" >> aws-auth-temp2.yaml
-            echo "      username: system:node:{{EC2PrivateDNSName}}" >> aws-auth-temp2.yaml
-            echo "      groups:" >> aws-auth-temp2.yaml
-            echo "        - system:bootstrappers" >> aws-auth-temp2.yaml
-            echo "        - system:nodes" >> aws-auth-temp2.yaml
-            
-            # 임시 파일로 kubectl apply 실행
-            kubectl apply -f aws-auth-temp2.yaml
-            rm -f aws-auth-temp2.yaml
-            
-            echo "✅ GitHub Actions 역할을 aws-auth ConfigMap에 추가 완료"
-          else
-            echo "✅ GitHub Actions 역할이 이미 aws-auth에 등록되어 있습니다"
-          fi
+          echo "✅ EKS 클러스터 연결 성공"
 
           echo "🔍 노드 상태 확인..."
           kubectl get nodes --show-labels
@@ -968,148 +903,138 @@ jobs:
           echo '  SESSION_LIFETIME: "7200"' >> configmap.yaml
         
           # Secret 생성 (DB 패스워드)
-          cat <<EOF > secret.yaml
-          apiVersion: v1
-          kind: Secret
-          metadata:
-            name: ${{ env.PROJECT_NAME }}-secret
-            namespace: ${{ env.PROJECT_NAME }}
-          type: Opaque
-          data:
-            DB_PASSWORD: $(echo -n "${{ secrets.DB_PASSWORD }}" | base64)
-          EOF
+          echo "apiVersion: v1" > secret.yaml
+          echo "kind: Secret" >> secret.yaml
+          echo "metadata:" >> secret.yaml
+          echo "  name: ${{ env.PROJECT_NAME }}-secret" >> secret.yaml
+          echo "  namespace: ${{ env.PROJECT_NAME }}" >> secret.yaml
+          echo "type: Opaque" >> secret.yaml
+          echo "data:" >> secret.yaml
+          echo "  DB_PASSWORD: $(echo -n '${{ secrets.DB_PASSWORD }}' | base64)" >> secret.yaml
           
           # Deployment 생성
-          cat <<EOF > deployment.yaml
-          apiVersion: apps/v1
-          kind: Deployment
-          metadata:
-            name: ${{ env.PROJECT_NAME }}-app
-            namespace: ${{ env.PROJECT_NAME }}
-            labels:
-              app: ${{ env.PROJECT_NAME }}-app
-          spec:
-            replicas: 2
-            selector:
-              matchLabels:
-                app: ${{ env.PROJECT_NAME }}-app
-            template:
-              metadata:
-                labels:
-                  app: ${{ env.PROJECT_NAME }}-app
-              spec:
-                serviceAccountName: ${{ env.PROJECT_NAME }}-service-account
-                containers:
-                - name: php-app
-                  image: ${{ steps.build-image.outputs.image }}
-                  ports:
-                  - containerPort: 80
-                    name: http
-                  envFrom:
-                  - configMapRef:
-                      name: ${{ env.PROJECT_NAME }}-config
-                  - secretRef:
-                      name: ${{ env.PROJECT_NAME }}-secret
-                  livenessProbe:
-                    httpGet:
-                      path: /healthcheck.php
-                      port: 80
-                    initialDelaySeconds: 60
-                    periodSeconds: 30
-                    timeoutSeconds: 10
-                  readinessProbe:
-                    httpGet:
-                      path: /healthcheck.php
-                      port: 80
-                    initialDelaySeconds: 30
-                    periodSeconds: 10
-                    timeoutSeconds: 5
-                  resources:
-                    requests:
-                      memory: "256Mi"
-                      cpu: "250m"
-                    limits:
-                      memory: "512Mi"
-                      cpu: "500m"
-                  securityContext:
-                    runAsNonRoot: false
-                    allowPrivilegeEscalation: false
-                    readOnlyRootFilesystem: false
-          EOF
+          echo "apiVersion: apps/v1" > deployment.yaml
+          echo "kind: Deployment" >> deployment.yaml
+          echo "metadata:" >> deployment.yaml
+          echo "  name: ${{ env.PROJECT_NAME }}-app" >> deployment.yaml
+          echo "  namespace: ${{ env.PROJECT_NAME }}" >> deployment.yaml
+          echo "  labels:" >> deployment.yaml
+          echo "    app: ${{ env.PROJECT_NAME }}-app" >> deployment.yaml
+          echo "spec:" >> deployment.yaml
+          echo "  replicas: 2" >> deployment.yaml
+          echo "  selector:" >> deployment.yaml
+          echo "    matchLabels:" >> deployment.yaml
+          echo "      app: ${{ env.PROJECT_NAME }}-app" >> deployment.yaml
+          echo "  template:" >> deployment.yaml
+          echo "    metadata:" >> deployment.yaml
+          echo "      labels:" >> deployment.yaml
+          echo "        app: ${{ env.PROJECT_NAME }}-app" >> deployment.yaml
+          echo "    spec:" >> deployment.yaml
+          echo "      serviceAccountName: ${{ env.PROJECT_NAME }}-service-account" >> deployment.yaml
+          echo "      containers:" >> deployment.yaml
+          echo "      - name: php-app" >> deployment.yaml
+          echo "        image: ${{ steps.build-image.outputs.image }}" >> deployment.yaml
+          echo "        ports:" >> deployment.yaml
+          echo "        - containerPort: 80" >> deployment.yaml  
+          echo "          name: http" >> deployment.yaml
+          echo "        envFrom:" >> deployment.yaml
+          echo "        - configMapRef:" >> deployment.yaml
+          echo "            name: ${{ env.PROJECT_NAME }}-config" >> deployment.yaml
+          echo "        - secretRef:" >> deployment.yaml
+          echo "            name: ${{ env.PROJECT_NAME }}-secret" >> deployment.yaml
+          echo "        livenessProbe:" >> deployment.yaml
+          echo "          httpGet:" >> deployment.yaml
+          echo "            path: /healthcheck.php" >> deployment.yaml
+          echo "            port: 80" >> deployment.yaml
+          echo "          initialDelaySeconds: 60" >> deployment.yaml
+          echo "          periodSeconds: 30" >> deployment.yaml
+          echo "          timeoutSeconds: 10" >> deployment.yaml
+          echo "        readinessProbe:" >> deployment.yaml
+          echo "          httpGet:" >> deployment.yaml
+          echo "            path: /healthcheck.php" >> deployment.yaml
+          echo "            port: 80" >> deployment.yaml
+          echo "          initialDelaySeconds: 30" >> deployment.yaml
+          echo "          periodSeconds: 10" >> deployment.yaml
+          echo "          timeoutSeconds: 5" >> deployment.yaml
+          echo "        resources:" >> deployment.yaml
+          echo "          requests:" >> deployment.yaml
+          echo '            memory: "256Mi"' >> deployment.yaml
+          echo '            cpu: "250m"' >> deployment.yaml
+          echo "          limits:" >> deployment.yaml
+          echo '            memory: "512Mi"' >> deployment.yaml
+          echo '            cpu: "500m"' >> deployment.yaml
+          echo "        securityContext:" >> deployment.yaml
+          echo "          runAsNonRoot: false" >> deployment.yaml
+          echo "          allowPrivilegeEscalation: false" >> deployment.yaml
+          echo "          readOnlyRootFilesystem: false" >> deployment.yaml
 
           # Service 생성 (Ingress 기반이므로 ClusterIP 사용)
-          cat <<EOF > service.yaml
-          apiVersion: v1
-          kind: Service
-          metadata:
-            name: ${{ env.PROJECT_NAME }}-service
-            namespace: ${{ env.PROJECT_NAME }}
-            labels:
-              app: ${{ env.PROJECT_NAME }}-app
-          spec:
-            type: ClusterIP
-            ports:
-            - port: 80
-              targetPort: 80
-              protocol: TCP
-              name: http
-            selector:
-              app: ${{ env.PROJECT_NAME }}-app
-          EOF
+          echo "apiVersion: v1" > service.yaml
+          echo "kind: Service" >> service.yaml
+          echo "metadata:" >> service.yaml
+          echo "  name: ${{ env.PROJECT_NAME }}-service" >> service.yaml
+          echo "  namespace: ${{ env.PROJECT_NAME }}" >> service.yaml
+          echo "  labels:" >> service.yaml
+          echo "    app: ${{ env.PROJECT_NAME }}-app" >> service.yaml
+          echo "spec:" >> service.yaml
+          echo "  type: ClusterIP" >> service.yaml
+          echo "  ports:" >> service.yaml
+          echo "  - port: 80" >> service.yaml
+          echo "    targetPort: 80" >> service.yaml
+          echo "    protocol: TCP" >> service.yaml
+          echo "    name: http" >> service.yaml
+          echo "  selector:" >> service.yaml
+          echo "    app: ${{ env.PROJECT_NAME }}-app" >> service.yaml
 
           # Ingress 생성 (AWS Load Balancer Controller 사용)
-          cat <<EOF > ingress.yaml
-          apiVersion: networking.k8s.io/v1
-          kind: Ingress
-          metadata:
-            name: ${{ env.PROJECT_NAME }}-ingress
-            namespace: ${{ env.PROJECT_NAME }}
-            annotations:
-              # AWS Application Load Balancer 설정
-              kubernetes.io/ingress.class: alb
-              alb.ingress.kubernetes.io/scheme: internet-facing
-              alb.ingress.kubernetes.io/target-type: ip
-              alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}]'
-              alb.ingress.kubernetes.io/subnets: subnet-039b420c65ca59f58,subnet-0ed371078691c84cf
-              
-              # Health Check 설정 (PHP 애플리케이션)
-              alb.ingress.kubernetes.io/healthcheck-path: /healthcheck.php
-              alb.ingress.kubernetes.io/healthcheck-interval-seconds: '30'
-              alb.ingress.kubernetes.io/healthcheck-timeout-seconds: '10'
-              alb.ingress.kubernetes.io/healthy-threshold-count: '2'
-              alb.ingress.kubernetes.io/unhealthy-threshold-count: '3'
-              alb.ingress.kubernetes.io/healthcheck-protocol: HTTP
-              alb.ingress.kubernetes.io/healthcheck-port: '80'
-              
-              # Load Balancer 설정
-              alb.ingress.kubernetes.io/load-balancer-name: ${{ env.PROJECT_NAME }}-ingress-alb
-              alb.ingress.kubernetes.io/target-group-attributes: "stickiness.enabled=false,deregistration_delay.timeout_seconds=60,load_balancing.algorithm.type=round_robin,slow_start.duration_seconds=30"
-          spec:
-            ingressClassName: alb
-            rules:
-            - http:
-                paths:
-                - path: /
-                  pathType: Prefix
-                  backend:
-                    service:
-                      name: ${{ env.PROJECT_NAME }}-service
-                      port:
-                        number: 80
-          EOF
+          echo "apiVersion: networking.k8s.io/v1" > ingress.yaml
+          echo "kind: Ingress" >> ingress.yaml
+          echo "metadata:" >> ingress.yaml
+          echo "  name: ${{ env.PROJECT_NAME }}-ingress" >> ingress.yaml
+          echo "  namespace: ${{ env.PROJECT_NAME }}" >> ingress.yaml
+          echo "  annotations:" >> ingress.yaml
+          echo "    # AWS Application Load Balancer 설정" >> ingress.yaml
+          echo "    kubernetes.io/ingress.class: alb" >> ingress.yaml
+          echo "    alb.ingress.kubernetes.io/scheme: internet-facing" >> ingress.yaml
+          echo "    alb.ingress.kubernetes.io/target-type: ip" >> ingress.yaml
+          echo '    alb.ingress.kubernetes.io/listen-ports: '"'"'[{"HTTP": 80}]'"'"'' >> ingress.yaml
+          echo "    alb.ingress.kubernetes.io/subnets: subnet-039b420c65ca59f58,subnet-0ed371078691c84cf" >> ingress.yaml
+          echo "    " >> ingress.yaml
+          echo "    # Health Check 설정 (PHP 애플리케이션)" >> ingress.yaml
+          echo "    alb.ingress.kubernetes.io/healthcheck-path: /healthcheck.php" >> ingress.yaml
+          echo "    alb.ingress.kubernetes.io/healthcheck-interval-seconds: '30'" >> ingress.yaml
+          echo "    alb.ingress.kubernetes.io/healthcheck-timeout-seconds: '10'" >> ingress.yaml
+          echo "    alb.ingress.kubernetes.io/healthy-threshold-count: '2'" >> ingress.yaml
+          echo "    alb.ingress.kubernetes.io/unhealthy-threshold-count: '3'" >> ingress.yaml
+          echo "    alb.ingress.kubernetes.io/healthcheck-protocol: HTTP" >> ingress.yaml
+          echo "    alb.ingress.kubernetes.io/healthcheck-port: '80'" >> ingress.yaml
+          echo "    " >> ingress.yaml
+          echo "    # Load Balancer 설정" >> ingress.yaml
+          echo "    alb.ingress.kubernetes.io/load-balancer-name: ${{ env.PROJECT_NAME }}-ingress-alb" >> ingress.yaml
+          echo '    alb.ingress.kubernetes.io/target-group-attributes: "stickiness.enabled=false,deregistration_delay.timeout_seconds=60,load_balancing.algorithm.type=round_robin,slow_start.duration_seconds=30"' >> ingress.yaml
+          echo "spec:" >> ingress.yaml
+          echo "  ingressClassName: alb" >> ingress.yaml
+          echo "  rules:" >> ingress.yaml
+          echo "  - http:" >> ingress.yaml
+          echo "      paths:" >> ingress.yaml
+          echo "      - path: /" >> ingress.yaml
+          echo "        pathType: Prefix" >> ingress.yaml
+          echo "        backend:" >> ingress.yaml
+          echo "          service:" >> ingress.yaml
+          echo "            name: ${{ env.PROJECT_NAME }}-service" >> ingress.yaml
+          echo "            port:" >> ingress.yaml
+          echo "              number: 80" >> ingress.yaml
 
           echo "✅ Ingress 기반 매니페스트 생성 완료"
 
           # ServiceAccount 생성 (IRSA용)
-          cat <<EOF > serviceaccount.yaml
-          apiVersion: v1
-          kind: ServiceAccount
-          metadata:
-            name: ${{ env.PROJECT_NAME }}-service-account
-            namespace: ${{ env.PROJECT_NAME }}
-            annotations:
-              eks.amazonaws.com/role-arn: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/walb-app-eks-app-role
-          EOF
+          echo "apiVersion: v1" > serviceaccount.yaml
+          echo "kind: ServiceAccount" >> serviceaccount.yaml
+          echo "metadata:" >> serviceaccount.yaml
+          echo "  name: ${{ env.PROJECT_NAME }}-service-account" >> serviceaccount.yaml
+          echo "  namespace: ${{ env.PROJECT_NAME }}" >> serviceaccount.yaml
+          echo "  annotations:" >> serviceaccount.yaml
+          echo "    eks.amazonaws.com/role-arn: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/walb-app-eks-app-role" >> serviceaccount.yaml
 
           echo "✅ 매니페스트 파일 생성 완료"
 
