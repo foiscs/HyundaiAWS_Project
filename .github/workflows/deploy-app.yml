@@ -677,7 +677,9 @@ jobs:
           -t -c "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_name IN ('users', 'posts', 'images', 'files');" \
           -v ON_ERROR_STOP=1 | tr -d ' ')
         
-        if [ "$EXISTING_TABLES" -eq "0" ]; then
+        echo "📊 기존 테이블 개수: $EXISTING_TABLES/4"
+        
+        if [ "$EXISTING_TABLES" -lt "4" ]; then
           echo "📝 스키마 파일 적용 중..."
           if PGPASSWORD="${{ secrets.DB_PASSWORD }}" psql \
             -h localhost \
@@ -695,7 +697,7 @@ jobs:
           fi
 
         else
-          echo "ℹ️ 테이블이 이미 존재합니다. 스키마 적용을 건너뜁니다."
+          echo "ℹ️ 모든 테이블이 이미 존재합니다 ($EXISTING_TABLES/4). 스키마 적용을 건너뜁니다."
         fi
 
         # 정리 작업
@@ -764,10 +766,23 @@ jobs:
             exit 1
           fi
 
-          # kubeconfig 업데이트 (상세 로그 포함)
-          echo "🔧 kubeconfig 업데이트 중..."
-          aws eks update-kubeconfig --region ${{ secrets.AWS_REGION }} --name "$EKS_CLUSTER_NAME" --verbose
+          # IAM 역할과 OIDC 공급자 정보 확인
+          echo "🔍 IAM 역할과 OIDC 설정 확인 중..."
+          CLUSTER_OIDC_ISSUER=$(aws eks describe-cluster --name "$EKS_CLUSTER_NAME" --region ${{ secrets.AWS_REGION }} --query 'cluster.identity.oidc.issuer' --output text)
+          echo "OIDC 발행자: $CLUSTER_OIDC_ISSUER"
+          
+          # kubeconfig 업데이트 (OIDC 기반 IAM Role 사용)
+          echo "🔧 kubeconfig 업데이트 중 (OIDC 기반 IAM Role)..."
+          aws eks update-kubeconfig \
+            --region ${{ secrets.AWS_REGION }} \
+            --name "$EKS_CLUSTER_NAME" \
+            --role-arn ${{ secrets.AWS_ROLE_ARN_APP }} \
+            --verbose
 
+          # AWS 자격 증명 확인
+          echo "🔍 현재 AWS 자격 증명 확인..."
+          aws sts get-caller-identity
+          
           # 클러스터 연결 테스트 (자세한 오류 정보 포함)
           echo "🔍 클러스터 연결 테스트..."
           if ! kubectl cluster-info --request-timeout=30s; then
@@ -775,7 +790,7 @@ jobs:
             
             # kubectl 설정 확인
             echo "kubectl 설정 확인:"
-            kubectl config view
+            kubectl config view --minify
             
             # 현재 컨텍스트 확인
             echo "현재 컨텍스트:"
@@ -785,8 +800,15 @@ jobs:
             CLUSTER_ENDPOINT=$(aws eks describe-cluster --name "$EKS_CLUSTER_NAME" --region ${{ secrets.AWS_REGION }} --query 'cluster.endpoint' --output text)
             echo "클러스터 엔드포인트: $CLUSTER_ENDPOINT"
             
-            # IAM 역할과 RBAC 매핑 확인
-            echo "EKS 클러스터의 aws-auth ConfigMap 확인이 필요할 수 있습니다."
+            # aws-auth ConfigMap 확인 시도
+            echo "🔍 aws-auth ConfigMap 확인 중..."
+            kubectl get configmap aws-auth -n kube-system -o yaml 2>/dev/null || echo "aws-auth ConfigMap 조회 실패"
+            
+            # IAM 역할 신뢰 정책 확인을 위한 정보 출력
+            echo "🔍 IAM 역할 확인이 필요할 수 있습니다:"
+            echo "  현재 사용 중인 Role ARN: ${{ secrets.AWS_ROLE_ARN_APP }}"
+            echo "  OIDC 발행자: $CLUSTER_OIDC_ISSUER"
+            
             exit 1
           fi
 
