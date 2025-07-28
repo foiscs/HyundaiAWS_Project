@@ -556,180 +556,180 @@ jobs:
 
           # Namespace 생성
           cat <<EOF > namespace.yaml
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: ${{ env.PROJECT_NAME }}
-EOF
+          apiVersion: v1
+          kind: Namespace
+          metadata:
+            name: ${{ env.PROJECT_NAME }}
+          EOF
           
           # ConfigMap 생성 (환경변수)
           cat <<EOF > configmap.yaml
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: ${{ env.PROJECT_NAME }}-config
-  namespace: ${{ env.PROJECT_NAME }}
-data:
-  DB_HOST: "${{ env.RDS_ENDPOINT }}"
-  DB_PORT: "5432"
-  DB_NAME: "mydb"
-  DB_USER: "dbadmin"
-  AWS_REGION: "${{ secrets.AWS_REGION }}"
-  AWS_S3_BUCKET: "walb-app-files"
-  AWS_S3_REGION: "${{ secrets.AWS_REGION }}"
-  STORAGE_TYPE: "s3"
-  APP_ENV: "production"
-  APP_DEBUG: "false"
-  PHP_MEMORY_LIMIT: "256M"
-  PHP_MAX_EXECUTION_TIME: "30"
-  PHP_TIMEZONE: "Asia/Seoul"
-  UPLOAD_MAX_SIZE: "10M"
-  SESSION_LIFETIME: "7200"
-EOF
+          apiVersion: v1
+          kind: ConfigMap
+          metadata:
+            name: ${{ env.PROJECT_NAME }}-config
+            namespace: ${{ env.PROJECT_NAME }}
+          data:
+            DB_HOST: "${{ env.RDS_ENDPOINT }}"
+            DB_PORT: "5432"
+            DB_NAME: "mydb"
+            DB_USER: "dbadmin"
+            AWS_REGION: "${{ secrets.AWS_REGION }}"
+            AWS_S3_BUCKET: "walb-app-files"
+            AWS_S3_REGION: "${{ secrets.AWS_REGION }}"
+            STORAGE_TYPE: "s3"
+            APP_ENV: "production"
+            APP_DEBUG: "false"
+            PHP_MEMORY_LIMIT: "256M"
+            PHP_MAX_EXECUTION_TIME: "30"
+            PHP_TIMEZONE: "Asia/Seoul"
+            UPLOAD_MAX_SIZE: "10M"
+            SESSION_LIFETIME: "7200"
+          EOF
           
           # Secret 생성 (DB 패스워드)
           cat <<EOF > secret.yaml
-apiVersion: v1
-kind: Secret
-metadata:
-  name: ${{ env.PROJECT_NAME }}-secret
-  namespace: ${{ env.PROJECT_NAME }}
-type: Opaque
-data:
-  DB_PASSWORD: $(echo -n "${{ secrets.DB_PASSWORD }}" | base64)
-EOF
+          apiVersion: v1
+          kind: Secret
+          metadata:
+            name: ${{ env.PROJECT_NAME }}-secret
+            namespace: ${{ env.PROJECT_NAME }}
+          type: Opaque
+          data:
+            DB_PASSWORD: $(echo -n "${{ secrets.DB_PASSWORD }}" | base64)
+          EOF
           
           # Deployment 생성
           cat <<EOF > deployment.yaml
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: ${{ env.PROJECT_NAME }}-app
-  namespace: ${{ env.PROJECT_NAME }}
-  labels:
-    app: ${{ env.PROJECT_NAME }}-app
-spec:
-  replicas: 2
-  selector:
-    matchLabels:
-      app: ${{ env.PROJECT_NAME }}-app
-  template:
-    metadata:
-      labels:
-        app: ${{ env.PROJECT_NAME }}-app
-    spec:
-      serviceAccountName: ${{ env.PROJECT_NAME }}-service-account
-      containers:
-      - name: php-app
-        image: ${{ steps.build-image.outputs.image }}
-        ports:
-        - containerPort: 80
-          name: http
-        envFrom:
-        - configMapRef:
-            name: ${{ env.PROJECT_NAME }}-config
-        - secretRef:
-            name: ${{ env.PROJECT_NAME }}-secret
-        livenessProbe:
-          httpGet:
-            path: /healthcheck.php
-            port: 80
-          initialDelaySeconds: 60
-          periodSeconds: 30
-          timeoutSeconds: 10
-        readinessProbe:
-          httpGet:
-            path: /healthcheck.php
-            port: 80
-          initialDelaySeconds: 30
-          periodSeconds: 10
-          timeoutSeconds: 5
-        resources:
-          requests:
-            memory: "256Mi"
-            cpu: "250m"
-          limits:
-            memory: "512Mi"
-            cpu: "500m"
-        securityContext:
-          runAsNonRoot: false
-          allowPrivilegeEscalation: false
-          readOnlyRootFilesystem: false
-EOF
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: ${{ env.PROJECT_NAME }}-app
+            namespace: ${{ env.PROJECT_NAME }}
+            labels:
+              app: ${{ env.PROJECT_NAME }}-app
+          spec:
+            replicas: 2
+            selector:
+              matchLabels:
+                app: ${{ env.PROJECT_NAME }}-app
+            template:
+              metadata:
+                labels:
+                  app: ${{ env.PROJECT_NAME }}-app
+              spec:
+                serviceAccountName: ${{ env.PROJECT_NAME }}-service-account
+                containers:
+                - name: php-app
+                  image: ${{ steps.build-image.outputs.image }}
+                  ports:
+                  - containerPort: 80
+                    name: http
+                  envFrom:
+                  - configMapRef:
+                      name: ${{ env.PROJECT_NAME }}-config
+                  - secretRef:
+                      name: ${{ env.PROJECT_NAME }}-secret
+                  livenessProbe:
+                    httpGet:
+                      path: /healthcheck.php
+                      port: 80
+                    initialDelaySeconds: 60
+                    periodSeconds: 30
+                    timeoutSeconds: 10
+                  readinessProbe:
+                    httpGet:
+                      path: /healthcheck.php
+                      port: 80
+                    initialDelaySeconds: 30
+                    periodSeconds: 10
+                    timeoutSeconds: 5
+                  resources:
+                    requests:
+                      memory: "256Mi"
+                      cpu: "250m"
+                    limits:
+                      memory: "512Mi"
+                      cpu: "500m"
+                  securityContext:
+                    runAsNonRoot: false
+                    allowPrivilegeEscalation: false
+                    readOnlyRootFilesystem: false
+          EOF
 
           # Service 생성 (Ingress 기반이므로 ClusterIP 사용)
           cat <<EOF > service.yaml
-apiVersion: v1
-kind: Service
-metadata:
-  name: ${{ env.PROJECT_NAME }}-service
-  namespace: ${{ env.PROJECT_NAME }}
-  labels:
-    app: ${{ env.PROJECT_NAME }}-app
-spec:
-  type: ClusterIP
-  ports:
-  - port: 80
-    targetPort: 80
-    protocol: TCP
-    name: http
-  selector:
-    app: ${{ env.PROJECT_NAME }}-app
-EOF
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: ${{ env.PROJECT_NAME }}-service
+            namespace: ${{ env.PROJECT_NAME }}
+            labels:
+              app: ${{ env.PROJECT_NAME }}-app
+          spec:
+            type: ClusterIP
+            ports:
+            - port: 80
+              targetPort: 80
+              protocol: TCP
+              name: http
+            selector:
+              app: ${{ env.PROJECT_NAME }}-app
+          EOF
 
           # Ingress 생성 (AWS Load Balancer Controller 사용)
           cat <<EOF > ingress.yaml
-apiVersion: networking.k8s.io/v1
-kind: Ingress
-metadata:
-  name: ${{ env.PROJECT_NAME }}-ingress
-  namespace: ${{ env.PROJECT_NAME }}
-  annotations:
-    # AWS Application Load Balancer 설정
-    kubernetes.io/ingress.class: alb
-    alb.ingress.kubernetes.io/scheme: internet-facing
-    alb.ingress.kubernetes.io/target-type: ip
-    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}]'
-    alb.ingress.kubernetes.io/subnets: subnet-039b420c65ca59f58,subnet-0ed371078691c84cf
-    
-    # Health Check 설정 (PHP 애플리케이션)
-    alb.ingress.kubernetes.io/healthcheck-path: /healthcheck.php
-    alb.ingress.kubernetes.io/healthcheck-interval-seconds: '30'
-    alb.ingress.kubernetes.io/healthcheck-timeout-seconds: '10'
-    alb.ingress.kubernetes.io/healthy-threshold-count: '2'
-    alb.ingress.kubernetes.io/unhealthy-threshold-count: '3'
-    alb.ingress.kubernetes.io/healthcheck-protocol: HTTP
-    alb.ingress.kubernetes.io/healthcheck-port: '80'
-    
-    # Load Balancer 설정
-    alb.ingress.kubernetes.io/load-balancer-name: ${{ env.PROJECT_NAME }}-ingress-alb
-    alb.ingress.kubernetes.io/target-group-attributes: "stickiness.enabled=false,deregistration_delay.timeout_seconds=60,load_balancing.algorithm.type=round_robin,slow_start.duration_seconds=30"
-spec:
-  ingressClassName: alb
-  rules:
-  - http:
-      paths:
-      - path: /
-        pathType: Prefix
-        backend:
-          service:
-            name: ${{ env.PROJECT_NAME }}-service
-            port:
-              number: 80
-EOF
+          apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            name: ${{ env.PROJECT_NAME }}-ingress
+            namespace: ${{ env.PROJECT_NAME }}
+            annotations:
+              # AWS Application Load Balancer 설정
+              kubernetes.io/ingress.class: alb
+              alb.ingress.kubernetes.io/scheme: internet-facing
+              alb.ingress.kubernetes.io/target-type: ip
+              alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}]'
+              alb.ingress.kubernetes.io/subnets: subnet-039b420c65ca59f58,subnet-0ed371078691c84cf
+              
+              # Health Check 설정 (PHP 애플리케이션)
+              alb.ingress.kubernetes.io/healthcheck-path: /healthcheck.php
+              alb.ingress.kubernetes.io/healthcheck-interval-seconds: '30'
+              alb.ingress.kubernetes.io/healthcheck-timeout-seconds: '10'
+              alb.ingress.kubernetes.io/healthy-threshold-count: '2'
+              alb.ingress.kubernetes.io/unhealthy-threshold-count: '3'
+              alb.ingress.kubernetes.io/healthcheck-protocol: HTTP
+              alb.ingress.kubernetes.io/healthcheck-port: '80'
+              
+              # Load Balancer 설정
+              alb.ingress.kubernetes.io/load-balancer-name: ${{ env.PROJECT_NAME }}-ingress-alb
+              alb.ingress.kubernetes.io/target-group-attributes: "stickiness.enabled=false,deregistration_delay.timeout_seconds=60,load_balancing.algorithm.type=round_robin,slow_start.duration_seconds=30"
+          spec:
+            ingressClassName: alb
+            rules:
+            - http:
+                paths:
+                - path: /
+                  pathType: Prefix
+                  backend:
+                    service:
+                      name: ${{ env.PROJECT_NAME }}-service
+                      port:
+                        number: 80
+          EOF
 
           echo "✅ Ingress 기반 매니페스트 생성 완료"
 
           # ServiceAccount 생성 (IRSA용)
           cat <<EOF > serviceaccount.yaml
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: ${{ env.PROJECT_NAME }}-service-account
-  namespace: ${{ env.PROJECT_NAME }}
-  annotations:
-    eks.amazonaws.com/role-arn: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/walb-app-eks-app-role
-EOF
+          apiVersion: v1
+          kind: ServiceAccount
+          metadata:
+            name: ${{ env.PROJECT_NAME }}-service-account
+            namespace: ${{ env.PROJECT_NAME }}
+            annotations:
+              eks.amazonaws.com/role-arn: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/walb-app-eks-app-role
+          EOF
 
           echo "✅ 매니페스트 파일 생성 완료"
 
