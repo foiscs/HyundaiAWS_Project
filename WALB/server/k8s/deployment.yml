@@ -26,14 +26,22 @@ spec:
       - name: simpleblog-app
         image: 253157413163.dkr.ecr.ap-northeast-2.amazonaws.com/simple-blog-app:latest
         ports:
-        - containerPort: 8000
+        - containerPort: 80
           name: http
           protocol: TCP
         env:
-        - name: SERVER_PORT
-          value: "8000"
-        - name: SPRING_PROFILES_ACTIVE
-          value: "prod"
+        - name: DB_HOST
+          value: "walb-rds-database.cx02kko4cplr.ap-northeast-2.rds.amazonaws.com"
+        - name: DB_NAME
+          value: "mydb"
+        - name: DB_USER
+          value: "dbadmin"
+        - name: DB_PASSWORD
+          value: "MySecurePassword123!"
+        - name: DB_PORT
+          value: "5432"
+        - name: APP_DEBUG
+          value: "false"
         resources:
           requests:
             memory: "256Mi"
@@ -43,16 +51,16 @@ spec:
             cpu: "500m"
         readinessProbe:
           httpGet:
-            path: /actuator/health
-            port: 8000
+            path: /healthcheck.php
+            port: 80
           initialDelaySeconds: 30
           periodSeconds: 5
           timeoutSeconds: 3
           failureThreshold: 3
         livenessProbe:
           httpGet:
-            path: /actuator/health
-            port: 8000
+            path: /healthcheck.php
+            port: 80
           initialDelaySeconds: 60
           periodSeconds: 10
           timeoutSeconds: 3
@@ -71,6 +79,6 @@ spec:
     app: simpleblog-app
   ports:
   - port: 80
-    targetPort: 8000
+    targetPort: 80
     protocol: TCP
     name: http 
