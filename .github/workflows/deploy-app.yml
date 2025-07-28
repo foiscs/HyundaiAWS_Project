@@ -275,7 +275,7 @@ jobs:
     # PostgreSQL 클라이언트 설치 및 스키마 적용
     # ===============================================
     - name: Apply Database Schema
-      if: ${{ (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/terraform') && github.event_name == 'push' }}
+      if: ${{ github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/terraform') }}
 
       run: |
         echo "🗄️ 데이터베이스 스키마 적용 중..."
@@ -742,7 +742,7 @@ jobs:
       # EKS에 애플리케이션 배포 (main 또는 terraform 브랜치일 때만)
       # ===============================================
       - name: Deploy to EKS
-        if: ${{ (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/terraform') && github.event_name == 'push' }}
+        if: ${{ github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/terraform') }}
         run: |
           echo "🚀 EKS에 애플리케이션 배포 중..."
 
@@ -821,7 +821,7 @@ jobs:
       # 배포 결과 확인
       # ===============================================
       - name: Verify Deployment
-        if: ${{ (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/terraform') && github.event_name == 'push' }}
+        if: ${{ github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/terraform') }}
 
         run: |
           echo "🔍 배포 상태 확인 중..."
@@ -870,7 +870,7 @@ jobs:
       # 배포 방법별 접속 URL 제공
       # ===============================================
       - name: Get Application URL
-        if: success() && ${{ (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/terraform') && github.event_name == 'push' }}
+        if: success() && ${{ github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/terraform') }}
 
         run: |
           echo "🔗 애플리케이션 접속 정보 확인 중..."
@@ -912,7 +912,7 @@ jobs:
       # 배포 완료 알림
       # ===============================================
       - name: Application Deployment Notification
-        if: success() && ${{ (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/terraform') && github.event_name == 'push' }}
+        if: success() && ${{ github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/terraform') }}
 
         run: |
           echo "🎉 PHP 애플리케이션 배포 완료!"
@@ -932,7 +932,7 @@ jobs:
       # 배포 실패 시 롤백
       # ===============================================
       - name: Rollback on failure
-        if: failure() && ${{ (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/terraform') && github.event_name == 'push' }}
+        if: failure() && ${{ github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/terraform') }}
 
         run: |
           echo "❌ 배포 실패 - 이전 버전으로 롤백 중..."
