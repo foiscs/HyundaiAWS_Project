@@ -809,23 +809,23 @@ jobs:
             GITHUB_ROLE_ARN="arn:aws:iam::253157413163:role/walb-github"
             
             cat <<'EOF' | kubectl apply -f -
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: aws-auth
-  namespace: kube-system
-data:
-  mapRoles: |
-    - rolearn: arn:aws:iam::253157413163:role/walb-github
-      username: github-actions
-      groups:
-        - system:masters
-    - rolearn: $GITHUB_ROLE_ARN
-      username: system:node:{{EC2PrivateDNSName}}
-      groups:
-        - system:bootstrappers
-        - system:nodes
-EOF
+            apiVersion: v1
+            kind: ConfigMap
+            metadata:
+              name: aws-auth
+              namespace: kube-system
+            data:
+              mapRoles: |
+                - rolearn: arn:aws:iam::253157413163:role/walb-github
+                  username: github-actions
+                  groups:
+                    - system:masters
+                - rolearn: $GITHUB_ROLE_ARN
+                  username: system:node:{{EC2PrivateDNSName}}
+                  groups:
+                    - system:bootstrappers
+                    - system:nodes
+            EOF
             
             echo "✅ GitHub Actions 역할을 aws-auth ConfigMap에 추가"
             
@@ -848,23 +848,23 @@ EOF
             
             # GitHub Actions OIDC 역할을 aws-auth에 추가
             cat <<'EOF' | kubectl apply -f -
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: aws-auth
-  namespace: kube-system
-data:
-  mapRoles: |
-    - rolearn: arn:aws:iam::253157413163:role/walb-github
-      username: github-actions
-      groups:
-        - system:masters
-    - rolearn: arn:aws:iam::253157413163:role/walb-app-nodegroup-role
-      username: system:node:{{EC2PrivateDNSName}}
-      groups:
-        - system:bootstrappers
-        - system:nodes
-EOF
+            apiVersion: v1
+            kind: ConfigMap
+            metadata:
+              name: aws-auth
+              namespace: kube-system
+            data:
+              mapRoles: |
+                - rolearn: arn:aws:iam::253157413163:role/walb-github
+                  username: github-actions
+                  groups:
+                    - system:masters
+                - rolearn: $GITHUB_ROLE_ARN
+                  username: system:node:{{EC2PrivateDNSName}}
+                  groups:
+                    - system:bootstrappers
+                    - system:nodes
+            EOF
             
             echo "✅ GitHub Actions 역할을 aws-auth ConfigMap에 추가 완료"
           else
