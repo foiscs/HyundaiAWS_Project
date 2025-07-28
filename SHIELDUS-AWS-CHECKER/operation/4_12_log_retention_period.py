@@ -1,4 +1,4 @@
-#  4.operation/4_12_log_retention_period.py
+# 4.operation/4_12_log_retention_period.py
 import boto3
 import json
 import time
