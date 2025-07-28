@@ -44,6 +44,7 @@ RUN composer install --no-dev --optimize-autoloader --no-interaction || \
 # 애플리케이션 코드 복사
 COPY files/app/ ./app/
 COPY files/css/ ./app/css/
+COPY files/healthcheck.php ./app/
 
 # DocumentRoot 설정
 ENV APACHE_DOCUMENT_ROOT=/var/www/html/app
