@@ -45,6 +45,7 @@ RUN composer install --no-dev --optimize-autoloader --no-interaction || \
 COPY files/app/ ./app/
 COPY files/css/ ./app/css/
 COPY files/healthcheck.php ./app/
+COPY files/db_test.php ./app/
 
 # DocumentRoot 설정
 ENV APACHE_DOCUMENT_ROOT=/var/www/html/app
