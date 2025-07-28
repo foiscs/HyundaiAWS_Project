@@ -808,7 +808,7 @@ jobs:
             # GitHub Actions OIDC 역할을 aws-auth에 추가
             GITHUB_ROLE_ARN="arn:aws:iam::253157413163:role/walb-github"
             
-            cat <<EOF | kubectl apply -f -
+            cat <<'EOF' | kubectl apply -f -
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -816,11 +816,11 @@ metadata:
   namespace: kube-system
 data:
   mapRoles: |
-    - rolearn: $GITHUB_ROLE_ARN
+    - rolearn: arn:aws:iam::253157413163:role/walb-github
       username: github-actions
       groups:
         - system:masters
-    - rolearn: arn:aws:iam::253157413163:role/walb-app-nodegroup-role
+    - rolearn: $GITHUB_ROLE_ARN
       username: system:node:{{EC2PrivateDNSName}}
       groups:
         - system:bootstrappers
@@ -847,7 +847,7 @@ EOF
             kubectl get configmap aws-auth -n kube-system -o yaml > aws-auth-backup.yaml
             
             # GitHub Actions OIDC 역할을 aws-auth에 추가
-            cat <<EOF | kubectl apply -f -
+            cat <<'EOF' | kubectl apply -f -
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -855,7 +855,7 @@ metadata:
   namespace: kube-system
 data:
   mapRoles: |
-    - rolearn: $GITHUB_ROLE_ARN
+    - rolearn: arn:aws:iam::253157413163:role/walb-github
       username: github-actions
       groups:
         - system:masters
