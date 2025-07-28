@@ -809,24 +809,22 @@ jobs:
             GITHUB_ROLE_ARN="arn:aws:iam::253157413163:role/walb-github"
             
             # aws-auth ConfigMap YAML 파일 생성
-            cat > aws-auth-temp.yaml << 'YAML_END'
-            apiVersion: v1
-            kind: ConfigMap
-            metadata:
-              name: aws-auth
-              namespace: kube-system
-            data:
-              mapRoles: |
-                - rolearn: arn:aws:iam::253157413163:role/walb-github
-                  username: github-actions
-                  groups:
-                    - system:masters
-                - rolearn: arn:aws:iam::253157413163:role/walb-eks-cluster-eks-node-group-role
-                  username: system:node:{{EC2PrivateDNSName}}
-                  groups:
-                    - system:bootstrappers
-                    - system:nodes
-            YAML_END
+            echo "apiVersion: v1" > aws-auth-temp.yaml
+            echo "kind: ConfigMap" >> aws-auth-temp.yaml
+            echo "metadata:" >> aws-auth-temp.yaml
+            echo "  name: aws-auth" >> aws-auth-temp.yaml
+            echo "  namespace: kube-system" >> aws-auth-temp.yaml
+            echo "data:" >> aws-auth-temp.yaml
+            echo "  mapRoles: |" >> aws-auth-temp.yaml
+            echo "    - rolearn: arn:aws:iam::253157413163:role/walb-github" >> aws-auth-temp.yaml
+            echo "      username: github-actions" >> aws-auth-temp.yaml
+            echo "      groups:" >> aws-auth-temp.yaml
+            echo "        - system:masters" >> aws-auth-temp.yaml
+            echo "    - rolearn: arn:aws:iam::253157413163:role/walb-eks-cluster-eks-node-group-role" >> aws-auth-temp.yaml
+            echo "      username: system:node:{{EC2PrivateDNSName}}" >> aws-auth-temp.yaml
+            echo "      groups:" >> aws-auth-temp.yaml
+            echo "        - system:bootstrappers" >> aws-auth-temp.yaml
+            echo "        - system:nodes" >> aws-auth-temp.yaml
             
             # 임시 파일로 kubectl apply 실행
             kubectl apply -f aws-auth-temp.yaml
@@ -853,24 +851,22 @@ jobs:
             
             # GitHub Actions OIDC 역할을 aws-auth에 추가
             # aws-auth ConfigMap YAML 파일 생성
-            cat > aws-auth-temp2.yaml << 'YAML_END'
-            apiVersion: v1
-            kind: ConfigMap
-            metadata:
-              name: aws-auth
-              namespace: kube-system
-            data:
-              mapRoles: |
-                - rolearn: arn:aws:iam::253157413163:role/walb-github
-                  username: github-actions
-                  groups:
-                    - system:masters
-                - rolearn: arn:aws:iam::253157413163:role/walb-eks-cluster-eks-node-group-role
-                  username: system:node:{{EC2PrivateDNSName}}
-                  groups:
-                    - system:bootstrappers
-                    - system:nodes
-            YAML_END
+            echo "apiVersion: v1" > aws-auth-temp2.yaml
+            echo "kind: ConfigMap" >> aws-auth-temp2.yaml
+            echo "metadata:" >> aws-auth-temp2.yaml
+            echo "  name: aws-auth" >> aws-auth-temp2.yaml
+            echo "  namespace: kube-system" >> aws-auth-temp2.yaml
+            echo "data:" >> aws-auth-temp2.yaml
+            echo "  mapRoles: |" >> aws-auth-temp2.yaml
+            echo "    - rolearn: arn:aws:iam::253157413163:role/walb-github" >> aws-auth-temp2.yaml
+            echo "      username: github-actions" >> aws-auth-temp2.yaml
+            echo "      groups:" >> aws-auth-temp2.yaml
+            echo "        - system:masters" >> aws-auth-temp2.yaml
+            echo "    - rolearn: arn:aws:iam::253157413163:role/walb-eks-cluster-eks-node-group-role" >> aws-auth-temp2.yaml
+            echo "      username: system:node:{{EC2PrivateDNSName}}" >> aws-auth-temp2.yaml
+            echo "      groups:" >> aws-auth-temp2.yaml
+            echo "        - system:bootstrappers" >> aws-auth-temp2.yaml
+            echo "        - system:nodes" >> aws-auth-temp2.yaml
             
             # 임시 파일로 kubectl apply 실행
             kubectl apply -f aws-auth-temp2.yaml
