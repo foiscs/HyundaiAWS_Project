@@ -1,27 +1,252 @@
 """
-AWS 계정 연결 웹 인터페이스용 커스텀 CSS 스타일
-Tailwind CSS 스타일을 Streamlit용 CSS로 변환
+WALB Connection CSS 스타일 모듈
+모든 Connection 관련 CSS 스타일을 중앙 집중 관리
 
-- get_main_styles: 전체 페이지 배경, 폰트, 기본 레이아웃 스타일
-- get_card_styles: 흰색 배경 카드, 선택 가능한 카드 스타일
-- get_step_indicator_styles: 단계 표시기 원형, 연결선, 색상 스타일
-- get_info_box_styles: 정보/경고/에러/성공 박스 타입별 색상 스타일
-- get_code_block_styles: JSON 코드 블록 다크 테마, 복사 버튼 스타일
-- get_test_result_styles: 연결 테스트 결과 테이블, 성공/실패 표시 스타일
-- get_loading_styles: 로딩 스피너 회전 애니메이션, 진행 메시지 스타일
-- get_all_styles: 모든 CSS 스타일을 통합하여 한 번에 주입
+Functions:
+- inject_custom_font: 전체 폰트 설정
+- inject_custom_button_style: 커스텀 버튼 스타일
+- inject_expander_style: Streamlit expander 스타일
+- get_main_styles: 메인 페이지 기본 스타일
+- get_all_styles: 모든 스타일 통합 반환
+
+Note: 이 파일은 diagnosis와 공통으로 사용되는 기본 스타일들을 포함
 """
 
-import streamlit as st
-
-def get_main_styles():
-    """
-    메인 페이지 전체 스타일 정의
-    - 전체 배경, 폰트, 기본 레이아웃 스타일
-    """
+def inject_custom_font():
+    """전체 폰트 설정 - 모든 Streamlit 요소에 Pretendard 강제 적용"""
     return """
     <style>
+    @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css');
     
+    /* 최상위 우선순위로 전역 폰트 강제 적용 */
+    *, *::before, *::after,
+    html, body, div, span, h1, h2, h3, h4, h5, h6, p, a, em, img, strong, sub, sup, ol, ul, li, fieldset, form, label, legend, table, caption, tbody, tfoot, thead, tr, th, td, article, aside, canvas, details, embed, figure, figcaption, footer, header, hgroup, menu, nav, output, ruby, section, summary, time, mark, audio, video, input, textarea, select, option, button {
+        font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, Roboto, 'Helvetica Neue', 'Segoe UI', 'Apple SD Gothic Neo', 'Noto Sans KR', 'Malgun Gothic', 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', sans-serif !important;
+        font-weight: inherit !important;
+    }
+    
+    /* Streamlit 클래스 기반 강제 적용 */
+    [class*="css"], [class*="st"], [class*="streamlit"] {
+        font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, Roboto, 'Helvetica Neue', 'Segoe UI', 'Apple SD Gothic Neo', 'Noto Sans KR', 'Malgun Gothic', 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', sans-serif !important;
+    }
+    
+    /* Streamlit data-testid 기반 강제 적용 */
+    [data-testid] *,
+    div[data-testid="stSidebar"] *,
+    div[data-testid="stMain"] *,
+    div[data-testid="stHeader"] *,
+    div[data-testid="stButton"] *,
+    div[data-testid="stSelectbox"] *,
+    div[data-testid="stRadio"] *,
+    div[data-testid="stTextInput"] *,
+    div[data-testid="stTextArea"] *,
+    div[data-testid="stExpander"] *,
+    div[data-testid="stExpanderHeader"] *,
+    div[data-testid="stExpanderDetails"] *,
+    div[data-testid="stMarkdown"] *,
+    div[data-testid="stMetric"] *,
+    div[data-testid="metric-container"] * {
+        font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, Roboto, 'Helvetica Neue', 'Segoe UI', 'Apple SD Gothic Neo', 'Noto Sans KR', 'Malgun Gothic', 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', sans-serif !important;
+    }
+    
+    /* 동적으로 생성되는 Streamlit 요소들 */
+    .stButton > button,
+    .stSelectbox > div,
+    .stRadio > div,
+    .stTextInput > div,
+    .stTextArea > div,
+    .stExpander > div,
+    .stMarkdown,
+    .stMetric {
+        font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, Roboto, 'Helvetica Neue', 'Segoe UI', 'Apple SD Gothic Neo', 'Noto Sans KR', 'Malgun Gothic', 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', sans-serif !important;
+    }
+    
+    .main > div {
+        padding-top: 2rem;
+    }
+    </style>
+    """
+
+def inject_custom_button_style():
+    """커스텀 버튼 스타일"""
+    return """
+    <style>
+    .stButton > button {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        border: none;
+        border-radius: 8px;
+        padding: 0.5rem 1rem;
+        font-weight: 500;
+        transition: all 0.3s ease;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    
+    .stButton > button:hover {
+        box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+        transform: translateY(-1px);
+    }
+    
+    .stButton > button:active {
+        transform: translateY(0px);
+    }
+    
+    /* Primary 버튼 */
+    div[data-testid="column"] .stButton > button[kind="primary"] {
+        background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+    }
+    
+    div[data-testid="column"] .stButton > button[kind="primary"]:hover {
+        box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+    }
+    
+    /* Secondary 버튼 */
+    div[data-testid="column"] .stButton > button[kind="secondary"] {
+        background: linear-gradient(135deg, #f3f4f6 0%, #e5e7eb 100%);
+        color: #374151;
+    }
+    
+    div[data-testid="column"] .stButton > button[kind="secondary"]:hover {
+        box-shadow: 0 4px 12px rgba(107, 114, 128, 0.2);
+    }
+    </style>
+    """
+
+def inject_expander_style():
+    """Streamlit expander 커스터마이징"""
+    return """
+    <style>
+    .streamlit-expanderHeader {
+        background-color: #f8f9fa;
+        border-radius: 8px;
+        padding: 0.75rem;
+        border: 1px solid #e9ecef;
+        font-weight: 500;
+    }
+    
+    .streamlit-expanderContent {
+        border: 1px solid #e9ecef;
+        border-top: none;
+        border-radius: 0 0 8px 8px;
+        padding: 1rem;
+        background-color: white;
+    }
+    </style>
+    """
+
+def get_sidebar_navigation_styles():
+    """사이드바 네비게이션 스타일"""
+    return """
+    <style>
+    /* 사이드바 스타일 */
+    .css-1d391kg {
+        background-color: #f8fafc;
+    }
+    
+    /* 사이드바 네비게이션 스타일 */
+    .stSidebar {
+        background-color: #f8fafc;
+    }
+    
+    /* 사이드바 네비게이션 링크 스타일 */
+    .stSidebar [data-testid="stSidebarNav"] ul {
+        padding: 0;
+        margin: 0;
+        list-style: none;
+        background: white;
+        border-radius: 12px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        padding: 0.5rem;
+        margin-bottom: 1rem;
+    }
+    
+    .stSidebar [data-testid="stSidebarNav"] ul li {
+        margin: 0.25rem 0;
+    }
+    
+    .stSidebar [data-testid="stSidebarNav"] ul li a {
+        display: flex;
+        align-items: center;
+        padding: 0.75rem 1rem;
+        text-decoration: none;
+        color: #475569;
+        border-radius: 8px;
+        transition: all 0.2s ease;
+        font-weight: 500;
+        font-size: 0.95rem;
+        position: relative;
+        overflow: hidden;
+    }
+    
+    .stSidebar [data-testid="stSidebarNav"] ul li a:before {
+        content: '';
+        position: absolute;
+        left: 0;
+        top: 0;
+        height: 100%;
+        width: 4px;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        transform: scaleY(0);
+        transition: transform 0.2s ease;
+    }
+    
+    .stSidebar [data-testid="stSidebarNav"] ul li a:hover {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        transform: translateX(4px);
+        box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+    }
+    
+    .stSidebar [data-testid="stSidebarNav"] ul li a:hover:before {
+        transform: scaleY(1);
+    }
+    
+    /* 활성 페이지 스타일 */
+    .stSidebar [data-testid="stSidebarNav"] ul li a[aria-current="page"] {
+        background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+        color: white;
+        box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+        transform: translateX(4px);
+    }
+    
+    .stSidebar [data-testid="stSidebarNav"] ul li a[aria-current="page"]:before {
+        transform: scaleY(1);
+        background: rgba(255, 255, 255, 0.3);
+    }
+    
+    /* 각 페이지별 아이콘 추가 */
+    .stSidebar [data-testid="stSidebarNav"] ul li a[href="/"]::before {
+        content: "🏠 ";
+        margin-right: 0.5rem;
+    }
+    
+    .stSidebar [data-testid="stSidebarNav"] ul li a[href="/connection"]::before {
+        content: "🔗 ";
+        margin-right: 0.5rem;
+    }
+    
+    .stSidebar [data-testid="stSidebarNav"] ul li a[href="/connection_backup"]::before {
+        content: "🔗📋 ";
+        margin-right: 0.5rem;
+    }
+    
+    .stSidebar [data-testid="stSidebarNav"] ul li a[href="/diagnosis"]::before {
+        content: "🛡️ ";
+        margin-right: 0.5rem;
+    }
+    
+    .stSidebar [data-testid="stSidebarNav"] ul li a[href="/diagnosis_backup"]::before {
+        content: "🛡️📋 ";
+        margin-right: 0.5rem;
+    }
+    </style>
+    """
+
+
+def get_main_styles():
+    """메인 페이지 기본 스타일"""
+    return """
+    <style>
     /* 메인 컨테이너 */
     .main-container {
         width: 100%;
@@ -38,511 +263,218 @@ def get_main_styles():
         align-items: center;
         gap: 0.75rem;
     }
+    
     .stMainBlockContainer {
-        padding-top: 5rem !important ;
-    }
-    </style>
-    """
-
-def get_card_styles():
-    """
-    카드 컴포넌트 스타일 정의
-    - 흰색 배경, 그림자, 둥근 모서리
-    """
-    return """
-    <style>
-    /* 기본 카드 스타일 */
-    .custom-card {
-        background-color: white;
-        border-radius: 8px;
-        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-        padding: 1.5rem;
-        margin: 1rem 0;
-        border: 1px solid #E5E7EB;
+        padding-top: 5rem !important;
     }
     
-    /* 선택 가능한 카드 */
-    .selectable-card {
-        background-color: white;
+    /* 일반적인 카드 스타일 */
+    .stContainer > div {
+        background: white;
+        border-radius: 12px;
+        padding: 1.5rem;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+        margin-bottom: 1rem;
+    }
+    
+    /* 입력 필드 스타일 */
+    .stTextInput > div > div > input {
+        border-radius: 8px;
+        border: 1px solid #d1d5db;
+        padding: 0.75rem;
+        font-size: 0.9rem;
+    }
+    
+    .stTextInput > div > div > input:focus {
+        border-color: #3b82f6;
+        box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+    }
+    
+    /* 선택 박스 스타일 */
+    .stSelectbox > div > div > div {
+        border-radius: 8px;
+        border: 1px solid #d1d5db;
+    }
+    
+    /* 성공/오류 메시지 스타일 */
+    .stSuccess {
+        background-color: #f0f9ff;
+        border: 1px solid #0ea5e9;
         border-radius: 8px;
         padding: 1rem;
-        margin: 0.5rem 0;
-        cursor: pointer;
-        transition: all 0.2s;
-        border: 2px solid #E5E7EB;
     }
     
-    .selectable-card:hover {
-        border-color: #D1D5DB;
+    .stError {
+        background-color: #fef2f2;
+        border: 1px solid #ef4444;
+        border-radius: 8px;
+        padding: 1rem;
     }
     
-    /* 선택된 카드 - Cross Account Role (파란색) */
-    .selected-role {
-        border-color: #3B82F6;
-        background-color: #EFF6FF;
+    .stWarning {
+        background-color: #fffbeb;
+        border: 1px solid #f59e0b;
+        border-radius: 8px;
+        padding: 1rem;
     }
     
-    /* 선택된 카드 - Access Key (주황색) */
-    .selected-key {
-        border-color: #F59E0B;
-        background-color: #FFFBEB;
-    }
-    </style>
-    """
-
-def get_step_indicator_styles():
-    """
-    단계 표시기 스타일 정의
-    - 원형 단계 표시, 연결선, 색상 변화
-    """
-    return """
-    <style>
-    /* 단계 표시기 컨테이너 */
-    .step-container {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        margin: 0;
-        padding: 0 1rem;
+    .stInfo {
+        background-color: #f0f9ff;
+        border: 1px solid #3b82f6;
+        border-radius: 8px;
+        padding: 1rem;
     }
     
-    /* 개별 단계 */
-    .step-item {
-        display: flex;
-        align-items: center;
-        gap: 0.75rem;
+    /* 메트릭 컨테이너 스타일 */
+    div[data-testid="metric-container"] {
+        background-color: #f8f9fa;
+        border: 1px solid #e9ecef;
+        border-radius: 8px;
+        padding: 1rem;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
     }
     
-    /* 단계 원형 표시 */
-    .step-circle {
-        width: 2rem;
-        height: 2rem;
-        border-radius: 50%;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-weight: bold;
-        font-size: 0.875rem;
+    /* 컬럼 간격 조정 */
+    .row-widget.stRadio > div {
+        flex-direction: row;
+        gap: 1rem;
     }
     
-    /* 완료된 단계 */
-    .step-completed {
-        background-color: #10B981;
-        color: white;
+    /* 코드 블록 스타일 */
+    .stCode {
+        background-color: #1f2937;
+        border-radius: 8px;
+        padding: 1rem;
     }
     
-    /* 현재 진행 단계 */
-    .step-active {
-        background-color: #3B82F6;
-        color: white;
+    /* 마크다운 스타일 개선 */
+    .stMarkdown h1, .stMarkdown h2, .stMarkdown h3 {
+        color: #1f2937;
+        font-weight: 600;
     }
     
-    /* 대기 단계 */
-    .step-pending {
-        background-color: #E5E7EB;
-        color: #6B7280;
+    .stMarkdown h1 {
+        border-bottom: 2px solid #e5e7eb;
+        padding-bottom: 0.5rem;
     }
     
-    /* 단계 제목 */
-    .step-title {
-        font-size: 0.875rem;
+    .stMarkdown h3 {
+        color: #374151;
+        margin-top: 1.5rem;
+        margin-bottom: 1rem;
+    }
+    
+    /* 구분선 스타일 */
+    hr {
+        border: none;
+        height: 1px;
+        background: linear-gradient(to right, transparent, #e5e7eb, transparent);
+        margin: 2rem 0;
+    }
+    
+    /* 로딩 스타일 */
+    .stSpinner > div {
+        border-top-color: #3b82f6;
+    }
+    
+    /* 토글 버튼 스타일 */
+    .stCheckbox > label {
+        background-color: #f3f4f6;
+        padding: 0.5rem;
+        border-radius: 6px;
+        border: 1px solid #d1d5db;
+    }
+    
+    .stCheckbox > label:hover {
+        background-color: #e5e7eb;
+    }
+    
+    /* 프로그레스 바 스타일 */
+    .stProgress > div > div > div {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        border-radius: 4px;
+    }
+    
+    /* 탭 스타일 */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 0.5rem;
+    }
+    
+    .stTabs [data-baseweb="tab"] {
+        height: 3rem;
+        padding: 0 1.5rem;
+        background-color: #f3f4f6;
+        border-radius: 8px;
+        color: #6b7280;
         font-weight: 500;
     }
     
-    .step-title.completed {
-        color: #10B981;
-    }
-    
-    .step-title.active {
-        color: #3B82F6;
-    }
-    
-    .step-title.pending {
-        color: #6B7280;
-    }
-    
-    /* 연결선 */
-    .step-connector {
-        flex: 1;
-        height: 1px;
-        background-color: #E5E7EB;
-        margin: 0 1rem;
-    }
-    </style>
-    """
-
-def get_info_box_styles():
-    """
-    정보 박스 스타일 정의
-    - info, warning, error, success 타입별 색상
-    """
-    return """
-    <style>
-    /* 기본 정보 박스 */
-    .info-box {
-        padding: 1rem;
-        border-radius: 8px;
-        margin: 1rem 0;
-        display: flex;
-        align-items: flex-start;
-        gap: 0.75rem;
-    }
-    
-    /* 정보 타입 */
-    .info-box.info {
-        background-color: #EFF6FF;
-        border: 1px solid #BFDBFE;
-        color: #1E40AF;
-    }
-    
-    /* 경고 타입 */
-    .info-box.warning {
-        background-color: #FFFBEB;
-        border: 1px solid #FDE68A;
-        color: #92400E;
-    }
-    
-    /* 에러 타입 */
-    .info-box.error {
-        background-color: #FEF2F2;
-        border: 1px solid #FECACA;
-        color: #B91C1C;
-    }
-    
-    /* 성공 타입 */
-    .info-box.success {
-        background-color: #ECFDF5;
-        border: 1px solid #A7F3D0;
-        color: #065F46;
-    }
-    
-    .info-box-content {
-        flex: 1;
-    }
-    
-    .info-box-title {
-        font-weight: 600;
-        margin-bottom: 0.25rem;
-    }
-    
-    .info-box-text {
-        font-size: 0.875rem;
-        line-height: 1.4;
-    }
-    </style>
-    """
-
-def get_code_block_styles():
-    """
-    JSON 코드 블록 스타일 정의
-    - 다크 테마, 구문 강조, 복사 버튼
-    """
-    return """
-    <style>
-    /* 코드 블록 컨테이너 */
-    .code-container {
-        margin: 1rem 0;
-    }
-    
-    .code-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        margin-bottom: 0.5rem;
-    }
-    
-    .code-title {
-        font-weight: 600;
-        color: #111827;
-    }
-    
-    .copy-button {
-        background-color: #3B82F6;
+    .stTabs [aria-selected="true"] {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         color: white;
-        border: none;
-        padding: 0.25rem 0.75rem;
-        border-radius: 4px;
-        font-size: 0.75rem;
-        cursor: pointer;
-        display: flex;
-        align-items: center;
-        gap: 0.25rem;
     }
     
-    .copy-button:hover {
-        background-color: #2563EB;
-    }
-    
-    /* JSON 코드 블록 */
-    .json-code {
-        background-color: #1F2937;
-        color: #10B981;
-        padding: 1rem;
+    /* 데이터프레임 스타일 */
+    .stDataFrame {
+        border: 1px solid #e5e7eb;
         border-radius: 8px;
-        font-family: 'Courier New', monospace;
-        font-size: 0.75rem;
-        overflow-x: auto;
-        max-height: 300px;
-        overflow-y: auto;
-    }
-    </style>
-    """
-
-def get_test_result_styles():
-    """
-    연결 테스트 결과 스타일 정의
-    - 테이블, 성공/실패 표시, 로딩 상태
-    """
-    return """
-    <style>
-    /* 테스트 결과 컨테이너 */
-    .test-result-container {
-        text-align: center;
-        padding: 2rem;
-    }
-    
-    .test-icon {
-        font-size: 3rem;
-        margin-bottom: 1rem;
-    }
-    
-    .test-title {
-        font-size: 1.125rem;
-        font-weight: 600;
-        margin-bottom: 0.5rem;
-    }
-    
-    .test-description {
-        color: #6B7280;
-        margin-bottom: 1rem;
-    }
-    
-    /* 성공 상태 */
-    .test-success .test-title {
-        color: #065F46;
-    }
-    
-    .test-success .test-description {
-        color: #047857;
-    }
-    
-    /* 실패 상태 */
-    .test-failed .test-title {
-        color: #B91C1C;
-    }
-    
-    .test-failed .test-description {
-        color: #DC2626;
-    }
-    
-    /* 권한 테이블 */
-    .permission-table {
-        width: 100%;
-        border-collapse: collapse;
-        margin-top: 1rem;
-    }
-    
-    .permission-table th,
-    .permission-table td {
-        padding: 0.75rem;
-        text-align: left;
-        border-bottom: 1px solid #E5E7EB;
-    }
-    
-    .permission-table th {
-        background-color: #F9FAFB;
-        font-weight: 600;
-        color: #374151;
-    }
-    
-    .permission-status {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-    }
-    
-    .permission-success {
-        color: #10B981;
-    }
-    
-    .permission-failed {
-        color: #EF4444;
-    }
-    </style>
-    """
-
-def get_loading_styles():
-    """
-    로딩 스피너 및 애니메이션 스타일
-    """
-    return """
-    <style>
-    /* 로딩 컨테이너 */
-    .loading-container {
-        text-align: center;
-        padding: 2rem;
-    }
-    
-    .loading-spinner {
-        font-size: 3rem;
-        animation: spin 2s linear infinite;
-        margin-bottom: 1rem;
-    }
-    
-    @keyframes spin {
-        from { transform: rotate(0deg); }
-        to { transform: rotate(360deg); }
-    }
-    
-    .loading-message {
-        color: #6B7280;
-        margin-bottom: 0.5rem;
-    }
-    
-    .loading-steps {
-        font-size: 0.875rem;
-        color: #9CA3AF;
-    }
-    
-    .loading-steps div {
-        margin: 0.25rem 0;
-    }
-    </style>
-    """
-
-def inject_custom_button_style():
-    css = """
-    <style>
-    /* secondary 버튼 (일반 + Tooltip 내부 포함) */
-    div.stTooltipIcon button[data-testid="stBaseButton-secondary"],
-    div.stButton > button[data-testid="stBaseButton-secondary"] {
-        background: linear-gradient(135deg, #e0f2fe 0%, #bae6fd 100%);
-        color: #0369a1;
-        border: none;
-        padding: 0.65rem 1.25rem;
-        border-radius: 8px;
-        font-weight: 600;
-        transition: all 0.2s ease;
-    }
-
-    div.stTooltipIcon button[data-testid="stBaseButton-secondary"]:hover,
-    div.stButton > button[data-testid="stBaseButton-secondary"]:hover {
-        box-shadow: 0 3px 6px rgba(14, 165, 233, 0.3);
-        transform: translateY(-1px);
-    }
-
-    /* primary 버튼 */
-    div.stButton > button[data-testid="stBaseButton-primary"] {
-        background: linear-gradient(135deg, #2563eb 0%, #3b82f6 100%);
-        color: white;
-        border: none;
-        font-weight: 700;
-        padding: 0.75rem 1.5rem;
-        border-radius: 10px;
-        transition: all 0.25s ease;
-    }
-
-    div.stButton > button[data-testid="stBaseButton-primary"]:hover {
-        box-shadow: 0 5px 10px rgba(59, 130, 246, 0.4);
-        transform: translateY(-2px) scale(1.02);
-    }
-    </style>
-    """
-    return css
-
-def inject_expander_style():
-    css = """
-    <style>
-    /* 전체 Expander 외곽 영역 */
-    [data-testid="stExpander"] {
-        border: 1px solid #cbd5e1;
-        border-radius: 10px;
-        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
-        margin: 0.5rem 0;
         overflow: hidden;
     }
-
-    /* 제목 summary 영역 */
-    [data-testid="stExpander"] > details > summary {
-        background-color: #f1f5f9;
-        color: #0f172a;
-        font-weight: 600;
-        padding: 0.75rem 1rem;
-        border-radius: 10px;
-        transition: background-color 0.2s ease;
-        list-style: none;
-    }
-
-    /* hover 효과 */
-    [data-testid="stExpander"] > details > summary:hover {
-        background-color: #e2e8f0;
-        cursor: pointer;
-    }
-
-    /* 펼쳐진 내용 영역 */
-    [data-testid="stExpanderDetails"] {
-        background-color: #ffffff;
-        padding: 1rem;
-        border-top: 1px solid #e2e8f0;
-    }
-    </style>
-    """
-    return css
-
-def inject_account_card_style():
-    css = """
-    <style>
-    .account-card {
-        border: 1px solid #e2e8f0 !important;
-        border-radius: 12px !important;
-        background-color: #f9fafb !important;
-        padding: 1.5rem !important;
-        margin: 1rem 0 !important;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.03) !important;
-    }
-    </style>
-    """
-    return css
-
-def inject_custom_font():
-    css = """
-        <style>
-        @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/variable/pretendardvariable.css');
-
-        html, body, [class*="st-"] {
-            font-family: 'Pretendard Variable', sans-serif !important;
-            font-weight: 400 !important;
-        }
-
-        h1, h2, h3, h4, h5, h6,
-        .stMarkdown, .stButton, .stTextInput > label,
-        .hero-title, .hero-subtitle, .hero-text,
-        .custom-card-title, .custom-subtitle {
-            font-family: 'Pretendard Variable', sans-serif !important;
-            font-weight: 600 !important;
-        }
-
-        p, span, div {
-            font-family: 'Pretendard Variable', sans-serif !important;
-        }
-        </style>
-    """
-    return css
     
+    /* 파일 업로더 스타일 */
+    .stFileUploader > div {
+        border: 2px dashed #d1d5db;
+        border-radius: 8px;
+        padding: 2rem;
+        text-align: center;
+        background-color: #f9fafb;
+    }
+    
+    .stFileUploader > div:hover {
+        border-color: #3b82f6;
+        background-color: #f0f9ff;
+    }
+    
+    /* 알림 배너 스타일 */
+    .stAlert {
+        border-radius: 8px;
+        border: 1px solid;
+        padding: 1rem;
+        margin: 1rem 0;
+    }
+    </style>
+    """
+
+def get_force_pretendard_font():
+    """Pretendard 폰트 강제 적용 - 모든 Streamlit 요소 오버라이드"""
+    return """
+    <style>
+    /* 최우선 Pretendard 폰트 강제 적용 */
+    *, *::before, *::after {
+        font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, Roboto, 'Helvetica Neue', 'Segoe UI', 'Apple SD Gothic Neo', 'Noto Sans KR', 'Malgun Gothic', sans-serif !important;
+    }
+    
+    /* Streamlit 기본 폰트 오버라이드 */
+    .css-10trblm, .css-1d391kg, .css-1cpxqw2, .css-1avcm0n,
+    .css-145kmo2, .css-1544g2n, .css-1y4p8pa, .css-17lntkn,
+    .css-1aumxhk, .css-1629p8f, .css-19ih9d0, .css-17eq0hr {
+        font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, Roboto, 'Helvetica Neue', 'Segoe UI', 'Apple SD Gothic Neo', 'Noto Sans KR', 'Malgun Gothic', sans-serif !important;
+    }
+    
+    /* 모든 텍스트 요소 강제 오버라이드 */
+    input, textarea, select, option, label, button, span, div, p, h1, h2, h3, h4, h5, h6, li, ul, ol, table, td, th, a {
+        font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, Roboto, 'Helvetica Neue', 'Segoe UI', 'Apple SD Gothic Neo', 'Noto Sans KR', 'Malgun Gothic', sans-serif !important;
+    }
+    </style>
+    """
+
 def get_all_styles():
-    """
-    모든 스타일을 합쳐서 반환
-    - 한 번에 모든 CSS를 주입하기 위한 함수
-    """
+    """모든 스타일 통합 반환"""
     return (
         inject_custom_font() +
-        inject_expander_style() +
+        get_force_pretendard_font() +
         inject_custom_button_style() +
-        get_main_styles() +
-        get_card_styles() +
-        get_step_indicator_styles() +
-        get_info_box_styles() +
-        get_code_block_styles() +
-        get_test_result_styles() +
-        get_loading_styles()
+        inject_expander_style() +
+        get_sidebar_navigation_styles() +
+        get_main_styles()
     )
