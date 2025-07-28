@@ -12,5 +12,5 @@ environment        = "walb"
 project_name       = "walb-app"
 #create_launch_template = false
 enable_load_balancer = true
-application_port     = 30080
+# application_port 제거됨 - Ingress가 자동 관리
 github_repository = "foiscs/HyundaiAWS_Project"

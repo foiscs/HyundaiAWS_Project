@@ -42,19 +42,10 @@ output "eks_cluster_info" {
 }
 
 # =========================================
-# ALB 정보
+# ALB 정보 (Ingress에서 자동 생성)
 # =========================================
-output "alb_configuration" {
-  description = "ALB 설정 정보"
-  value = var.enable_load_balancer ? {
-    alb_arn            = aws_lb.main[0].arn
-    alb_dns_name       = aws_lb.main[0].dns_name
-    alb_zone_id        = aws_lb.main[0].zone_id
-    target_group_arn   = aws_lb_target_group.eks_nodes[0].arn
-    listener_arn       = aws_lb_listener.eks_nodes[0].arn
-    security_group_id  = aws_security_group.alb[0].id
-  } : null
-}
+# ALB는 Kubernetes Ingress Controller가 자동으로 생성하므로
+# Terraform에서 직접 관리하지 않음
 
 # EKS 접속을 위한 kubectl 명령어
 output "eks_kubectl_config" {

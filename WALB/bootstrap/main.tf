@@ -21,6 +21,7 @@ locals {
     ManagedBy     = "Terraform"
     Owner         = "DevSecOps Team"
     CostCenter    = "Infrastructure"
+    CreatedDate   = formatdate("YYYY-MM-DD", timestamp())
   }
 }
 

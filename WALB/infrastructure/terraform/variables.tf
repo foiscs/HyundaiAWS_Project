@@ -408,15 +408,7 @@ variable "enable_load_balancer" {
   default     = true
 }
 
-variable "lb_type" {
-  description = "로드 밸런서 타입"
-  type        = string
-  default     = "application"
-  validation {
-    condition     = contains(["application", "network"], var.lb_type)
-    error_message = "Load balancer type must be application or network."
-  }
-}
+# lb_type 변수 제거됨 - Ingress에서 자동 생성
 
 variable "ssl_certificate_arn" {
   description = "SSL 인증서 ARN (HTTPS 사용 시)"
@@ -439,11 +431,7 @@ variable "nodeport_range_end" {
 # =========================================
 # 애플리케이션 설정
 # =========================================
-variable "application_port" {
-  description = "애플리케이션 포트"
-  type        = number
-  default     = 8080
-}
+# application_port 변수 제거됨 - Ingress에서 자동 관리
 
 variable "health_check_path" {
   description = "헬스 체크 경로"
