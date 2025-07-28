@@ -1,7 +1,7 @@
 """
 진단 관련 뷰 - SK Shieldus 41개 보안 진단
 """
-from flask import Blueprint, render_template, request, jsonify, session
+from flask import Blueprint, render_template, request, jsonify, session # type: ignore
 from app.models.account import AWSAccount
 from app.services.diagnosis_service import DiagnosisService
 from app.config.diagnosis_config import DiagnosisConfig
@@ -11,8 +11,10 @@ diagnosis_bp = Blueprint('diagnosis', __name__)
 @diagnosis_bp.route('/')
 def index():
     """보안 진단 메인 페이지"""
-    # 등록된 계정 목록 조회
-    accounts = AWSAccount.load_all()
+    # 등록된 계정 목록 조회 (연결 성공한 계정만 표시)
+    all_accounts = AWSAccount.load_all()
+    accounts = [account for account in all_accounts if account.status == 'active']
+    failed_accounts_count = len([account for account in all_accounts if account.status == 'failed'])
     
     # 진단 설정 데이터 가져오기
     config = DiagnosisConfig()
@@ -24,12 +26,16 @@ def index():
     selected_account = None
     if selected_account_id:
         selected_account = AWSAccount.find_by_id(selected_account_id)
+        # 선택된 계정이 연결 실패 상태라면 None으로 설정
+        if selected_account and selected_account.status != 'active':
+            selected_account = None
     
     return render_template('pages/diagnosis.html', 
                          accounts=accounts,
                          selected_account=selected_account,
                          sk_items=sk_items,
-                         stats=stats)
+                         stats=stats,
+                         failed_accounts_count=failed_accounts_count)
 
 @diagnosis_bp.route('/api/run', methods=['POST'])
 def run_diagnosis():

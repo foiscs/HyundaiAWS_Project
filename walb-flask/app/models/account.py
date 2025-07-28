@@ -236,3 +236,34 @@ class AWSAccount:
         with open(accounts_file, 'w', encoding='utf-8') as f:
             for account in existing_accounts:
                 f.write(json.dumps(account, ensure_ascii=False) + '\n')
+
+    @classmethod
+    def delete_by_account_id(cls, account_id: str) -> bool:
+        """계정 ID로 계정 삭제"""
+        accounts_file = current_app.config['ACCOUNTS_FILE']
+        
+        if not os.path.exists(accounts_file):
+            return False
+        
+        # 기존 계정들 로드
+        existing_accounts = []
+        found = False
+        
+        with open(accounts_file, 'r', encoding='utf-8') as f:
+            for line in f:
+                if line.strip():
+                    account_data = json.loads(line.strip())
+                    if account_data.get('account_id') != account_id:
+                        existing_accounts.append(account_data)
+                    else:
+                        found = True
+        
+        if not found:
+            return False
+        
+        # 파일에 저장
+        with open(accounts_file, 'w', encoding='utf-8') as f:
+            for account in existing_accounts:
+                f.write(json.dumps(account, ensure_ascii=False) + '\n')
+        
+        return True

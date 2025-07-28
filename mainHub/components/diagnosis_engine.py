@@ -18,7 +18,7 @@ Methods:
 import streamlit as st
 from .sk_diagnosis import get_checker
 from .aws_handler import AWSConnectionHandler
-from botocore.exceptions import ClientError
+from botocore.exceptions import ClientError # type: ignore
 from typing import Dict, Any, List
 
 class DiagnosisCoreEngine:

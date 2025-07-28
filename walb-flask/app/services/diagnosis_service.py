@@ -2,9 +2,9 @@
 진단 서비스 - SK Shieldus 진단 엔진 및 비즈니스 로직
 mainHub의 diagnosis_engine.py를 Flask용으로 이식
 """
-import boto3
+import boto3 # type: ignore
 from datetime import datetime
-from botocore.exceptions import ClientError, NoCredentialsError
+from botocore.exceptions import ClientError, NoCredentialsError # type: ignore
 from app.config.diagnosis_config import DiagnosisConfig
 from app.utils.aws_handler import AWSConnectionHandler
 
@@ -35,7 +35,7 @@ class DiagnosisService:
             boto3.Session or None: AWS 세션 객체
         """
         try:
-            if account.connection_type == 'cross-account-role':
+            if account.connection_type == 'role':
                 # Cross-Account Role 방식
                 return self.aws_handler.create_session_from_role(
                     role_arn=account.role_arn,
@@ -65,7 +65,7 @@ class DiagnosisService:
             dict: 테스트 결과
         """
         try:
-            if account.connection_type == 'cross-account-role':
+            if account.connection_type == 'role':
                 # Cross-Account Role 테스트
                 return self.aws_handler.test_cross_account_connection(
                     role_arn=account.role_arn,

@@ -16,15 +16,17 @@ This is a multi-component AWS security management project with three main compon
 
 **Python Version**: 3.9.0
 
-**Dependencies**: 
+**Dependencies**:
 
 ### walb-flask 요구사항:
+
 ```bash
 cd walb-flask
 pip install -r requirements.txt
 ```
 
 주요 패키지:
+
 -   Flask>=2.3.0
 -   boto3>=1.20.0
 -   botocore>=1.23.0
@@ -90,16 +92,18 @@ Each security check module must implement:
 -   `check()` function that returns findings (truthy values indicate vulnerabilities)
 -   Optional `fix()` function for automated remediation
 
-### mainHub (WALB Web Platform) Structure
+### walb-flask (Flask Web Platform) Structure
 
--   **main.py**: Main Streamlit application with account management dashboard
--   **components/**: Reusable UI components and business logic
-    -   **session_manager.py**: Manages user sessions and state (공통 모듈)
-    -   **aws_handler.py**: AWS service integrations (공통 모듈)
-    -   **sk_diagnosis/**: Security diagnosis modules implementing BaseChecker abstract class
-    -   **Connection 모듈 (4파일)**: AWS 계정 연결 전용
-    -   **Diagnosis 모듈 (5파일)**: 보안 진단 전용
--   **pages/**: Streamlit page modules (connection.py, diagnosis.py)
+-   **app/**init**.py**: Flask 애플리케이션 팩토리
+-   **app/models/**: 데이터 모델 (account.py - AWS 계정 관리)
+-   **app/services/**: 비즈니스 로직 (diagnosis_service.py - 진단 엔진)
+-   **app/views/**: Flask 블루프린트 라우트 (main, connection, diagnosis, api)
+-   **app/checkers/**: 보안 진단 체커 모듈
+    -   **base_checker.py**: BaseChecker 추상 클래스
+    -   **account_management/**: 계정 관리 체커 (1.1-1.13)
+    -   **authorization/**: 권한 관리 체커 (2.1-2.3)
+-   **templates/**: Jinja2 HTML 템플릿
+-   **static/**: 정적 파일 (CSS, JavaScript)
 
 #### Diagnosis System Architecture (진단 시스템 구조) - 5파일 구조
 
@@ -210,6 +214,7 @@ ConnectionEngine (Business Logic) → AWSConnectionHandler (공통 모듈)
     - 유틸리티 기능: 실시간 검증, 세션 업데이트, 민감정보 정리
 
 3. **connection_engine.py** (비즈니스 로직 - 350줄)
+
     - **ConnectionEngine**: Connection 전용 비즈니스 로직 엔진
     - UI와 완전 분리된 순수 비즈니스 로직
     - 주요 기능:
@@ -322,20 +327,23 @@ terraform plan -var-file="terraform.tfvars"
 ### Flask 개발 가이드라인
 
 **체커 구현 규칙:**
-- 모든 체커는 `BaseChecker` 클래스를 상속받아야 합니다
-- `run_diagnosis()`, `execute_fix()` 메서드를 필수로 구현해야 합니다
-- CLI 입력 대신 웹 인터페이스에서 사용자 상호작용을 처리해야 합니다
-- `print()` 문 대신 구조화된 데이터를 반환해야 합니다
+
+-   모든 체커는 `BaseChecker` 클래스를 상속받아야 합니다
+-   `run_diagnosis()`, `execute_fix()` 메서드를 필수로 구현해야 합니다
+-   CLI 입력 대신 웹 인터페이스에서 사용자 상호작용을 처리해야 합니다
+-   `print()` 문 대신 구조화된 데이터를 반환해야 합니다
 
 **CSS 스타일링 가이드라인:**
-- Tailwind CSS 클래스를 우선적으로 사용합니다
-- 커스텀 CSS는 `static/css/` 디렉토리에 모듈별로 분리합니다
-- 반응형 디자인을 고려하여 모바일/데스크톱 호환성을 유지합니다
+
+-   Tailwind CSS 클래스를 우선적으로 사용합니다
+-   커스텀 CSS는 `static/css/` 디렉토리에 모듈별로 분리합니다
+-   반응형 디자인을 고려하여 모바일/데스크톱 호환성을 유지합니다
 
 **JavaScript 가이드라인:**
-- 바닐라 JavaScript를 사용하며 jQuery 등 외부 라이브러리는 피합니다
-- AJAX 요청은 fetch API를 사용합니다
-- 에러 처리와 로딩 상태 표시를 필수로 구현합니다
+
+-   바닐라 JavaScript를 사용하며 jQuery 등 외부 라이브러리는 피합니다
+-   AJAX 요청은 fetch API를 사용합니다
+-   에러 처리와 로딩 상태 표시를 필수로 구현합니다
 
 ## Project-Specific Notes
 
@@ -344,4 +352,113 @@ terraform plan -var-file="terraform.tfvars"
 -   walb-flask provides web-based UI for diagnosis and AWS account management
 -   Terraform modules are designed for production-ready secure deployments
 -   The codebase supports Korean language output for SK Shieldus integration
--   현재 15개 체커만 Flask용으로 구현되어 있으며, 나머지 26개는 추가 구현이 필요합니다
+-   현재 16개 체커만 Flask용으로 구현되어 있으며, 나머지 25개는 추가 구현이 필요합니다
+
+## Flask 보안 진단 체커 구현 지시사항
+
+### 핵심 구현 원칙
+
+**CRITICAL**: 원본 SHIELDUS-AWS-CHECKER의 팀원 구현을 **정확히** 복사해야 합니다.
+
+-   모든 print 메시지를 그대로 보존
+-   수동 조치 가이드를 완전히 보존
+-   자동화 불가능성 경고를 그대로 유지
+-   과도한 엔지니어링이나 기능 추가 금지
+
+### 체커 구현 패턴
+
+1. **BaseChecker 상속**: 모든 체커는 `app.checkers.base_checker.BaseChecker` 상속
+2. **필수 메서드 구현**:
+
+    - `run_diagnosis()`: 원본 `check()` 함수 로직 그대로 구현
+    - `execute_fix()`: 원본 `fix()` 함수 로직 그대로 구현
+    - `_get_manual_guide()`: 수동 조치가 필요한 경우 웹 UI용 가이드 제공
+
+3. **수동 조치 가이드 시스템**:
+    - 원본에서 수동 조치가 필요한 경우 `_get_manual_guide()` 메서드 구현
+    - 단계별 가이드를 웹 UI에서 표시 가능한 형태로 변환
+    - 원본의 모든 경고 메시지와 절차를 보존
+
+### 구현된 체커 현황 (16개)
+
+**계정 관리 (13개 완료)**:
+
+-   1.1-1.10: 기본 계정 관리 체커들 (자동 조치 + 수동 가이드)
+-   1.11-1.13: EKS 관련 체커들 (VPC 내부 접근 필요하여 수동 전용)
+
+**권한 관리 (3개 완료)**:
+
+-   2.1-2.3: 서비스 정책 체커들 (위험성으로 인해 수동 전용)
+
+### 수동 조치 가이드 구현 사례
+
+#### 1. EKS 체커 (1.11-1.13)
+
+-   **문제**: Kubernetes API 접근을 위해 VPC 내부 접근 필요
+-   **해결**: kubectl 명령어와 단계별 가이드 제공
+-   **구현**: `_get_manual_guide()`에서 VPC 접속 → kubectl 설정 → 점검 → 조치 단계 안내
+
+#### 2. 정책 관리 체커 (2.1-2.3)
+
+-   **문제**: 권한 정책 변경이 운영에 큰 영향을 줄 수 있음
+-   **해결**: 수동 점검 및 신중한 조치 가이드 제공
+-   **구현**: 원본의 경고 메시지를 웹 UI 경고 박스로 변환
+
+#### 3. Key Pair 관리 (1.5)
+
+-   **문제**: 실행 중인 인스턴스에 Key Pair 추가는 재시작 필요
+-   **해결**: 두 가지 방법 제시 (authorized_keys 수정 / AMI 재생성)
+-   **구현**: 원본의 "방법\_1", "방법\_2" 가이드를 단계별로 웹 UI에 표시
+
+```python
+# 원본 1.5 체커의 수동 조치 메시지 예시
+print("  └─ 방법_1. [Authorize_keys 직접 수정]: 실행 중인 인스턴스에 SSH로 접속하여 ~/.ssh/authorized_keys 파일에 새 key pair의 public key를 수동으로 추가")
+print("  └─ 방법_2. [AMI로 새 인스턴스 생성]: 기존 인스턴스에서 AMI 이미지를 만들어 새로운 인스턴스를 생성할 때 새 key pair를 지정")
+```
+
+### 수동 가이드 웹 UI 표시 형태
+
+```javascript
+manual_guide: {
+    title: '진단 항목 수동 조치 가이드',
+    description: '원본 팀원이 작성한 수동 절차를 따라 보안을 강화하세요.',
+    steps: [
+        {
+            type: 'warning',  // warning, info, step, commands, danger
+            title: '[FIX] 조치 제목',
+            content: '조치 설명'
+        },
+        {
+            type: 'step',
+            title: '1. 첫 번째 단계',
+            content: '단계별 설명'
+        },
+        {
+            type: 'commands',
+            title: 'CLI 명령어',
+            content: ['command1', 'command2']  // 복사 가능한 명령어 배열
+        }
+    ]
+}
+```
+
+### UX 개선사항
+
+1. **실시간 진행 상황**: 전체 진단 시 왼쪽 사이드바에 실시간 진행률, 완료/실패 통계, 색상 코딩된 로그 표시
+2. **스크롤 자동 이동**: 현재 진단 중인 항목으로 자동 스크롤 + 시각적 강조 효과
+3. **결과 유지**: 진단 완료 후 사이드바 결과를 페이지 새로고침/이동 전까지 유지
+4. **명령어 복사**: 수동 가이드의 CLI 명령어에 원클릭 복사 버튼 제공
+
+### 구현 우선순위
+
+**다음 구현 대상 (25개 남음)**:
+
+1. **가상 자원 (3.1-3.10)**: 보안 그룹, VPC, 네트워크 설정 체커
+2. **운영 관리 (4.1-4.15)**: 암호화, 로깅, 모니터링 체커
+
+**구현 시 주의사항**:
+
+-   원본 체커의 모든 로직과 메시지를 정확히 보존
+-   자동 조치가 위험한 경우 반드시 수동 가이드로 구현
+-   웹 UI에서 사용자 상호작용이 필요한 부분은 적절히 변환
+-   모든 체커를 `diagnosis_service.py`의 `checker_mapping`에 등록

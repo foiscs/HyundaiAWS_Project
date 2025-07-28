@@ -6,6 +6,8 @@ class ConnectionManager {
         this.totalSteps = 4;
         this.selectedMethod = null;
         this.formData = {};
+        this.isEditMode = false;
+        this.editAccount = null;
         
         this.initializeEventListeners();
         this.updateStepDisplay();
@@ -111,7 +113,12 @@ class ConnectionManager {
         const nextBtn = document.getElementById('next-btn');
         const saveBtn = document.getElementById('save-btn');
         
-        prevBtn.disabled = this.currentStep === 1;
+        // 수정 모드에서는 3단계 이전 버튼 비활성화
+        if (this.isEditMode) {
+            prevBtn.disabled = this.currentStep <= 3;
+        } else {
+            prevBtn.disabled = this.currentStep === 1;
+        }
         
         if (this.currentStep === this.totalSteps) {
             nextBtn.classList.add('hidden');
@@ -119,6 +126,14 @@ class ConnectionManager {
         } else {
             nextBtn.classList.remove('hidden');
             saveBtn.classList.add('hidden');
+        }
+    }
+
+    // 특정 단계로 직접 이동하는 메서드 (수정 모드용)
+    showStep(stepNumber) {
+        if (stepNumber >= 1 && stepNumber <= this.totalSteps) {
+            this.currentStep = stepNumber;
+            this.updateStepDisplay();
         }
     }
     
@@ -160,6 +175,11 @@ class ConnectionManager {
     }
     
     previousStep() {
+        // 수정 모드에서는 3단계 이전으로 갈 수 없음
+        if (this.isEditMode && this.currentStep <= 3) {
+            return;
+        }
+        
         if (this.currentStep > 1) {
             this.currentStep--;
             this.updateStepDisplay();
@@ -770,10 +790,20 @@ class ConnectionManager {
         WALB.loading.show(saveBtn);
         
         try {
-            const result = await WALB.api.post('/connection/save', this.formData);
+            // 수정 모드인 경우 업데이트 API 사용
+            const endpoint = this.isEditMode ? '/connection/update' : '/connection/save';
+            const data = this.isEditMode ? 
+                { ...this.formData, original_account_id: this.editAccount.account_id } : 
+                this.formData;
+            
+            const result = await WALB.api.post(endpoint, data);
             
             if (result.success) {
-                WALB.toast.show('AWS 계정이 성공적으로 저장되었습니다!', 'success');
+                const message = this.isEditMode ? 
+                    'AWS 계정 정보가 성공적으로 수정되었습니다!' : 
+                    'AWS 계정이 성공적으로 저장되었습니다!';
+                    
+                WALB.toast.show(message, 'success');
                 
                 // Redirect to main page after a short delay
                 setTimeout(() => {
@@ -782,21 +812,22 @@ class ConnectionManager {
                 
             } else {
                 WALB.loading.hide(saveBtn, originalText);
-                WALB.toast.show(result.error || '계정 저장에 실패했습니다.', 'error');
+                WALB.toast.show(result.error || `계정 ${this.isEditMode ? '수정' : '저장'}에 실패했습니다.`, 'error');
             }
             
         } catch (error) {
             console.error('Save account error:', error);
             WALB.loading.hide(saveBtn, originalText);
-            WALB.toast.show('계정 저장 중 오류가 발생했습니다.', 'error');
+            WALB.toast.show(`계정 ${this.isEditMode ? '수정' : '저장'} 중 오류가 발생했습니다.`, 'error');
         }
     }
 }
 
 // Global instance for access from HTML
-let connectionManager;
+window.connectionManager = null;
 
 // Initialize when DOM is loaded
 document.addEventListener('DOMContentLoaded', function() {
-    connectionManager = new ConnectionManager();
+    window.connectionManager = new ConnectionManager();
+    console.log('ConnectionManager 초기화 완료');
 });
