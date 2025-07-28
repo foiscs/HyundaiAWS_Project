@@ -808,7 +808,8 @@ jobs:
             # GitHub Actions OIDC 역할을 aws-auth에 추가
             GITHUB_ROLE_ARN="arn:aws:iam::253157413163:role/walb-github"
             
-            cat <<EOF | kubectl apply -f -
+            # aws-auth ConfigMap YAML 파일 생성
+            cat > aws-auth-temp.yaml << 'YAML_END'
             apiVersion: v1
             kind: ConfigMap
             metadata:
@@ -816,7 +817,7 @@ jobs:
               namespace: kube-system
             data:
               mapRoles: |
-                - rolearn: $GITHUB_ROLE_ARN
+                - rolearn: arn:aws:iam::253157413163:role/walb-github
                   username: github-actions
                   groups:
                     - system:masters
@@ -825,7 +826,11 @@ jobs:
                   groups:
                     - system:bootstrappers
                     - system:nodes
-            EOF
+            YAML_END
+            
+            # 임시 파일로 kubectl apply 실행
+            kubectl apply -f aws-auth-temp.yaml
+            rm -f aws-auth-temp.yaml
             
             echo "✅ GitHub Actions 역할을 aws-auth ConfigMap에 추가"
             
@@ -847,7 +852,8 @@ jobs:
             kubectl get configmap aws-auth -n kube-system -o yaml > aws-auth-backup.yaml
             
             # GitHub Actions OIDC 역할을 aws-auth에 추가
-            cat <<EOF | kubectl apply -f -
+            # aws-auth ConfigMap YAML 파일 생성
+            cat > aws-auth-temp2.yaml << 'YAML_END'
             apiVersion: v1
             kind: ConfigMap
             metadata:
@@ -855,7 +861,7 @@ jobs:
               namespace: kube-system
             data:
               mapRoles: |
-                - rolearn: $GITHUB_ROLE_ARN
+                - rolearn: arn:aws:iam::253157413163:role/walb-github
                   username: github-actions
                   groups:
                     - system:masters
@@ -864,7 +870,11 @@ jobs:
                   groups:
                     - system:bootstrappers
                     - system:nodes
-            EOF
+            YAML_END
+            
+            # 임시 파일로 kubectl apply 실행
+            kubectl apply -f aws-auth-temp2.yaml
+            rm -f aws-auth-temp2.yaml
             
             echo "✅ GitHub Actions 역할을 aws-auth ConfigMap에 추가 완료"
           else
