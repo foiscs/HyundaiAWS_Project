@@ -700,9 +700,11 @@ jobs:
             namespace: ${{ env.PROJECT_NAME }}
             annotations:
               # AWS Application Load Balancer 설정
+              kubernetes.io/ingress.class: alb
               alb.ingress.kubernetes.io/scheme: internet-facing
               alb.ingress.kubernetes.io/target-type: ip
               alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}]'
+              alb.ingress.kubernetes.io/subnets: subnet-039b420c65ca59f58,subnet-0ed371078691c84cf
               
               # Health Check 설정 (PHP 애플리케이션)
               alb.ingress.kubernetes.io/healthcheck-path: /healthcheck.php
@@ -715,19 +717,7 @@ jobs:
               
               # Load Balancer 설정
               alb.ingress.kubernetes.io/load-balancer-name: ${{ env.PROJECT_NAME }}-ingress-alb
-              alb.ingress.kubernetes.io/target-group-attributes: |
-                stickiness.enabled=false,
-                deregistration_delay.timeout_seconds=60,
-                load_balancing.algorithm.type=round_robin,
-                slow_start.duration_seconds=30
-                
-              # 태그 설정
-              alb.ingress.kubernetes.io/tags: |
-                Environment=${{ env.PROJECT_NAME }},
-                Project=${{ env.PROJECT_NAME }},
-                ManagedBy=Kubernetes,
-                CreatedBy=AWS-Load-Balancer-Controller,
-                Application=PHP-Blog
+              alb.ingress.kubernetes.io/target-group-attributes: "stickiness.enabled=false,deregistration_delay.timeout_seconds=60,load_balancing.algorithm.type=round_robin,slow_start.duration_seconds=30"
           spec:
             ingressClassName: alb
             rules:

@@ -664,15 +664,7 @@ resource "aws_iam_policy" "aws_load_balancer_controller" {
           "ec2:CreateSecurityGroup",
           "ec2:CreateTags"
         ]
-        Resource = "arn:aws:ec2:*:*:security-group/*"
-        Condition = {
-          StringEquals = {
-            "ec2:CreateAction" = "CreateSecurityGroup"
-          }
-          Null = {
-            "aws:RequestedRegion" = "false"
-          }
-        }
+        Resource = "*"
       },
       {
         Effect = "Allow"
@@ -706,7 +698,11 @@ resource "aws_iam_policy" "aws_load_balancer_controller" {
         Resource = [
           "arn:aws:elasticloadbalancing:*:*:targetgroup/*/*",
           "arn:aws:elasticloadbalancing:*:*:loadbalancer/net/*/*",
-          "arn:aws:elasticloadbalancing:*:*:loadbalancer/app/*/*"
+          "arn:aws:elasticloadbalancing:*:*:loadbalancer/app/*/*",
+          "arn:aws:elasticloadbalancing:*:*:listener/app/*/*",
+          "arn:aws:elasticloadbalancing:*:*:listener/net/*/*",
+          "arn:aws:elasticloadbalancing:*:*:listener-rule/app/*/*",
+          "arn:aws:elasticloadbalancing:*:*:listener-rule/net/*/*"
         ]
         Condition = {
           Null = {

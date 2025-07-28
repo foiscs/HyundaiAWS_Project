@@ -62,44 +62,9 @@ data "aws_security_group" "rds_sg" {
 } 
 
 # =========================================
-# Application Load Balancer 보안 그룹
+# ALB 보안 그룹 (Ingress Controller가 자동 관리)
 # =========================================
-
-# ALB에서 EKS로의 접근 허용
-resource "aws_security_group_rule" "alb_to_eks" {
-  count                    = var.enable_load_balancer ? 1 : 0
-  type                     = "egress"
-  from_port                = var.application_port
-  to_port                  = var.application_port
-  protocol                 = "tcp"
-  source_security_group_id = module.eks.cluster_security_group_id
-  security_group_id        = aws_security_group.alb[0].id
-  description              = "ALB to EKS application access"
-}
-
-# EKS에서 ALB로부터의 접근 허용
-resource "aws_security_group_rule" "eks_from_alb" {
-  count                    = var.enable_load_balancer ? 1 : 0
-  type                     = "ingress"
-  from_port                = var.application_port
-  to_port                  = var.application_port
-  protocol                 = "tcp"
-  source_security_group_id = aws_security_group.alb[0].id
-  security_group_id        = module.eks.cluster_security_group_id
-  description              = "Allow ALB access to EKS applications"
-}
-
-# ALB에서 EKS NodePort 범위로의 접근 허용
-resource "aws_security_group_rule" "alb_to_eks_nodeport" {
-  count                    = var.enable_load_balancer ? 1 : 0
-  type                     = "ingress"
-  from_port                = var.nodeport_range_start
-  to_port                  = var.nodeport_range_end
-  protocol                 = "tcp"
-  source_security_group_id = aws_security_group.alb[0].id
-  security_group_id        = module.eks.node_group_security_group_id
-  description              = "ALB to EKS NodePort range access"
-}
+# AWS Load Balancer Controller가 ALB와 보안 그룹을 자동으로 생성하고 관리함
 
 # =========================================
 # Bastion Host 보안 그룹 (조건부 생성)
