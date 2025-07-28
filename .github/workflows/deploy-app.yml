@@ -276,7 +276,6 @@ jobs:
     # ===============================================
     - name: Apply Database Schema
       if: ${{ github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/terraform') }}
-
       run: |
         echo "🗄️ 데이터베이스 스키마 적용 중..."
         
@@ -421,11 +420,11 @@ jobs:
 
           echo "✅ 데이터베이스 스키마 작업 완료"
 
-      # ===============================================
-      # kubectl 및 Helm 설치
-      # ===============================================
-      - name: Install kubectl and Helm
-        run: |
+    # ===============================================
+    # kubectl 및 Helm 설치
+    # ===============================================
+    - name: Install kubectl and Helm
+      run: |
           echo "🔧 kubectl 및 Helm 설치 중..."
 
           # kubectl 설치
@@ -440,8 +439,8 @@ jobs:
           kubectl version --client
           helm version
 
-      - name: Update kubeconfig for EKS
-        run: |
+    - name: Update kubeconfig for EKS
+      run: |
           echo "🔧 EKS 클러스터 kubeconfig 업데이트 중..."
 
           # 현재 AWS 자격 증명 확인
@@ -512,8 +511,8 @@ jobs:
       # ===============================================
       # AWS Load Balancer Controller 확인
       # ===============================================
-      - name: Check AWS Load Balancer Controller
-        run: |
+    - name: Check AWS Load Balancer Controller
+      run: |
           echo "🔍 AWS Load Balancer Controller 상태 확인 중..."
           
           # AWS Load Balancer Controller Pod 확인
@@ -551,8 +550,8 @@ jobs:
       # ===============================================
       # Kubernetes 매니페스트 파일 생성
       # ===============================================
-      - name: Generate Kubernetes manifests
-        run: |
+    - name: Generate Kubernetes manifests
+      run: |
           echo "📝 Kubernetes 매니페스트 생성 중..."
 
           # Namespace 생성
@@ -741,9 +740,9 @@ jobs:
       # ===============================================
       # EKS에 애플리케이션 배포 (main 또는 terraform 브랜치일 때만)
       # ===============================================
-      - name: Deploy to EKS
-        if: ${{ github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/terraform') }}
-        run: |
+    - name: Deploy to EKS
+      if: ${{ github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/terraform') }}
+      run: |
           echo "🚀 EKS에 애플리케이션 배포 중..."
 
           # Namespace 먼저 생성
@@ -820,10 +819,9 @@ jobs:
       # ===============================================
       # 배포 결과 확인
       # ===============================================
-      - name: Verify Deployment
-        if: ${{ github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/terraform') }}
-
-        run: |
+    - name: Verify Deployment
+      if: ${{ github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/terraform') }}
+      run: |
           echo "🔍 배포 상태 확인 중..."
           echo "네임스페이스: ${{ env.PROJECT_NAME }}"
           echo "앱 라벨: ${{ env.PROJECT_NAME }}-app"
@@ -869,10 +867,9 @@ jobs:
       # ===============================================
       # 배포 방법별 접속 URL 제공
       # ===============================================
-      - name: Get Application URL
-        if: success() && ${{ github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/terraform') }}
-
-        run: |
+    - name: Get Application URL
+      if: success() && ${{ github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/terraform') }}
+      run: |
           echo "🔗 애플리케이션 접속 정보 확인 중..."
           echo "배포 방법: ${DEPLOYMENT_METHOD:-Unknown}"
 
@@ -911,10 +908,9 @@ jobs:
       # ===============================================
       # 배포 완료 알림
       # ===============================================
-      - name: Application Deployment Notification
-        if: success() && ${{ github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/terraform') }}
-
-        run: |
+    - name: Application Deployment Notification
+      if: success() && ${{ github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/terraform') }}
+      run: |
           echo "🎉 PHP 애플리케이션 배포 완료!"
           echo "프로젝트: ${{ env.PROJECT_NAME }}"
           echo "이미지: ${{ steps.build-image.outputs.image }}"
@@ -931,10 +927,9 @@ jobs:
       # ===============================================
       # 배포 실패 시 롤백
       # ===============================================
-      - name: Rollback on failure
-        if: failure() && ${{ github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/terraform') }}
-
-        run: |
+    - name: Rollback on failure
+      if: failure() && ${{ github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/terraform') }}
+      run: |
           echo "❌ 배포 실패 - 이전 버전으로 롤백 중..."
           kubectl rollout undo deployment/${{ env.PROJECT_NAME }}-app -n ${{ env.PROJECT_NAME }} || true
           kubectl rollout status deployment/${{ env.PROJECT_NAME }}-app -n ${{ env.PROJECT_NAME }} --timeout=300s || true
