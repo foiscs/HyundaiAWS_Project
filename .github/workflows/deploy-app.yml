@@ -240,30 +240,96 @@ jobs:
         fi
         
         echo "🔗 SSH 터널을 통한 PostgreSQL 연결 테스트 중..."
-        # SSH 터널을 통한 PostgreSQL 연결 테스트
-        ssh -i bastion_key.pem -o StrictHostKeyChecking=no -o ExitOnForwardFailure=yes -L 5432:$DB_HOST:5432 ec2-user@$BASTION_IP -N &
-        SSH_PID=$!
         
-        # 터널 설정 대기
-        sleep 10
-        
-        # PostgreSQL 클라이언트 설치 (필요한 경우)
+        # PostgreSQL 클라이언트 설치 (먼저 설치)
         if ! command -v psql &> /dev/null; then
           echo "📦 PostgreSQL 클라이언트 설치 중..."
-          sudo apt-get update && sudo apt-get install -y postgresql-client
+          sudo apt-get update -qq && sudo apt-get install -y postgresql-client
         fi
         
-        # 로컬 포트를 통해 RDS 연결 테스트
-        if PGPASSWORD=$DB_PASSWORD psql -h localhost -p 5432 -U $DB_USER -d $DB_NAME -c "SELECT 1;" 2>/dev/null; then
-          echo "✅ 데이터베이스 연결 성공"
+        # 로컬 포트가 사용 중인지 확인
+        if netstat -tuln | grep -q ":5432 "; then
+          echo "⚠️ 포트 5432가 이미 사용 중입니다. 다른 포트를 사용합니다."
+          LOCAL_PORT=5433
         else
-          echo "❌ 데이터베이스 연결 실패"
+          LOCAL_PORT=5432
+        fi
+        
+        echo "🔗 SSH 터널 생성 중... (로컬 포트: $LOCAL_PORT)"
+        # SSH 터널 생성 with 더 많은 옵션
+        ssh -i bastion_key.pem \
+            -o StrictHostKeyChecking=no \
+            -o UserKnownHostsFile=/dev/null \
+            -o ExitOnForwardFailure=yes \
+            -o ServerAliveInterval=60 \
+            -o ServerAliveCountMax=3 \
+            -o ConnectTimeout=30 \
+            -L $LOCAL_PORT:$DB_HOST:5432 \
+            ec2-user@$BASTION_IP \
+            -N &
+        SSH_PID=$!
+        
+        # SSH 터널이 정상적으로 시작되었는지 확인
+        echo "⏳ SSH 터널 설정 확인 중..."
+        sleep 5
+        
+        # SSH 프로세스가 아직 실행 중인지 확인
+        if ! kill -0 $SSH_PID 2>/dev/null; then
+          echo "❌ SSH 터널 생성 실패"
+          echo "SSH 연결 로그 확인:"
+          ssh -i bastion_key.pem -o StrictHostKeyChecking=no ec2-user@$BASTION_IP "echo 'SSH 연결 테스트 성공'" || echo "SSH 기본 연결 실패"
+          rm -f bastion_key.pem
+          exit 1
+        fi
+        
+        # 터널 포트가 열렸는지 확인
+        echo "🔍 터널 포트 확인 중..."
+        for i in {1..30}; do
+          if netstat -tuln | grep -q ":$LOCAL_PORT "; then
+            echo "✅ SSH 터널이 성공적으로 설정되었습니다 (포트: $LOCAL_PORT)"
+            break
+          fi
+          if [ $i -eq 30 ]; then
+            echo "❌ SSH 터널 포트 설정 시간 초과"
+            kill $SSH_PID 2>/dev/null
+            rm -f bastion_key.pem
+            exit 1
+          fi
+          sleep 2
+        done
+        
+        # 데이터베이스 연결 테스트 (재시도 로직 추가)
+        echo "🔍 데이터베이스 연결 테스트 중..."
+        DB_CONNECTED=false
+        for i in {1..5}; do
+          if PGPASSWORD=$DB_PASSWORD psql -h localhost -p $LOCAL_PORT -U $DB_USER -d $DB_NAME -c "SELECT 1;" >/dev/null 2>&1; then
+            echo "✅ 데이터베이스 연결 성공 (시도 $i/5)"
+            DB_CONNECTED=true
+            break
+          else
+            echo "⚠️ 데이터베이스 연결 실패 (시도 $i/5), 3초 후 재시도..."
+            sleep 3
+          fi
+        done
+        
+        if [ "$DB_CONNECTED" != "true" ]; then
+          echo "❌ 데이터베이스 연결 최종 실패"
+          echo "🔍 연결 정보 확인:"
+          echo "  로컬 포트: $LOCAL_PORT"
+          echo "  DB 호스트: $DB_HOST"
+          echo "  DB 사용자: $DB_USER"
+          echo "  DB 이름: $DB_NAME"
+          echo "🔍 네트워크 상태:"
+          netstat -tuln | grep ":$LOCAL_PORT"
+          echo "🔍 SSH 터널 상태:"
+          ps aux | grep ssh | grep $BASTION_IP || echo "SSH 프로세스 없음"
           kill $SSH_PID 2>/dev/null
           rm -f bastion_key.pem
           exit 1
         fi
         
         # SSH 터널 종료 및 정리
+        echo "🧹 SSH 터널 정리 중..."
         kill $SSH_PID 2>/dev/null
         rm -f bastion_key.pem
         
@@ -314,51 +380,96 @@ jobs:
           --output text > bastion_key.pem
         chmod 600 bastion_key.pem
         
+        # 로컬 포트가 사용 중인지 확인
+        if netstat -tuln | grep -q ":5432 "; then
+          echo "⚠️ 포트 5432가 이미 사용 중입니다. 다른 포트를 사용합니다."
+          LOCAL_PORT=5433
+        else
+          LOCAL_PORT=5432
+        fi
+        
         # SSH 터널 생성 (백그라운드에서 실행)
-        echo "🔗 SSH 터널 생성 중..."
+        echo "🔗 SSH 터널 생성 중... (로컬 포트: $LOCAL_PORT)"
         ssh -i bastion_key.pem \
             -o StrictHostKeyChecking=no \
+            -o UserKnownHostsFile=/dev/null \
             -o ExitOnForwardFailure=yes \
-            -L 5432:$DB_HOST:5432 \
+            -o ServerAliveInterval=60 \
+            -o ServerAliveCountMax=3 \
+            -o ConnectTimeout=30 \
+            -L $LOCAL_PORT:$DB_HOST:5432 \
             ec2-user@$BASTION_IP \
             -N &
         SSH_PID=$!
         
-        # 터널 설정 대기
-        echo "⏳ SSH 터널 설정 대기 중..."
-        sleep 15
+        # 터널 설정 대기 및 확인
+        echo "⏳ SSH 터널 설정 확인 중..."
+        sleep 5
         
         # SSH 터널 상태 확인
         if ! kill -0 $SSH_PID 2>/dev/null; then
           echo "❌ SSH 터널 생성 실패"
+          echo "SSH 연결 로그 확인:"
+          ssh -i bastion_key.pem -o StrictHostKeyChecking=no ec2-user@$BASTION_IP "echo 'SSH 연결 테스트 성공'" || echo "SSH 기본 연결 실패"
           rm -f bastion_key.pem
           exit 1
         fi
         
+        # 터널 포트가 열렸는지 확인
+        echo "🔍 터널 포트 확인 중..."
+        for i in {1..30}; do
+          if netstat -tuln | grep -q ":$LOCAL_PORT "; then
+            echo "✅ SSH 터널이 성공적으로 설정되었습니다 (포트: $LOCAL_PORT)"
+            break
+          fi
+          if [ $i -eq 30 ]; then
+            echo "❌ SSH 터널 포트 설정 시간 초과"
+            kill $SSH_PID 2>/dev/null
+            rm -f bastion_key.pem
+            exit 1
+          fi
+          sleep 2
+        done
+        
         echo "✅ SSH 터널 생성 완료"
         
-        # 로컬 포트를 통해 RDS 연결 테스트
+        # 로컬 포트를 통해 RDS 연결 테스트 (재시도 로직)
         echo "🔍 데이터베이스 연결 테스트 중..."
-        if ! PGPASSWORD="${{ secrets.DB_PASSWORD }}" psql \
-          -h localhost \
-          -p 5432 \
-          -U "$DB_USER" \
-          -d "$DB_NAME" \
-          -c "SELECT version();" \
-          -v ON_ERROR_STOP=1 >/dev/null 2>&1; then
-          echo "❌ 데이터베이스 연결 실패"
+        DB_CONNECTED=false
+        for i in {1..5}; do
+          if PGPASSWORD="${{ secrets.DB_PASSWORD }}" psql \
+            -h localhost \
+            -p $LOCAL_PORT \
+            -U "$DB_USER" \
+            -d "$DB_NAME" \
+            -c "SELECT version();" \
+            -v ON_ERROR_STOP=1 >/dev/null 2>&1; then
+            echo "✅ 데이터베이스 연결 성공 (시도 $i/5)"
+            DB_CONNECTED=true
+            break
+          else
+            echo "⚠️ 데이터베이스 연결 실패 (시도 $i/5), 3초 후 재시도..."
+            sleep 3
+          fi
+        done
+        
+        if [ "$DB_CONNECTED" != "true" ]; then
+          echo "❌ 데이터베이스 연결 최종 실패"
+          echo "🔍 연결 정보:"
+          echo "  로컬 포트: $LOCAL_PORT"
+          echo "  DB 호스트: $DB_HOST"
+          echo "  DB 사용자: $DB_USER"
+          echo "  DB 이름: $DB_NAME"
           kill $SSH_PID 2>/dev/null
           rm -f bastion_key.pem
           exit 1
         fi
         
-        echo "✅ 데이터베이스 연결 성공"
-        
         # 기존 테이블 확인
         echo "🔍 기존 테이블 확인 중..."
         EXISTING_TABLES=$(PGPASSWORD="${{ secrets.DB_PASSWORD }}" psql \
           -h localhost \
-          -p 5432 \
+          -p $LOCAL_PORT \
           -U "$DB_USER" \
           -d "$DB_NAME" \
           -t -c "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_name IN ('users', 'posts', 'images', 'files');" \
@@ -368,7 +479,7 @@ jobs:
           echo "📝 스키마 파일 적용 중..."
           if PGPASSWORD="${{ secrets.DB_PASSWORD }}" psql \
             -h localhost \
-            -p 5432 \
+            -p $LOCAL_PORT \
             -U "$DB_USER" \
             -d "$DB_NAME" \
             -f server/files/schema.sql \
@@ -381,44 +492,16 @@ jobs:
             exit 1
           fi
 
-          echo "✅ 데이터베이스 연결 성공"
+        else
+          echo "ℹ️ 테이블이 이미 존재합니다. 스키마 적용을 건너뜁니다."
+        fi
 
-          # 기존 테이블 확인
-          echo "🔍 기존 테이블 확인 중..."
-          EXISTING_TABLES=$(PGPASSWORD="${{ secrets.DB_PASSWORD }}" psql \
-            -h localhost \
-            -p 5432 \
-            -U "$DB_USER" \
-            -d "$DB_NAME" \
-            -t -c "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_name IN ('users', 'posts', 'images', 'files');" \
-            -v ON_ERROR_STOP=1 | tr -d ' ')
+        # 정리 작업
+        echo "🧹 정리 작업 중..."
+        kill $SSH_PID 2>/dev/null
+        rm -f bastion_key.pem
 
-          if [ "$EXISTING_TABLES" -eq "0" ]; then
-            echo "📝 스키마 파일 적용 중..."
-            if PGPASSWORD="${{ secrets.DB_PASSWORD }}" psql \
-              -h localhost \
-              -p 5432 \
-              -U "$DB_USER" \
-              -d "$DB_NAME" \
-              -f server/files/schema.sql \
-              -v ON_ERROR_STOP=1; then
-              echo "✅ 스키마 적용 완료"
-            else
-              echo "❌ 스키마 적용 실패"
-              kill $SSH_PID 2>/dev/null
-              rm -f bastion_key.pem
-              exit 1
-            fi
-          else
-            echo "ℹ️ 테이블이 이미 존재합니다. 스키마 적용을 건너뜁니다."
-          fi
-
-          # 정리 작업
-          echo "🧹 정리 작업 중..."
-          kill $SSH_PID 2>/dev/null
-          rm -f bastion_key.pem
-
-          echo "✅ 데이터베이스 스키마 작업 완료"
+        echo "✅ 데이터베이스 스키마 작업 완료"
 
     # ===============================================
     # kubectl 및 Helm 설치
