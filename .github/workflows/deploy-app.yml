@@ -298,17 +298,47 @@ jobs:
           sleep 2
         done
         
-        # 데이터베이스 연결 테스트 (재시도 로직 추가)
-        echo "🔍 데이터베이스 연결 테스트 중..."
+        # Bastion Host에서 직접 DB 연결 테스트
+        echo "🔍 Bastion Host에서 DB 직접 연결 테스트 중..."
+        ssh -i bastion_key.pem -o StrictHostKeyChecking=no ec2-user@$BASTION_IP "
+          # PostgreSQL 클라이언트 설치 확인
+          if ! command -v psql &> /dev/null; then
+            echo '📦 Bastion에 PostgreSQL 클라이언트 설치 중...'
+            sudo yum update -y
+            sudo yum install -y postgresql15
+          fi
+          
+          # DB 연결 테스트
+          echo '🔍 Bastion에서 RDS 직접 연결 테스트...'
+          if PGPASSWORD='$DB_PASSWORD' psql -h $DB_HOST -p 5432 -U $DB_USER -d $DB_NAME -c 'SELECT version();' 2>/dev/null; then
+            echo '✅ Bastion에서 RDS 직접 연결 성공'
+          else
+            echo '❌ Bastion에서 RDS 직접 연결 실패'
+            echo '🔍 네트워크 연결 확인:'
+            telnet $DB_HOST 5432 < /dev/null 2>&1 | head -5
+            echo '🔍 보안 그룹 확인이 필요합니다.'
+            exit 1
+          fi
+        "
+        
+        # 터널을 통한 연결 테스트 (재시도 로직 추가)
+        echo "🔍 SSH 터널을 통한 데이터베이스 연결 테스트 중..."
         DB_CONNECTED=false
         for i in {1..5}; do
-          if PGPASSWORD=$DB_PASSWORD psql -h localhost -p $LOCAL_PORT -U $DB_USER -d $DB_NAME -c "SELECT 1;" >/dev/null 2>&1; then
+          if PGPASSWORD=$DB_PASSWORD psql -h localhost -p $LOCAL_PORT -U $DB_USER -d $DB_NAME -c "SELECT 1;" 2>/dev/null; then
             echo "✅ 데이터베이스 연결 성공 (시도 $i/5)"
             DB_CONNECTED=true
             break
           else
-            echo "⚠️ 데이터베이스 연결 실패 (시도 $i/5), 3초 후 재시도..."
-            sleep 3
+            echo "⚠️ 데이터베이스 연결 실패 (시도 $i/5)"
+            # 자세한 오류 정보 출력
+            echo "🔍 상세 오류 정보:"
+            PGPASSWORD=$DB_PASSWORD psql -h localhost -p $LOCAL_PORT -U $DB_USER -d $DB_NAME -c "SELECT 1;" 2>&1 || true
+            
+            if [ $i -lt 5 ]; then
+              echo "3초 후 재시도..."
+              sleep 3
+            fi
           fi
         done
         
@@ -433,8 +463,31 @@ jobs:
         
         echo "✅ SSH 터널 생성 완료"
         
+        # Bastion Host에서 직접 DB 연결 테스트
+        echo "🔍 Bastion Host에서 DB 직접 연결 테스트 중..."
+        ssh -i bastion_key.pem -o StrictHostKeyChecking=no ec2-user@$BASTION_IP "
+          # PostgreSQL 클라이언트 설치 확인
+          if ! command -v psql &> /dev/null; then
+            echo '📦 Bastion에 PostgreSQL 클라이언트 설치 중...'
+            sudo yum update -y
+            sudo yum install -y postgresql15
+          fi
+          
+          # DB 연결 테스트
+          echo '🔍 Bastion에서 RDS 직접 연결 테스트...'
+          if PGPASSWORD='${{ secrets.DB_PASSWORD }}' psql -h $DB_HOST -p 5432 -U $DB_USER -d $DB_NAME -c 'SELECT version();' 2>/dev/null; then
+            echo '✅ Bastion에서 RDS 직접 연결 성공'
+          else
+            echo '❌ Bastion에서 RDS 직접 연결 실패'
+            echo '🔍 네트워크 연결 확인:'
+            nc -zv $DB_HOST 5432 2>&1 || telnet $DB_HOST 5432 < /dev/null 2>&1 | head -5
+            echo '🔍 보안 그룹 확인이 필요합니다.'
+            exit 1
+          fi
+        "
+        
         # 로컬 포트를 통해 RDS 연결 테스트 (재시도 로직)
-        echo "🔍 데이터베이스 연결 테스트 중..."
+        echo "🔍 SSH 터널을 통한 데이터베이스 연결 테스트 중..."
         DB_CONNECTED=false
         for i in {1..5}; do
           if PGPASSWORD="${{ secrets.DB_PASSWORD }}" psql \
@@ -443,13 +496,25 @@ jobs:
             -U "$DB_USER" \
             -d "$DB_NAME" \
             -c "SELECT version();" \
-            -v ON_ERROR_STOP=1 >/dev/null 2>&1; then
+            -v ON_ERROR_STOP=1 2>/dev/null; then
             echo "✅ 데이터베이스 연결 성공 (시도 $i/5)"
             DB_CONNECTED=true
             break
           else
-            echo "⚠️ 데이터베이스 연결 실패 (시도 $i/5), 3초 후 재시도..."
-            sleep 3
+            echo "⚠️ 데이터베이스 연결 실패 (시도 $i/5)"
+            # 자세한 오류 정보 출력
+            echo "🔍 상세 오류 정보:"
+            PGPASSWORD="${{ secrets.DB_PASSWORD }}" psql \
+              -h localhost \
+              -p $LOCAL_PORT \
+              -U "$DB_USER" \
+              -d "$DB_NAME" \
+              -c "SELECT version();" 2>&1 || true
+            
+            if [ $i -lt 5 ]; then
+              echo "3초 후 재시도..."
+              sleep 3
+            fi
           fi
         done
         
