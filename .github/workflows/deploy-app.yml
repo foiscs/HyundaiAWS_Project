@@ -998,7 +998,7 @@ jobs:
           echo "    alb.ingress.kubernetes.io/scheme: internet-facing" >> ingress.yaml
           echo "    alb.ingress.kubernetes.io/target-type: ip" >> ingress.yaml
           echo '    alb.ingress.kubernetes.io/listen-ports: '"'"'[{"HTTP": 80}]'"'"'' >> ingress.yaml
-          echo "    alb.ingress.kubernetes.io/subnets: subnet-039b420c65ca59f58,subnet-0ed371078691c84cf" >> ingress.yaml
+          echo "    alb.ingress.kubernetes.io/subnets: subnet-0c3b7ce8248681101,subnet-057589a6494b65a9c" >> ingress.yaml
           echo "    " >> ingress.yaml
           echo "    # Health Check 설정 (PHP 애플리케이션)" >> ingress.yaml
           echo "    alb.ingress.kubernetes.io/healthcheck-path: /healthcheck.php" >> ingress.yaml
