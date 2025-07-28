@@ -295,6 +295,49 @@
                     lowRisk: 0
                 };
 
+                // 키를 사용자 친화적 이름으로 변환
+                function convertKeyToFriendlyName(key) {
+                    const keyMap = {
+                        'message': '메시지',
+                        'summary': '요약',
+                        'total_users': '전체 사용자',
+                        'admin_users': '관리자 권한 사용자',
+                        'test_users': '테스트/임시 계정',
+                        'vulnerable_nacls': '취약한 네트워크 ACL',
+                        'misconfigured_routes': '잘못된 경로 설정',
+                        'insecure_buckets': '보안 설정 부족 S3 버킷',
+                        'unencrypted_instances': '암호화되지 않은 인스턴스',
+                        'unencrypted_volumes': '암호화되지 않은 볼륨',
+                        'unencrypted_clusters': '암호화되지 않은 클러스터',
+                        'unprotected_resources': '보호되지 않은 리소스',
+                        'policy_violations': '정책 위반 항목',
+                        'security_groups': '보안 그룹',
+                        'access_keys': '액세스 키',
+                        'certificates': '인증서',
+                        'trails': '클라우드트레일',
+                        'log_groups': '로그 그룹',
+                        'backup_vaults': '백업 볼트',
+                        'findings': '발견된 항목',
+                        'count': '개수',
+                        'description': '설명'
+                    };
+                    return keyMap[key] || key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+                }
+
+                // 항목 리스트 토글
+                function toggleItemsList(button) {
+                    const container = button.nextElementSibling;
+                    const isCollapsed = container.classList.contains('collapsed');
+                    
+                    if (isCollapsed) {
+                        container.classList.remove('collapsed');
+                        button.innerHTML = '접기 ▲';
+                    } else {
+                        container.classList.add('collapsed');
+                        button.innerHTML = '상세보기 ▼';
+                    }
+                }
+
                 // 계정 선택
                 function selectAccount(accountId) {
                     selectedAccountId = accountId;
@@ -539,27 +582,98 @@
                             resultHTML += `<div class="result-item"><strong>summary:</strong> ${diagnosisResult.summary}</div>`;
                         }
 
-                        // 상세 정보가 있으면 구조화된 형태로 표시
+                        // 상세 정보가 있으면 행 형태로 표시
                         if (diagnosisResult.details && typeof diagnosisResult.details === 'object') {
                             resultHTML += '<div class="result-details">';
+                            resultHTML += '<div class="details-rows">';
+                            
+                            // 빈 값 필터링 함수
+                            function hasValidContent(value) {
+                                if (value === null || value === undefined || value === '') return false;
+                                if (typeof value === 'object' && Object.keys(value).length === 0) return false;
+                                if (Array.isArray(value) && value.length === 0) return false;
+                                if (typeof value === 'object' && value.count === 0) return false;
+                                return true;
+                            }
+                            
                             Object.entries(diagnosisResult.details).forEach(([key, value]) => {
+                                // 빈 값은 표시하지 않음
+                                if (!hasValidContent(value)) return;
+                                
+                                // 행 시작
+                                resultHTML += '<div class="detail-row">';
+                                
+                                // 키를 사용자 친화적으로 변환
+                                const friendlyKey = convertKeyToFriendlyName(key);
+                                resultHTML += `<div class="row-label">${friendlyKey}</div>`;
+                                
+                                // 값을 적절히 포맷팅
+                                resultHTML += '<div class="row-content">';
+                                
                                 if (typeof value === 'object' && value !== null) {
-                                    resultHTML += `<div class="detail-section"><strong>${key}:</strong>`;
+                                    // 카운트가 있는 경우
                                     if (value.count !== undefined) {
-                                        resultHTML += ` ${value.count}개`;
+                                        resultHTML += `<span class="count-badge">${value.count}건</span>`;
                                     }
-                                    if (value.users && Array.isArray(value.users)) {
-                                        resultHTML += ` (${value.users.join(', ')})`;
+                                    
+                                    // 요약 정보
+                                    if (value.summary) {
+                                        resultHTML += `<div class="summary-text">${value.summary}</div>`;
                                     }
+                                    
+                                    // 설명
                                     if (value.description) {
-                                        resultHTML += ` - ${value.description}`;
+                                        resultHTML += `<div class="description-text">${value.description}</div>`;
                                     }
-                                    resultHTML += '</div>';
+                                    
+                                    // 사용자 리스트
+                                    if (value.users && Array.isArray(value.users)) {
+                                        resultHTML += '<div class="users-container">';
+                                        value.users.forEach(user => {
+                                            resultHTML += `<span class="user-tag">${user}</span>`;
+                                        });
+                                        resultHTML += '</div>';
+                                    }
+                                    
+                                    // 배열 데이터 처리 (정책, 규칙 등)
+                                    if (Array.isArray(value) && value.length > 0) {
+                                        if (value.length <= 3) {
+                                            // 3개 이하면 모두 표시
+                                            resultHTML += '<div class="items-container">';
+                                            value.forEach(item => {
+                                                if (typeof item === 'string') {
+                                                    resultHTML += `<div class="item-simple">${item}</div>`;
+                                                } else if (typeof item === 'object' && item.description) {
+                                                    resultHTML += `<div class="item-description">${item.description}</div>`;
+                                                }
+                                            });
+                                            resultHTML += '</div>';
+                                        } else {
+                                            // 3개 초과면 요약 + 토글
+                                            resultHTML += `<div class="items-summary">${value.length}개 항목 발견</div>`;
+                                            resultHTML += `<button class="toggle-items-btn" onclick="toggleItemsList(this)">상세보기 ▼</button>`;
+                                            resultHTML += '<div class="items-container collapsed">';
+                                            value.forEach(item => {
+                                                if (typeof item === 'string') {
+                                                    resultHTML += `<div class="item-simple">${item}</div>`;
+                                                } else if (typeof item === 'object' && item.description) {
+                                                    resultHTML += `<div class="item-description">${item.description}</div>`;
+                                                }
+                                            });
+                                            resultHTML += '</div>';
+                                        }
+                                    }
                                 } else {
-                                    resultHTML += `<div class="result-item"><strong>${key}:</strong> ${value}</div>`;
+                                    // 단순 값
+                                    resultHTML += `<span class="simple-value">${value}</span>`;
                                 }
+                                
+                                resultHTML += '</div>'; // row-content 종료
+                                resultHTML += '</div>'; // detail-row 종료
                             });
-                            resultHTML += '</div>';
+                            
+                            resultHTML += '</div>'; // details-rows 종료
+                            resultHTML += '</div>'; // result-details 종료
                         }
 
                         // 자동 조치 옵션 표시
@@ -593,12 +707,20 @@
                         // 수동 조치 가이드 표시
                         if (diagnosisResult.manual_guide) {
                             const guide = diagnosisResult.manual_guide;
+                            const toggleId = `manual-guide-${itemCode.replace('.', '-')}`;
+                            
                             resultHTML += '<div class="manual-guide-box">';
-                            resultHTML += `<div class="manual-guide-header">
-                                <h4>📋 ${guide.title}</h4>
-                                <p class="manual-guide-description">${guide.description}</p>
+                            resultHTML += `<div class="manual-guide-header" onclick="toggleManualGuide('${toggleId}')">
+                                <div class="manual-guide-title-section">
+                                    <h4>📋 ${guide.title}</h4>
+                                    <p class="manual-guide-description">${guide.description}</p>
+                                </div>
+                                <button class="manual-guide-toggle-btn" id="toggle-btn-${toggleId}">
+                                    <span class="toggle-icon">▼</span>
+                                </button>
                             </div>`;
 
+                            resultHTML += `<div class="manual-guide-content" id="${toggleId}" style="display: none;">`;
                             if (guide.steps && Array.isArray(guide.steps)) {
                                 resultHTML += '<div class="manual-guide-steps">';
                                 guide.steps.forEach((step, index) => {
@@ -614,22 +736,38 @@
 
                                     if (step.type === 'commands' && Array.isArray(step.content)) {
                                         resultHTML += '<div class="step-content commands-content">';
+                                        
+                                        // 전체 코드 블록을 하나로 묶기
+                                        let fullCodeBlock = '';
+                                        let hasValidCommands = false;
+                                        
                                         step.content.forEach(command => {
-                                            // 빈 문자열이거나 공백만 있는 경우 줄바꿈으로 처리
+                                            // 빈 문자열이거나 공백만 있는 경우 줄바꿈 추가
                                             if (!command || command.trim() === '') {
-                                                resultHTML += '<div class="command-separator"></div>';
-                                                return;
+                                                fullCodeBlock += '\n';
+                                            } else {
+                                                fullCodeBlock += command + '\n';
+                                                hasValidCommands = true;
                                             }
-
-                                            // HTML과 JavaScript에서 안전하게 사용하기 위해 이스케이프 처리
-                                            const escapedCommand = command.replace(/'/g, '&#39;').replace(/"/g, '&quot;');
-                                            const safeCommand = command.replace(/'/g, "\\'").replace(/"/g, '\\"');
-
-                                            resultHTML += `<div class="command-line">
-                                                <code>${escapedCommand}</code>
-                                                <button class="btn btn-xs btn-copy" onclick="copyToClipboard('${safeCommand}')">📋</button>
-                                            </div>`;
                                         });
+                                        
+                                        // 유효한 명령어가 있을 때만 코드 블록 생성
+                                        if (hasValidCommands) {
+                                            // 마지막 줄바꿈 제거
+                                            fullCodeBlock = fullCodeBlock.trim();
+                                            
+                                            // HTML과 JavaScript에서 안전하게 사용하기 위해 이스케이프 처리
+                                            const escapedCode = fullCodeBlock.replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+                                            const safeCode = fullCodeBlock.replace(/'/g, "\\'").replace(/"/g, '\\"').replace(/\n/g, '\\n');
+                                            
+                                            resultHTML += `<div class="unified-code-block">
+                                                <pre class="code-content"><code>${escapedCode}</code></pre>
+                                                <button class="btn btn-copy-all" onclick="copyToClipboard('${safeCode}')">
+                                                    📋 전체 복사
+                                                </button>
+                                            </div>`;
+                                        }
+                                        
                                         resultHTML += '</div>';
                                     } else {
                                         resultHTML += `<div class="step-content">${step.content}</div>`;
@@ -638,7 +776,8 @@
                                 });
                                 resultHTML += '</div>';
                             }
-                            resultHTML += '</div>';
+                            resultHTML += '</div>'; // manual-guide-content 닫기
+                            resultHTML += '</div>'; // manual-guide-box 닫기
                         }
                     } else {
                         resultHTML += `<div class="error-message">❌ ${diagnosisResult.error_message}</div>`;
@@ -1149,6 +1288,23 @@
                         });
                     });
                 });
+
+                // 수동 조치 가이드 토글 함수
+                function toggleManualGuide(toggleId) {
+                    const content = document.getElementById(toggleId);
+                    const toggleBtn = document.getElementById(`toggle-btn-${toggleId}`);
+                    const toggleIcon = toggleBtn.querySelector('.toggle-icon');
+                    
+                    if (content.style.display === 'none' || content.style.display === '') {
+                        content.style.display = 'block';
+                        toggleIcon.textContent = '▲';
+                        toggleBtn.setAttribute('aria-expanded', 'true');
+                    } else {
+                        content.style.display = 'none';
+                        toggleIcon.textContent = '▼';
+                        toggleBtn.setAttribute('aria-expanded', 'false');
+                    }
+                }
             </script>
             {% endblock %} {% block extra_css %}
             <link rel="stylesheet" href="{{ url_for('static', filename='css/pages/diagnosis.css') }}" />

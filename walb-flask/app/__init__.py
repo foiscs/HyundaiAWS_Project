@@ -2,6 +2,9 @@
 Flask 애플리케이션 팩토리
 """
 from flask import Flask
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config import config
 
 def create_app(config_name='default'):

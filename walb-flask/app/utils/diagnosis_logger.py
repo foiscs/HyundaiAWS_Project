@@ -26,26 +26,25 @@ class DiagnosisLogger:
         # 로그 디렉토리 생성
         os.makedirs(self.log_dir, exist_ok=True)
     
-    def start_session(self, account_name: str, session_type: str = "batch") -> str:
+    def start_session(self, account_id: str, account_name: str = None, session_type: str = "batch") -> str:
         """
         새로운 진단 세션 시작
         
         Args:
-            account_name (str): AWS 계정명
+            account_id (str): AWS 계정 ID
+            account_name (str): AWS 계정명 (옵션)
             session_type (str): 세션 타입 (batch, single)
             
         Returns:
             str: 세션 ID
         """
-        # 세션 ID 생성
+        # 타임스탬프와 계정 ID로 세션 ID 및 파일명 생성
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        self.current_session_id = f"{account_name}_{session_type}_{timestamp}"
+        self.current_session_id = f"{timestamp}_{account_id}_{session_type}"
         
-        # 로그 파일 경로 설정
-        self.session_log_file = os.path.join(
-            self.log_dir, 
-            f"{self.current_session_id}.log"
-        )
+        # 로그 파일 경로 설정 (타임스탬프_계정ID.log 형식)
+        log_filename = f"{timestamp}_{account_id}.log"
+        self.session_log_file = os.path.join(self.log_dir, log_filename)
         
         # 세션별 로거 설정
         self.session_logger = logging.getLogger(f"diagnosis_session_{self.current_session_id}")
@@ -71,7 +70,9 @@ class DiagnosisLogger:
         self.session_logger.info("="*80)
         self.session_logger.info(f"SK Shieldus AWS 보안 진단 세션 시작")
         self.session_logger.info(f"세션 ID: {self.current_session_id}")
-        self.session_logger.info(f"계정명: {account_name}")
+        self.session_logger.info(f"계정 ID: {account_id}")
+        if account_name:
+            self.session_logger.info(f"계정명: {account_name}")
         self.session_logger.info(f"세션 타입: {session_type}")
         self.session_logger.info(f"시작 시간: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         self.session_logger.info("="*80)
