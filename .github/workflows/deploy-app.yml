@@ -586,7 +586,7 @@ jobs:
             UPLOAD_MAX_SIZE: "10M"
             SESSION_LIFETIME: "7200"
           EOF
-          
+        
           # Secret 생성 (DB 패스워드)
           cat <<EOF > secret.yaml
           apiVersion: v1
