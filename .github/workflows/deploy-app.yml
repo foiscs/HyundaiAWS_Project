@@ -219,6 +219,85 @@ jobs:
         echo "✅ DB User: '$DB_USER'"
         echo "✅ DB Name: '$DB_NAME'"
         
+        # 보안 그룹 자동 설정
+        echo "🔧 보안 그룹 규칙 자동 설정 중..."
+        
+        # Bastion Host 정보 조회
+        BASTION_INSTANCE_ID=$(aws ec2 describe-instances \
+          --filters "Name=ip-address,Values=$BASTION_IP" "Name=instance-state-name,Values=running" \
+          --query "Reservations[0].Instances[0].InstanceId" \
+          --output text 2>/dev/null || echo "")
+        
+        if [ -n "$BASTION_INSTANCE_ID" ] && [ "$BASTION_INSTANCE_ID" != "None" ]; then
+          # Bastion Host의 보안 그룹 조회
+          BASTION_SG=$(aws ec2 describe-instances \
+            --instance-ids $BASTION_INSTANCE_ID \
+            --query "Reservations[0].Instances[0].SecurityGroups[0].GroupId" \
+            --output text 2>/dev/null || echo "")
+          
+          echo "Bastion Security Group: $BASTION_SG"
+        fi
+        
+        # RDS 정보 조회
+        RDS_INSTANCE_ID=$(aws rds describe-db-instances \
+          --query "DBInstances[?Endpoint.Address=='$DB_HOST'].DBInstanceIdentifier" \
+          --output text 2>/dev/null || echo "")
+        
+        if [ -n "$RDS_INSTANCE_ID" ] && [ "$RDS_INSTANCE_ID" != "None" ]; then
+          # RDS의 보안 그룹 조회
+          RDS_SG=$(aws rds describe-db-instances \
+            --db-instance-identifier $RDS_INSTANCE_ID \
+            --query "DBInstances[0].VpcSecurityGroups[0].VpcSecurityGroupId" \
+            --output text 2>/dev/null || echo "")
+          
+          echo "RDS Security Group: $RDS_SG"
+          
+          # RDS 보안 그룹에 Bastion 접근 규칙 추가
+          if [ -n "$BASTION_SG" ] && [ -n "$RDS_SG" ]; then
+            echo "🔧 RDS 보안 그룹에 Bastion 접근 규칙 추가 중..."
+            
+            # 기존 규칙 확인
+            EXISTING_RULE=$(aws ec2 describe-security-groups \
+              --group-ids $RDS_SG \
+              --query "SecurityGroups[0].IpPermissions[?FromPort==\`5432\` && UserIdGroupPairs[?GroupId==\`$BASTION_SG\`]]" \
+              --output text 2>/dev/null || echo "")
+            
+            if [ -z "$EXISTING_RULE" ]; then
+              aws ec2 authorize-security-group-ingress \
+                --group-id $RDS_SG \
+                --protocol tcp \
+                --port 5432 \
+                --source-group $BASTION_SG \
+                --no-cli-pager 2>/dev/null && echo "✅ RDS 인바운드 규칙 추가 완료" || echo "⚠️ RDS 규칙 추가 실패 (이미 존재할 수 있음)"
+            else
+              echo "✅ RDS 인바운드 규칙이 이미 존재합니다"
+            fi
+          fi
+        fi
+        
+        # Bastion 보안 그룹에 아웃바운드 규칙 확인/추가
+        if [ -n "$BASTION_SG" ]; then
+          echo "🔧 Bastion 보안 그룹 아웃바운드 규칙 확인 중..."
+          
+          # PostgreSQL 아웃바운드 규칙 확인
+          EXISTING_OUTBOUND=$(aws ec2 describe-security-groups \
+            --group-ids $BASTION_SG \
+            --query "SecurityGroups[0].IpPermissionsEgress[?FromPort==\`5432\` || IpProtocol==\`-1\`]" \
+            --output text 2>/dev/null || echo "")
+          
+          if [ -z "$EXISTING_OUTBOUND" ]; then
+            echo "🔧 Bastion 아웃바운드 규칙 추가 중..."
+            aws ec2 authorize-security-group-egress \
+              --group-id $BASTION_SG \
+              --protocol tcp \
+              --port 5432 \
+              --cidr 0.0.0.0/0 \
+              --no-cli-pager 2>/dev/null && echo "✅ Bastion 아웃바운드 규칙 추가 완료" || echo "⚠️ Bastion 규칙 추가 실패 (이미 존재할 수 있음)"
+          else
+            echo "✅ Bastion 아웃바운드 규칙이 이미 존재합니다"
+          fi
+        fi
+        
         # SSH 키를 Parameter Store에서 가져오기
         echo "🔑 SSH 키 조회 중..."
         aws ssm get-parameter \
@@ -298,17 +377,47 @@ jobs:
           sleep 2
         done
         
-        # 데이터베이스 연결 테스트 (재시도 로직 추가)
-        echo "🔍 데이터베이스 연결 테스트 중..."
+        # Bastion Host에서 직접 DB 연결 테스트
+        echo "🔍 Bastion Host에서 DB 직접 연결 테스트 중..."
+        ssh -i bastion_key.pem -o StrictHostKeyChecking=no ec2-user@$BASTION_IP "
+          # PostgreSQL 클라이언트 설치 확인
+          if ! command -v psql &> /dev/null; then
+            echo '📦 Bastion에 PostgreSQL 클라이언트 설치 중...'
+            sudo yum update -y
+            sudo yum install -y postgresql15
+          fi
+          
+          # DB 연결 테스트
+          echo '🔍 Bastion에서 RDS 직접 연결 테스트...'
+          if PGPASSWORD='$DB_PASSWORD' psql -h $DB_HOST -p 5432 -U $DB_USER -d $DB_NAME -c 'SELECT version();' 2>/dev/null; then
+            echo '✅ Bastion에서 RDS 직접 연결 성공'
+          else
+            echo '❌ Bastion에서 RDS 직접 연결 실패'
+            echo '🔍 네트워크 연결 확인:'
+            telnet $DB_HOST 5432 < /dev/null 2>&1 | head -5
+            echo '🔍 보안 그룹 확인이 필요합니다.'
+            exit 1
+          fi
+        "
+        
+        # 터널을 통한 연결 테스트 (재시도 로직 추가)
+        echo "🔍 SSH 터널을 통한 데이터베이스 연결 테스트 중..."
         DB_CONNECTED=false
         for i in {1..5}; do
-          if PGPASSWORD=$DB_PASSWORD psql -h localhost -p $LOCAL_PORT -U $DB_USER -d $DB_NAME -c "SELECT 1;" >/dev/null 2>&1; then
+          if PGPASSWORD=$DB_PASSWORD psql -h localhost -p $LOCAL_PORT -U $DB_USER -d $DB_NAME -c "SELECT 1;" 2>/dev/null; then
             echo "✅ 데이터베이스 연결 성공 (시도 $i/5)"
             DB_CONNECTED=true
             break
           else
-            echo "⚠️ 데이터베이스 연결 실패 (시도 $i/5), 3초 후 재시도..."
-            sleep 3
+            echo "⚠️ 데이터베이스 연결 실패 (시도 $i/5)"
+            # 자세한 오류 정보 출력
+            echo "🔍 상세 오류 정보:"
+            PGPASSWORD=$DB_PASSWORD psql -h localhost -p $LOCAL_PORT -U $DB_USER -d $DB_NAME -c "SELECT 1;" 2>&1 || true
+            
+            if [ $i -lt 5 ]; then
+              echo "3초 후 재시도..."
+              sleep 3
+            fi
           fi
         done
         
@@ -370,6 +479,64 @@ jobs:
         echo "  Bastion IP: $BASTION_IP"
         echo "  DB 이름: $DB_NAME"
         echo "  DB 사용자: $DB_USER"
+        
+        # 보안 그룹 자동 설정
+        echo "🔧 보안 그룹 규칙 자동 설정 중..."
+        
+        # Bastion Host 정보 조회
+        BASTION_INSTANCE_ID=$(aws ec2 describe-instances \
+          --filters "Name=ip-address,Values=$BASTION_IP" "Name=instance-state-name,Values=running" \
+          --query "Reservations[0].Instances[0].InstanceId" \
+          --output text 2>/dev/null || echo "")
+        
+        if [ -n "$BASTION_INSTANCE_ID" ] && [ "$BASTION_INSTANCE_ID" != "None" ]; then
+          # Bastion Host의 보안 그룹 조회
+          BASTION_SG=$(aws ec2 describe-instances \
+            --instance-ids $BASTION_INSTANCE_ID \
+            --query "Reservations[0].Instances[0].SecurityGroups[0].GroupId" \
+            --output text 2>/dev/null || echo "")
+          
+          echo "Bastion Security Group: $BASTION_SG"
+        fi
+        
+        # RDS 정보 조회
+        RDS_INSTANCE_ID=$(aws rds describe-db-instances \
+          --query "DBInstances[?Endpoint.Address=='$DB_HOST'].DBInstanceIdentifier" \
+          --output text 2>/dev/null || echo "")
+        
+        if [ -n "$RDS_INSTANCE_ID" ] && [ "$RDS_INSTANCE_ID" != "None" ]; then
+          # RDS의 보안 그룹 조회
+          RDS_SG=$(aws rds describe-db-instances \
+            --db-instance-identifier $RDS_INSTANCE_ID \
+            --query "DBInstances[0].VpcSecurityGroups[0].VpcSecurityGroupId" \
+            --output text 2>/dev/null || echo "")
+          
+          echo "RDS Security Group: $RDS_SG"
+          
+          # RDS 보안 그룹에 Bastion 접근 규칙 추가
+          if [ -n "$BASTION_SG" ] && [ -n "$RDS_SG" ]; then
+            echo "🔧 RDS 보안 그룹에 Bastion 접근 규칙 추가 중..."
+            
+            aws ec2 authorize-security-group-ingress \
+              --group-id $RDS_SG \
+              --protocol tcp \
+              --port 5432 \
+              --source-group $BASTION_SG \
+              --no-cli-pager 2>/dev/null && echo "✅ RDS 인바운드 규칙 추가 완료" || echo "✅ RDS 규칙이 이미 존재합니다"
+          fi
+        fi
+        
+        # Bastion 보안 그룹에 아웃바운드 규칙 추가
+        if [ -n "$BASTION_SG" ]; then
+          echo "🔧 Bastion 보안 그룹 아웃바운드 규칙 추가 중..."
+          
+          aws ec2 authorize-security-group-egress \
+            --group-id $BASTION_SG \
+            --protocol tcp \
+            --port 5432 \
+            --cidr 0.0.0.0/0 \
+            --no-cli-pager 2>/dev/null && echo "✅ Bastion 아웃바운드 규칙 추가 완료" || echo "✅ Bastion 규칙이 이미 존재합니다"
+        fi
         
         # SSH 키를 Parameter Store에서 가져오기
         echo "🔑 SSH 키 가져오는 중..."
@@ -433,8 +600,31 @@ jobs:
         
         echo "✅ SSH 터널 생성 완료"
         
+        # Bastion Host에서 직접 DB 연결 테스트
+        echo "🔍 Bastion Host에서 DB 직접 연결 테스트 중..."
+        ssh -i bastion_key.pem -o StrictHostKeyChecking=no ec2-user@$BASTION_IP "
+          # PostgreSQL 클라이언트 설치 확인
+          if ! command -v psql &> /dev/null; then
+            echo '📦 Bastion에 PostgreSQL 클라이언트 설치 중...'
+            sudo yum update -y
+            sudo yum install -y postgresql15
+          fi
+          
+          # DB 연결 테스트
+          echo '🔍 Bastion에서 RDS 직접 연결 테스트...'
+          if PGPASSWORD='${{ secrets.DB_PASSWORD }}' psql -h $DB_HOST -p 5432 -U $DB_USER -d $DB_NAME -c 'SELECT version();' 2>/dev/null; then
+            echo '✅ Bastion에서 RDS 직접 연결 성공'
+          else
+            echo '❌ Bastion에서 RDS 직접 연결 실패'
+            echo '🔍 네트워크 연결 확인:'
+            nc -zv $DB_HOST 5432 2>&1 || telnet $DB_HOST 5432 < /dev/null 2>&1 | head -5
+            echo '🔍 보안 그룹 확인이 필요합니다.'
+            exit 1
+          fi
+        "
+        
         # 로컬 포트를 통해 RDS 연결 테스트 (재시도 로직)
-        echo "🔍 데이터베이스 연결 테스트 중..."
+        echo "🔍 SSH 터널을 통한 데이터베이스 연결 테스트 중..."
         DB_CONNECTED=false
         for i in {1..5}; do
           if PGPASSWORD="${{ secrets.DB_PASSWORD }}" psql \
@@ -443,13 +633,25 @@ jobs:
             -U "$DB_USER" \
             -d "$DB_NAME" \
             -c "SELECT version();" \
-            -v ON_ERROR_STOP=1 >/dev/null 2>&1; then
+            -v ON_ERROR_STOP=1 2>/dev/null; then
             echo "✅ 데이터베이스 연결 성공 (시도 $i/5)"
             DB_CONNECTED=true
             break
           else
-            echo "⚠️ 데이터베이스 연결 실패 (시도 $i/5), 3초 후 재시도..."
-            sleep 3
+            echo "⚠️ 데이터베이스 연결 실패 (시도 $i/5)"
+            # 자세한 오류 정보 출력
+            echo "🔍 상세 오류 정보:"
+            PGPASSWORD="${{ secrets.DB_PASSWORD }}" psql \
+              -h localhost \
+              -p $LOCAL_PORT \
+              -U "$DB_USER" \
+              -d "$DB_NAME" \
+              -c "SELECT version();" 2>&1 || true
+            
+            if [ $i -lt 5 ]; then
+              echo "3초 후 재시도..."
+              sleep 3
+            fi
           fi
         done
         
