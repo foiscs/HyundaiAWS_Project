@@ -1064,42 +1064,86 @@ jobs:
           if kubectl apply -f ingress.yaml; then
             echo "✅ Ingress 리소스 생성 성공"
             
-            # ALB 생성 대기
+            # ALB 생성 대기 (총 20분)
             echo "⏳ AWS Load Balancer Controller에 의한 ALB 생성 대기 중..."
+            echo "ℹ️ ALB 생성 및 프로비저닝에는 5-10분 정도 소요될 수 있습니다."
             ALB_CREATED=false
-            for i in {1..25}; do
+            ALB_PROVISIONING=false
+            for i in {1..40}; do
               ALB_DNS=$(kubectl get ingress ${{ env.PROJECT_NAME }}-ingress -n ${{ env.PROJECT_NAME }} -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "")
-              if [ -n "$ALB_DNS" ]; then
-                echo "✅ ALB 생성 완료: $ALB_DNS"
-                echo "ALB_HOSTNAME=$ALB_DNS" >> $GITHUB_ENV
-                echo "DEPLOYMENT_METHOD=Ingress" >> $GITHUB_ENV
-                ALB_CREATED=true
-                break
+              
+              if [ -n "$ALB_DNS" ] && [ "$ALB_DNS" != "null" ]; then
+                if [ "$ALB_PROVISIONING" != "true" ]; then
+                  echo "🎯 ALB DNS 주소 할당 완료: $ALB_DNS"
+                  echo "⏳ 이제 ALB 프로비저닝 및 헬스체크 완료를 기다립니다..."
+                  ALB_PROVISIONING=true
+                fi
+                
+                # ALB가 실제로 응답하는지 확인
+                if curl -s --connect-timeout 5 --max-time 10 -o /dev/null -w "%{http_code}" "http://$ALB_DNS/healthcheck.php" | grep -E "^(200|404)$" >/dev/null; then
+                  echo "✅ ALB 프로비저닝 완료 및 연결 가능: $ALB_DNS"
+                  echo "ALB_HOSTNAME=$ALB_DNS" >> $GITHUB_ENV
+                  echo "DEPLOYMENT_METHOD=Ingress" >> $GITHUB_ENV
+                  ALB_CREATED=true
+                  break
+                else
+                  echo "⏳ ALB는 생성되었지만 아직 프로비저닝 중입니다... ($i/40)"
+                fi
+              else
+                echo "⏳ ALB 생성 대기 중... ($i/40)"
               fi
               
-              # 진행 상황 확인
-              if [ $((i % 5)) -eq 0 ]; then
-                echo "🔍 Ingress 상태 확인 (${i}/25)..."
+              # 진행 상황 상세 확인 (3번마다)
+              if [ $((i % 3)) -eq 0 ]; then
+                echo "🔍 Ingress 상태 확인 (${i}/40)..."
                 kubectl get ingress ${{ env.PROJECT_NAME }}-ingress -n ${{ env.PROJECT_NAME }} || true
-                kubectl describe ingress ${{ env.PROJECT_NAME }}-ingress -n ${{ env.PROJECT_NAME }} | grep -E "(Events|Address)" || true
+                
+                # AWS Load Balancer Controller 상태 확인
+                if [ $((i % 6)) -eq 0 ]; then
+                  echo "🔍 AWS Load Balancer Controller Pod 상태:"
+                  kubectl get pods -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller || true
+                  
+                  # 최근 이벤트 확인
+                  echo "🔍 최근 Ingress 이벤트:"
+                  kubectl describe ingress ${{ env.PROJECT_NAME }}-ingress -n ${{ env.PROJECT_NAME }} | grep -A 10 "Events:" || true
+                fi
               fi
               
-              echo "ALB 생성 대기 중... ($i/25)"
-              sleep 20
+              sleep 30
             done
             
             if [ "$ALB_CREATED" != "true" ]; then
-              echo "⚠️ ALB 생성 시간 초과 - 상세 진단 실행"
+              echo "⚠️ ALB 생성/프로비저닝 시간 초과 (20분) - 상세 진단 실행"
               
-              echo "🔍 Ingress 상세 상태:"
+              echo "🔍 최종 Ingress 상태:"
               kubectl get ingress ${{ env.PROJECT_NAME }}-ingress -n ${{ env.PROJECT_NAME }} -o yaml || true
               kubectl describe ingress ${{ env.PROJECT_NAME }}-ingress -n ${{ env.PROJECT_NAME }} || true
               
-              echo "🔍 AWS Load Balancer Controller 로그:"
-              kubectl logs -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller --tail=100 || true
+              echo "🔍 AWS Load Balancer Controller 상세 상태:"
+              kubectl get pods -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller -o wide || true
+              kubectl describe pods -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller || true
               
-              echo "DEPLOYMENT_METHOD=Ingress-Pending" >> $GITHUB_ENV
-              echo "ALB_HOSTNAME=pending" >> $GITHUB_ENV
+              echo "🔍 AWS Load Balancer Controller 최근 로그:"
+              kubectl logs -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller --tail=200 || true
+              
+              echo "🔍 IngressClass 확인:"
+              kubectl get ingressclass || true
+              kubectl describe ingressclass alb || true
+              
+              echo "🔍 ValidatingWebhookConfiguration 확인:"
+              kubectl get validatingwebhookconfigurations | grep -E "(vingress|aws-load-balancer)" || echo "웹훅 없음"
+              
+              # ALB가 생성되었지만 프로비저닝이 완료되지 않은 경우 환경변수 설정
+              if [ -n "$ALB_DNS" ] && [ "$ALB_DNS" != "null" ]; then
+                echo "DEPLOYMENT_METHOD=Ingress-Provisioning" >> $GITHUB_ENV
+                echo "ALB_HOSTNAME=$ALB_DNS" >> $GITHUB_ENV
+                echo "ℹ️ ALB가 생성되었지만 프로비저닝이 완료되지 않았습니다: $ALB_DNS"
+                echo "ℹ️ 수동으로 ALB 상태를 확인하거나 잠시 후 다시 시도해주세요."
+              else
+                echo "DEPLOYMENT_METHOD=Ingress-Failed" >> $GITHUB_ENV
+                echo "ALB_HOSTNAME=failed" >> $GITHUB_ENV
+                echo "❌ ALB 생성 자체가 실패했습니다."
+              fi
             fi
             
           else
@@ -1181,14 +1225,46 @@ jobs:
           echo "배포 방법: ${DEPLOYMENT_METHOD:-Unknown}"
 
           if [ "${DEPLOYMENT_METHOD:-}" = "Ingress" ]; then
-            echo "🔗 Ingress로 배포됨"
+            echo "✅ Ingress ALB 배포 완료!"
             echo "🌐 애플리케이션 접속 URL: http://${ALB_HOSTNAME:-확인불가}"
+            
+            # 실제 연결 테스트
+            echo "🔍 ALB 연결 테스트 중..."
+            if curl -s --connect-timeout 10 --max-time 15 -o /dev/null -w "%{http_code}" "http://${ALB_HOSTNAME}/healthcheck.php" | grep -E "^(200|404)$" >/dev/null; then
+              echo "✅ ALB 연결 성공 - 애플리케이션 접속 가능"
+            else
+              echo "⚠️ ALB 연결 실패 - 헬스체크 문제일 수 있습니다"
+              echo "🔍 타겟 그룹 헬스 상태 확인을 권장합니다."
+            fi
             
             echo "🔍 Ingress 상태:"
             kubectl describe ingress ${{ env.PROJECT_NAME }}-ingress -n ${{ env.PROJECT_NAME }}
             
+          elif [ "${DEPLOYMENT_METHOD:-}" = "Ingress-Provisioning" ]; then
+            echo "⚠️ ALB가 생성되었지만 아직 프로비저닝 중입니다"
+            echo "🌐 ALB DNS: http://${ALB_HOSTNAME:-확인불가}"
+            echo "ℹ️ 5-10분 후 접속이 가능할 예정입니다."
+            
+            echo "🔍 현재 ALB 연결 상태:"
+            curl -s --connect-timeout 5 --max-time 10 -w "HTTP 상태코드: %{http_code}, 응답시간: %{time_total}s\n" "http://${ALB_HOSTNAME}/healthcheck.php" || echo "아직 연결 불가"
+            
+            echo "🔍 Ingress 상태:"
+            kubectl describe ingress ${{ env.PROJECT_NAME }}-ingress -n ${{ env.PROJECT_NAME }}
+            
+          elif [ "${DEPLOYMENT_METHOD:-}" = "Ingress-Failed" ]; then
+            echo "❌ ALB 생성에 실패했습니다"
+            echo "🔍 현재 Ingress 상태:"
+            kubectl get ingress ${{ env.PROJECT_NAME }}-ingress -n ${{ env.PROJECT_NAME }}
+            kubectl describe ingress ${{ env.PROJECT_NAME }}-ingress -n ${{ env.PROJECT_NAME }}
+            
+            echo "🔧 문제 해결을 위한 체크리스트:"
+            echo "1. AWS Load Balancer Controller가 정상 실행 중인지 확인"
+            echo "2. IngressClass 'alb'가 존재하는지 확인"
+            echo "3. AWS IAM 권한이 올바른지 확인"
+            echo "4. 서브넷 태그가 올바른지 확인"
+            
           elif [ "${DEPLOYMENT_METHOD:-}" = "Ingress-Pending" ]; then
-            echo "⚠️ Ingress ALB 생성이 진행 중입니다"
+            echo "⚠️ ALB 생성이 아직 시작되지 않았습니다"
             echo "🔍 현재 Ingress 상태:"
             kubectl get ingress ${{ env.PROJECT_NAME }}-ingress -n ${{ env.PROJECT_NAME }}
             kubectl describe ingress ${{ env.PROJECT_NAME }}-ingress -n ${{ env.PROJECT_NAME }}
@@ -1205,6 +1281,8 @@ jobs:
             
           else
             echo "❓ 배포 방법을 확인할 수 없습니다."
+            echo "배포 방법: ${DEPLOYMENT_METHOD:-Unknown}"
+            echo "ALB 호스트명: ${ALB_HOSTNAME:-Unknown}"
             echo "사용 가능한 서비스 확인:"
             kubectl get services -n ${{ env.PROJECT_NAME }}
             echo "사용 가능한 Ingress 확인:"
