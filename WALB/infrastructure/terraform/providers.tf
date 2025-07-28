@@ -42,12 +42,12 @@ terraform {
     }
   }
   backend "s3" {
-    bucket         = "walb-terraform-state-6026"  # bootstrap에서 생성된 버킷명
+    bucket         = "walb-terraform-state-3163"  # bootstrap에서 생성된 버킷명
     key            = "infrastructure/terraform.tfstate"
     region         = "ap-northeast-2"
     encrypt        = true
-    dynamodb_table = "walb-terraform-lock-6026"   # bootstrap에서 생성된 테이블명
-    kms_key_id     = "arn:aws:kms:ap-northeast-2:902597156026:key/ff0afd81-db5b-4723-8c08-3af172f32878"            # bootstrap에서 생성된 KMS 키
+    dynamodb_table = "walb-terraform-lock-3163"   # bootstrap에서 생성된 테이블명
+    kms_key_id     = "arn:aws:kms:ap-northeast-2:253157413163:key/4c10b1b0-e7df-4ace-a79c-37763dd29fc3"            # bootstrap에서 생성된 KMS 키
   }
 }
 

@@ -5,11 +5,11 @@ name: Deploy Infrastructure
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, terraform ]
     paths:
       - 'WALB/infrastructure/**'
   pull_request:
-    branches: [ main ]
+    branches: [ main, terraform ]
     paths:
       - 'WALB/infrastructure/**'
 
@@ -130,10 +130,10 @@ jobs:
           }
 
     # ===============================================
-    # Terraform Apply (main 브랜치일 때만)
+    # Terraform Apply (main 또는 terraform 브랜치일 때만)
     # ===============================================
     - name: Terraform Apply
-      if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+      if: (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/terraform') && github.event_name == 'push'
       run: |
         echo "🚀 인프라 배포 중..."
         terraform apply -auto-approve
@@ -143,7 +143,7 @@ jobs:
     # 배포 결과 확인
     # ===============================================
     - name: Verify Infrastructure
-      if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+      if: (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/terraform') && github.event_name == 'push'
       run: |
         echo "🔍 배포된 리소스 확인 중..."
         
@@ -176,7 +176,7 @@ jobs:
     # 인프라 배포 완료 알림
     # ===============================================
     - name: Infrastructure Deployment Notification
-      if: success() && github.ref == 'refs/heads/main' && github.event_name == 'push'
+      if: success() && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/terraform') && github.event_name == 'push'
       run: |
         echo "🎉 인프라 배포 완료!"
         echo "프로젝트: ${{ env.PROJECT_NAME }}"
@@ -188,7 +188,7 @@ jobs:
     # 배포 실패 시 롤백 정보 제공
     # ===============================================
     - name: Rollback Information
-      if: failure() && github.ref == 'refs/heads/main' && github.event_name == 'push'
+      if: failure() && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/terraform') && github.event_name == 'push'
       run: |
         echo "❌ 인프라 배포 실패"
         echo "롤백이 필요한 경우 다음 명령어를 실행하세요:"
