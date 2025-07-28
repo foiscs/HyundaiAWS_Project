@@ -561,9 +561,9 @@ kind: Namespace
 metadata:
   name: ${{ env.PROJECT_NAME }}
 EOF
-        
-        # ConfigMap 생성 (환경변수)
-        cat <<EOF > configmap.yaml
+          
+          # ConfigMap 생성 (환경변수)
+          cat <<EOF > configmap.yaml
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -586,9 +586,9 @@ data:
   UPLOAD_MAX_SIZE: "10M"
   SESSION_LIFETIME: "7200"
 EOF
-        
-        # Secret 생성 (DB 패스워드)
-        cat <<EOF > secret.yaml
+          
+          # Secret 생성 (DB 패스워드)
+          cat <<EOF > secret.yaml
 apiVersion: v1
 kind: Secret
 metadata:
@@ -598,9 +598,9 @@ type: Opaque
 data:
   DB_PASSWORD: $(echo -n "${{ secrets.DB_PASSWORD }}" | base64)
 EOF
-        
-        # Deployment 생성
-        cat <<EOF > deployment.yaml
+          
+          # Deployment 생성
+          cat <<EOF > deployment.yaml
 apiVersion: apps/v1
 kind: Deployment
 metadata:
