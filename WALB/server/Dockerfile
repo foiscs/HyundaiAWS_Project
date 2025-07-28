@@ -8,6 +8,7 @@ RUN apt-get update && apt-get install -y \
     libzip-dev \
     libonig-dev \
     libxml2-dev \
+    libpq-dev \
     unzip \
     curl \
     ca-certificates \
@@ -19,6 +20,7 @@ RUN docker-php-ext-configure gd --with-freetype --with-jpeg \
     gd \
     pdo \
     pdo_mysql \
+    pdo_pgsql \
     mysqli \
     mbstring \
     xml \
@@ -42,7 +44,6 @@ RUN composer install --no-dev --optimize-autoloader --no-interaction || \
 # 애플리케이션 코드 복사
 COPY files/app/ ./app/
 COPY files/css/ ./app/css/
-COPY .env ./
 
 # DocumentRoot 설정
 ENV APACHE_DOCUMENT_ROOT=/var/www/html/app
