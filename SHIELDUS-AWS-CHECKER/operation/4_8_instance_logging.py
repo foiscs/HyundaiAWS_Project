@@ -1,3 +1,4 @@
+# 4.operation/4_8_instance_logging.py
 def check():
     """
     [4.8] 인스턴스 로깅 설정 (수동 점검 안내)
@@ -22,3 +23,4 @@ def fix(manual_check_required):
 if __name__ == "__main__":
     required = check()
     fix(required)
+    

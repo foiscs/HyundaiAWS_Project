@@ -61,6 +61,7 @@ data "aws_security_group" "rds_sg" {
   id = module.rds.security_group_id
 } 
 
+
 # =========================================
 # Application Load Balancer 보안 그룹
 # =========================================

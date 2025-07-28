@@ -1,3 +1,4 @@
+# 4.operation/4_4_transit_encryption.py
 def check():
     """
     [4.4] 통신구간 암호화 설정 (수동 점검 안내)
