@@ -1,32 +1,40 @@
+#  4.operation/4_9_rds_logging.py
 import boto3
 from botocore.exceptions import ClientError
 
+
 def check():
     """
-    [4.9] RDS 로깅 설정
-    - RDS DB 인스턴스에 주요 로그(audit, error, general, slowquery)가 활성화되어 있는지 점검
+    [4.9] RDS 로깅 설정 점검 - PostgreSQL 전용
+    - PostgreSQL 또는 Aurora PostgreSQL에서 'postgresql' 로그가 CloudWatch에 연동되어 있는지 확인
     """
-    print("[INFO] 4.9 RDS 로깅 설정 체크 중...")
+    print("[INFO] 4.9 RDS PostgreSQL 로깅 설정 체크 중...")
     rds = boto3.client('rds')
     insufficient_logging_instances = {}
 
     try:
-        for inst in rds.describe_db_instances()['DBInstances']:
+        insts = rds.describe_db_instances()['DBInstances']
+        if not insts:
+            print("[INFO] 4.9 확인할 RDS 인스턴스가 존재하지 않습니다.")
+            return {}
+
+        for inst in insts:
+            db_id = inst['DBInstanceIdentifier']
+            engine = inst['Engine']
             enabled_logs = inst.get('EnabledCloudwatchLogsExports', [])
-            # 최소한 error 로그와 audit(지원 시) 로그는 있어야 함
-            if 'error' not in enabled_logs or 'audit' not in enabled_logs:
-                 # Aurora-mysql/postgresql은 audit 지원
-                if 'aurora' in inst['Engine'] and 'audit' not in enabled_logs:
-                    insufficient_logging_instances[inst['DBInstanceIdentifier']] = ['audit', 'error']
-                elif 'error' not in enabled_logs:
-                    insufficient_logging_instances[inst['DBInstanceIdentifier']] = ['error']
-        
+
+            # PostgreSQL 계열만 필터링
+            if 'postgres' in engine:
+                if 'postgresql' not in enabled_logs:
+                    insufficient_logging_instances[db_id] = ['postgresql']
+
         if not insufficient_logging_instances:
-            print("[✓ COMPLIANT] 4.9 모든 RDS DB 인스턴스에 주요 로그가 활성화되어 있습니다.")
+            print("[✓ COMPLIANT] 4.9 모든 PostgreSQL RDS 인스턴스에 로그 내보내기가 설정되어 있습니다.")
         else:
-            print(f"[⚠ WARNING] 4.9 주요 로그(Error/Audit)가 활성화되지 않은 RDS DB 인스턴스가 존재합니다 ({len(insufficient_logging_instances)}개).")
-            for name, logs in insufficient_logging_instances.items(): print(f"  ├─ {name} (필요 로그: {logs})")
-        
+            print(f"[⚠ WARNING] 4.9 로그 미설정 PostgreSQL 인스턴스 발견 ({len(insufficient_logging_instances)}개).")
+            for name in insufficient_logging_instances:
+                print(f"  ├─ {name} (필요 로그: postgresql)")
+
         return insufficient_logging_instances
 
     except ClientError as e:
@@ -35,26 +43,25 @@ def check():
 
 def fix(insufficient_logging_instances):
     """
-    [4.9] RDS 로깅 설정 조치
-    - 미활성화된 로그를 활성화하도록 인스턴스를 수정
+    [4.9] RDS 로깅 설정 조치 - PostgreSQL 전용
     """
-    if not insufficient_logging_instances: return
+    if not insufficient_logging_instances:
+        return
 
     rds = boto3.client('rds')
-    print("[FIX] 4.9 RDS 로그 내보내기 설정 조치를 시작합니다.")
-    for name, logs_to_enable in insufficient_logging_instances.items():
-        if input(f"  -> 인스턴스 '{name}'에 로그({', '.join(logs_to_enable)}) 내보내기를 활성화하시겠습니까? (수정 사항 즉시 적용 시 재부팅될 수 있음) (y/n): ").lower() == 'y':
+    print("[FIX] 4.9 RDS PostgreSQL 로그 설정 조치 시작합니다.")
+    for name in insufficient_logging_instances:
+        if input(f"  -> 인스턴스 '{name}'에 'postgresql' 로그 내보내기를 활성화하시겠습니까? (y/n): ").lower() == 'y':
             try:
-                # 기존 활성화된 로그도 함께 전달해야 함
                 current_logs = rds.describe_db_instances(DBInstanceIdentifier=name)['DBInstances'][0].get('EnabledCloudwatchLogsExports', [])
-                all_logs_to_enable = list(set(current_logs + logs_to_enable))
-                
+                all_logs_to_enable = list(set(current_logs + ['postgresql']))
+
                 rds.modify_db_instance(
                     DBInstanceIdentifier=name,
                     CloudwatchLogsExportConfiguration={'EnableLogTypes': all_logs_to_enable},
-                    ApplyImmediately=False # 안전을 위해 즉시 적용 안함
+                    ApplyImmediately=False
                 )
-                print(f"     [SUCCESS] '{name}'에 대한 수정 요청을 보냈습니다. 다음 유지관리 기간에 적용됩니다.")
+                print(f"     [SUCCESS] '{name}' 로그 설정 수정 요청 완료 (재시작 없이 즉시 반영되거나, 유지관리 윈도우에 적용될 수 있음).")
             except ClientError as e:
                 print(f"     [ERROR] 인스턴스 수정 실패: {e}")
 

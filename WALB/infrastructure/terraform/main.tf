@@ -301,8 +301,7 @@ module "rds" {
   database_subnet_ids   = module.vpc.database_subnet_ids
  
   allowed_security_groups = [
-    module.eks.cluster_security_group_id,
-    aws_security_group.bastion.id
+    module.eks.cluster_security_group_id
   ]
   
   # 데이터베이스 설정
@@ -827,11 +826,7 @@ resource "aws_iam_role_policy" "github_actions_app_policy" {
           "ec2:DescribeTags",
           
           # 계정 정보 조회
-          "sts:GetCallerIdentity",
-          
-          # IAM Role 조회 (AWS Load Balancer Controller Role 확인용)
-          "iam:ListRoles",
-          "iam:GetRole"
+          "sts:GetCallerIdentity"
         ]
         Resource = "*"
       }
