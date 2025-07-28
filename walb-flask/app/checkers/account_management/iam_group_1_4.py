@@ -177,62 +177,21 @@ class IAMGroupChecker(BaseChecker):
             results = []
             default_group_name = 'ReadOnlyUsers'
             
-            for fix_id, items in selected_items.items():
-                if fix_id == 'assign_to_default_group':
-                    # 기본 그룹이 존재하는지 확인하고 없으면 생성
-                    try:
-                        iam.get_group(GroupName=default_group_name)
-                    except ClientError as e:
-                        if e.response['Error']['Code'] == 'NoSuchEntity':
-                            try:
-                                # 기본 그룹 생성
-                                iam.create_group(
-                                    GroupName=default_group_name,
-                                    Path='/'
-                                )
-                                
-                                # ReadOnly 정책 연결
-                                iam.attach_group_policy(
-                                    GroupName=default_group_name,
-                                    PolicyArn='arn:aws:iam::aws:policy/ReadOnlyAccess'
-                                )
-                                
-                                results.append({
-                                    'item': 'system',
-                                    'status': 'success',
-                                    'message': f'{default_group_name} 그룹이 생성되었습니다.'
-                                })
-                            except Exception as create_error:
-                                results.append({
-                                    'item': 'system',
-                                    'status': 'error',
-                                    'message': f'기본 그룹 생성 실패: {str(create_error)}'
-                                })
-                                continue
-                    
-                    # 사용자를 그룹에 할당
-                    for item in items:
-                        user_name = item['id']
-                        try:
-                            iam.add_user_to_group(
-                                GroupName=default_group_name,
-                                UserName=user_name
-                            )
-                            
-                            results.append({
-                                'item': user_name,
-                                'status': 'success',
-                                'message': f'{user_name} 사용자가 {default_group_name} 그룹에 추가되었습니다.'
-                            })
-                            
-                        except ClientError as e:
-                            results.append({
-                                'item': user_name,
-                                'status': 'error',
-                                'message': f'{user_name} 그룹 할당 실패: {str(e)}'
-                            })
-            
-            return results
+            # 원본에서는 대화형으로 사용자가 그룹을 선택/생성하는 방식
+            # 웹 인터페이스에서는 이를 수동 조치로 안내
+            return [{
+                'item': 'manual_group_assignment',
+                'status': 'info',
+                'message': '[FIX] 1.4 그룹에 속하지 않은 사용자에 대한 조치를 시작합니다.'
+            }, {
+                'item': 'group_selection_needed',
+                'status': 'info',
+                'message': '각 사용자별로 적절한 그룹을 선택하거나 새 그룹을 생성해야 합니다.'
+            }, {
+                'item': 'manual_procedure',
+                'status': 'info',
+                'message': 'AWS 콘솔 > IAM > 그룹에서 그룹 생성 후, 사용자 탭에서 해당 사용자들을 적절한 그룹에 추가하세요.'
+            }]
             
         except Exception as e:
             return [{

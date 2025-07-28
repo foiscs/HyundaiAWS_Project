@@ -52,7 +52,7 @@ class BaseChecker(ABC):
                 'error_message': result.get('error_message', '진단 실행 중 오류가 발생했습니다.')
             }
         
-        return {
+        formatted_result = {
             'status': 'success',
             'has_issues': result.get('has_issues', False),
             'risk_level': result.get('risk_level', 'low'),
@@ -60,6 +60,13 @@ class BaseChecker(ABC):
             'details': self._format_result_details(result),
             'fix_options': self._get_fix_options(result) if result.get('has_issues') else None
         }
+        
+        # 수동 조치 가이드가 있으면 추가
+        manual_guide = self._get_manual_guide(result)
+        if manual_guide:
+            formatted_result['manual_guide'] = manual_guide
+            
+        return formatted_result
     
     def _format_result_summary(self, result):
         """결과 요약 포맷팅 - 하위 클래스에서 오버라이드 가능"""
@@ -83,3 +90,7 @@ class BaseChecker(ABC):
     def _get_fix_options(self, result):
         """자동 조치 옵션 반환 - 하위 클래스에서 오버라이드 가능"""
         return None  # 기본적으로 자동 조치 없음
+    
+    def _get_manual_guide(self, result):
+        """수동 조치 가이드 반환 - 하위 클래스에서 오버라이드 가능"""
+        return None  # 기본적으로 수동 가이드 없음
