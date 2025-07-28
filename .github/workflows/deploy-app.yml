@@ -771,12 +771,11 @@ jobs:
           CLUSTER_OIDC_ISSUER=$(aws eks describe-cluster --name "$EKS_CLUSTER_NAME" --region ${{ secrets.AWS_REGION }} --query 'cluster.identity.oidc.issuer' --output text)
           echo "OIDC 발행자: $CLUSTER_OIDC_ISSUER"
           
-          # kubeconfig 업데이트 (OIDC 기반 IAM Role 사용)
-          echo "🔧 kubeconfig 업데이트 중 (OIDC 기반 IAM Role)..."
+          # kubeconfig 업데이트 (현재 OIDC 자격 증명 사용)
+          echo "🔧 kubeconfig 업데이트 중 (OIDC 자격 증명 사용)..."
           aws eks update-kubeconfig \
             --region ${{ secrets.AWS_REGION }} \
             --name "$EKS_CLUSTER_NAME" \
-            --role-arn ${{ secrets.AWS_ROLE_ARN_APP }} \
             --verbose
 
           # AWS 자격 증명 확인
@@ -800,16 +799,76 @@ jobs:
             CLUSTER_ENDPOINT=$(aws eks describe-cluster --name "$EKS_CLUSTER_NAME" --region ${{ secrets.AWS_REGION }} --query 'cluster.endpoint' --output text)
             echo "클러스터 엔드포인트: $CLUSTER_ENDPOINT"
             
-            # aws-auth ConfigMap 확인 시도
-            echo "🔍 aws-auth ConfigMap 확인 중..."
-            kubectl get configmap aws-auth -n kube-system -o yaml 2>/dev/null || echo "aws-auth ConfigMap 조회 실패"
+            # aws-auth ConfigMap 확인 및 GitHub Actions 역할 추가
+            echo "🔍 aws-auth ConfigMap 확인 및 GitHub Actions 역할 추가..."
             
-            # IAM 역할 신뢰 정책 확인을 위한 정보 출력
-            echo "🔍 IAM 역할 확인이 필요할 수 있습니다:"
-            echo "  현재 사용 중인 Role ARN: ${{ secrets.AWS_ROLE_ARN_APP }}"
-            echo "  OIDC 발행자: $CLUSTER_OIDC_ISSUER"
+            # 현재 aws-auth ConfigMap 백업
+            kubectl get configmap aws-auth -n kube-system -o yaml > aws-auth-backup.yaml 2>/dev/null || echo "기존 aws-auth ConfigMap 없음"
+            
+            # GitHub Actions OIDC 역할을 aws-auth에 추가
+            GITHUB_ROLE_ARN="arn:aws:iam::253157413163:role/walb-github"
+            
+            cat <<EOF | kubectl apply -f -
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: aws-auth
+  namespace: kube-system
+data:
+  mapRoles: |
+    - rolearn: $GITHUB_ROLE_ARN
+      username: github-actions
+      groups:
+        - system:masters
+    - rolearn: arn:aws:iam::253157413163:role/walb-app-nodegroup-role
+      username: system:node:{{EC2PrivateDNSName}}
+      groups:
+        - system:bootstrappers
+        - system:nodes
+EOF
+            
+            echo "✅ GitHub Actions 역할을 aws-auth ConfigMap에 추가"
+            
+            # 잠시 대기 후 재시도
+            echo "⏳ 설정 적용 대기 중..."
+            sleep 10
             
             exit 1
+          fi
+
+          # GitHub Actions 역할이 aws-auth에 등록되어 있는지 확인
+          echo "🔍 aws-auth ConfigMap에서 GitHub Actions 역할 확인..."
+          GITHUB_ROLE_ARN="arn:aws:iam::253157413163:role/walb-github"
+          
+          if ! kubectl get configmap aws-auth -n kube-system -o yaml | grep -q "$GITHUB_ROLE_ARN"; then
+            echo "⚠️ GitHub Actions 역할이 aws-auth에 없습니다. 추가 중..."
+            
+            # 현재 aws-auth ConfigMap 백업
+            kubectl get configmap aws-auth -n kube-system -o yaml > aws-auth-backup.yaml
+            
+            # GitHub Actions OIDC 역할을 aws-auth에 추가
+            cat <<EOF | kubectl apply -f -
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: aws-auth
+  namespace: kube-system
+data:
+  mapRoles: |
+    - rolearn: $GITHUB_ROLE_ARN
+      username: github-actions
+      groups:
+        - system:masters
+    - rolearn: arn:aws:iam::253157413163:role/walb-app-nodegroup-role
+      username: system:node:{{EC2PrivateDNSName}}
+      groups:
+        - system:bootstrappers
+        - system:nodes
+EOF
+            
+            echo "✅ GitHub Actions 역할을 aws-auth ConfigMap에 추가 완료"
+          else
+            echo "✅ GitHub Actions 역할이 이미 aws-auth에 등록되어 있습니다"
           fi
 
           echo "🔍 노드 상태 확인..."
