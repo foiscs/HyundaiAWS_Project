@@ -184,7 +184,7 @@ module "dynamodb_security_logs" {
   project_name = var.project_name
 
   # 테이블 기본 설정
-  table_name   = "security-logs-metadata"
+  table_name   = "walb-security-logs-metadata"
   billing_mode = var.dynamodb_billing_mode
   hash_key     = "log_id"
   range_key    = "timestamp"
@@ -242,7 +242,7 @@ module "dynamodb_user_sessions" {
   project_name = var.project_name
 
   # 테이블 기본 설정
-  table_name   = "user-sessions"
+  table_name   = "walb-user-sessions"
   billing_mode = var.dynamodb_billing_mode
   hash_key     = "session_id"
   range_key    = null
@@ -301,7 +301,8 @@ module "rds" {
   database_subnet_ids   = module.vpc.database_subnet_ids
  
   allowed_security_groups = [
-    module.eks.cluster_security_group_id
+    module.eks.cluster_security_group_id,
+    aws_security_group.bastion.id
   ]
   
   # 데이터베이스 설정
@@ -389,12 +390,40 @@ resource "aws_security_group" "bastion" {
   vpc_id      = module.vpc.vpc_id
   description = "Security group for bastion host access"
 
+  # 기존 SSH 접근 (VPC 내부)
   ingress {
-    description = "SSH"
+    description = "SSH from VPC"
     from_port   = 22
     to_port     = 22
     protocol    = "tcp"
     cidr_blocks = var.allowed_ssh_cidrs
+  }
+
+  # GitHub Actions를 위한 전체 인터넷 SSH 접근 (임시 또는 조건부)
+  ingress {
+    description = "SSH from GitHub Actions"
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]  # 보안상 위험하지만 GitHub Actions용
+  }
+
+  # PostgreSQL 포트 포워딩을 위한 로컬 접근 (추가 필요)
+  ingress {
+    description = "PostgreSQL port forwarding"
+    from_port   = 5432
+    to_port     = 5432
+    protocol    = "tcp"
+    cidr_blocks = ["127.0.0.1/32"]  # 로컬 루프백만 허용
+  }
+  
+  # RDS에 대한 outbound 접근 허용 (기존 egress 규칙을 보다 구체적으로)
+  egress {
+    description = "PostgreSQL to RDS"
+    from_port   = 5432
+    to_port     = 5432
+    protocol    = "tcp"
+    cidr_blocks = [var.vpc_cidr]
   }
 
   egress {
@@ -441,6 +470,58 @@ resource "aws_iam_role" "eks_app_role" {
   })
 }
 
+# =========================================
+# aws-auth ConfigMap for GitHub Actions Access
+# =========================================
+resource "kubernetes_config_map_v1_data" "aws_auth" {
+  depends_on = [module.eks]
+  
+  metadata {
+    name      = "aws-auth"
+    namespace = "kube-system"
+  }
+
+  data = {
+    mapRoles = yamlencode([
+      # EKS 노드 그룹 역할
+      {
+        rolearn  = module.eks.node_group_iam_role_arn
+        username = "system:node:{{EC2PrivateDNSName}}"
+        groups   = ["system:bootstrappers", "system:nodes"]
+      },
+      # 현재 사용자를 관리자로 추가
+      {
+        rolearn  = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"
+        username = "cluster-creator"
+        groups   = ["system:masters"]
+      },
+      # GitHub Actions 애플리케이션 배포 역할
+      {
+        rolearn  = aws_iam_role.github_actions_app.arn
+        username = "github-actions-app"
+        groups   = ["system:masters"]
+      },
+      # GitHub Actions 인프라 배포 역할
+      {
+        rolearn  = aws_iam_role.github_actions_infra.arn
+        username = "github-actions-infra"
+        groups   = ["system:masters"]
+      }
+    ])
+    
+    mapUsers = yamlencode([
+      # 현재 사용자를 직접 매핑
+      {
+        userarn  = data.aws_caller_identity.current.arn
+        username = "admin"
+        groups   = ["system:masters"]
+      }
+    ])
+  }
+
+  force = true
+}
+
 # EKS 애플리케이션용 정책 연결
 resource "aws_iam_role_policy" "eks_app_policy" {
   name = "eks-app-policy"
@@ -480,7 +561,10 @@ resource "aws_iam_role_policy" "eks_app_policy" {
         Effect = "Allow"
         Action = [
           "rds:DescribeDBInstances",
-          "rds:DescribeDBClusters"
+          "rds:DescribeDBClusters",
+          "ec2:DescribeInstances",
+          "ec2:DescribeInstanceStatus",
+          "ec2:DescribeTags"
         ]
         Resource = "*"
       },
@@ -562,6 +646,30 @@ resource "aws_security_group" "alb" {
   })
 }
 
+# ALB에서 EKS 노드로의 트래픽 허용
+resource "aws_security_group_rule" "alb_to_eks_nodes" {
+  count                    = var.enable_load_balancer ? 1 : 0
+  type                     = "ingress"
+  from_port                = var.application_port
+  to_port                  = var.application_port
+  protocol                 = "tcp"
+  source_security_group_id = aws_security_group.alb[0].id
+  security_group_id        = module.eks.node_group_security_group_id
+  description              = "Allow ALB to access EKS nodes on application port"
+}
+
+# ALB에서 EKS 노드로의 Health Check 트래픽 허용 (포트 80)
+resource "aws_security_group_rule" "alb_to_eks_nodes_health" {
+  count                    = var.enable_load_balancer ? 1 : 0
+  type                     = "ingress"
+  from_port                = 80
+  to_port                  = 80
+  protocol                 = "tcp"
+  source_security_group_id = aws_security_group.alb[0].id
+  security_group_id        = module.eks.node_group_security_group_id
+  description              = "Allow ALB health check to EKS nodes on port 80"
+}
+
 # ALB Target Group
 resource "aws_lb_target_group" "eks_nodes" {
   count       = var.enable_load_balancer ? 1 : 0
@@ -574,12 +682,12 @@ resource "aws_lb_target_group" "eks_nodes" {
   health_check {
     enabled             = true
     healthy_threshold   = 2
-    unhealthy_threshold = 2
-    timeout             = 5
+    unhealthy_threshold = 3
+    timeout             = 10
     interval            = 30
-    path                = "/"
+    path                = "/healthcheck.php"
     matcher             = "200"
-    port                = "traffic-port"
+    port                = "80"
     protocol            = "HTTP"
   }
 
@@ -628,10 +736,326 @@ locals {
 module "ecr" {
   source = "./modules/ecr"
 
-  name = "myapp"
+  name = "${var.project_name}-ecr"
   tags = {
-    Environment = "dev"
-    Project     = "myproject"
+    Environment = var.environment
+    Project     = var.project_name
   }
 }
 
+# =========================================
+# GitHub Actions OIDC Provider and IAM Role
+# =========================================
+
+# GitHub OIDC Identity Provider
+resource "aws_iam_openid_connect_provider" "github_actions" {
+  url = "https://token.actions.githubusercontent.com"
+
+  client_id_list = ["sts.amazonaws.com"]
+
+  thumbprint_list = [
+    "6938fd4d98bab03faadb97b34396831e3780aea1",
+    "1c58a3a8518e8759bf075b76b750d4f2df264fcd"
+  ]
+
+  tags = merge(local.common_tags, {
+    Name      = "${var.project_name}-github-oidc-provider"
+    Component = "CI/CD"
+  })
+}
+
+# GitHub Actions IAM Role for Infrastructure (Terraform)
+resource "aws_iam_role" "github_actions_infra" {
+  name = "${var.project_name}-github-actions-infra-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Principal = {
+          Federated = aws_iam_openid_connect_provider.github_actions.arn
+        }
+        Action = "sts:AssumeRoleWithWebIdentity"
+        Condition = {
+          StringEquals = {
+            "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
+          }
+          StringLike = {
+            "token.actions.githubusercontent.com:sub" = "repo:${var.github_repository}:*"
+          }
+        }
+      }
+    ]
+  })
+
+  tags = merge(local.common_tags, {
+    Name      = "${var.project_name}-github-actions-infra-role"
+    Component = "CI/CD"
+    Purpose   = "Infrastructure"
+  })
+}
+
+# GitHub Actions IAM Role for Application Deployment
+resource "aws_iam_role" "github_actions_app" {
+  name = "${var.project_name}-github-actions-app-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Principal = {
+          Federated = aws_iam_openid_connect_provider.github_actions.arn
+        }
+        Action = "sts:AssumeRoleWithWebIdentity"
+        Condition = {
+          StringEquals = {
+            "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
+          }
+          StringLike = {
+            "token.actions.githubusercontent.com:sub" = "repo:${var.github_repository}:*"
+          }
+        }
+      }
+    ]
+  })
+
+  tags = merge(local.common_tags, {
+    Name      = "${var.project_name}-github-actions-app-role"
+    Component = "CI/CD"
+    Purpose   = "Application"
+  })
+}
+
+# Infrastructure 배포용 정책 (Terraform 권한)
+resource "aws_iam_role_policy" "github_actions_infra_policy" {
+  name = "github-actions-infra-policy"
+  role = aws_iam_role.github_actions_infra.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          # Terraform State 관리
+          "s3:GetObject",
+          "s3:PutObject",
+          "s3:DeleteObject",
+          "s3:ListBucket",
+          "s3:GetBucketVersioning",
+          "s3:CreateBucket",
+          "s3:PutBucketVersioning",
+          "s3:PutBucketEncryption",
+          "s3:PutBucketPublicAccessBlock",
+          
+          # DynamoDB State Locking
+          "dynamodb:GetItem",
+          "dynamodb:PutItem",
+          "dynamodb:DeleteItem",
+          "dynamodb:CreateTable",
+          "dynamodb:DescribeTable",
+          
+          # 모든 인프라 리소스 관리
+          "ec2:*",
+          "vpc:*",
+          "rds:*",
+          "eks:*",
+          "s3:*",
+          "dynamodb:*",
+          "iam:*",
+          "kms:*",
+          "logs:*",
+          "cloudtrail:*",
+          "sns:*",
+          "elasticloadbalancing:*",
+          "ecr:*",
+          "ssm:*",
+          "cloudwatch:*",
+          
+          # 리소스 조회 권한
+          "tag:GetResources",
+          "tag:TagResources",
+          "tag:UntagResources",
+          "resource-groups:*",
+          
+          # 계정 정보 조회
+          "sts:GetCallerIdentity",
+          "sts:AssumeRole"
+        ]
+        Resource = "*"
+      }
+    ]
+  })
+}
+
+# Application 배포용 정책 (ECR, EKS, RDS 접근)
+resource "aws_iam_role_policy" "github_actions_app_policy" {
+  name = "github-actions-app-policy"
+  role = aws_iam_role.github_actions_app.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          # ECR 권한
+          "ecr:GetAuthorizationToken",
+          "ecr:BatchCheckLayerAvailability",
+          "ecr:GetDownloadUrlForLayer",
+          "ecr:BatchGetImage",
+          "ecr:PutImage",
+          "ecr:InitiateLayerUpload",
+          "ecr:UploadLayerPart",
+          "ecr:CompleteLayerUpload",
+          "ecr:DescribeRepositories",
+          "ecr:DescribeImages",
+          
+          # EKS 권한
+          "eks:DescribeCluster",
+          "eks:DescribeNodegroup",
+          "eks:ListClusters",
+          "eks:AccessKubernetesApi",
+          
+          # RDS 권한 (스키마 적용용)
+          "rds:DescribeDBInstances",
+          "rds:DescribeDBClusters",
+          "rds:ListTagsForResource",
+          
+          # S3 권한 (애플리케이션 파일 업로드용)
+          "s3:GetObject",
+          "s3:PutObject",
+          "s3:ListBucket",
+          
+          # CloudWatch 로그
+          "logs:CreateLogGroup",
+          "logs:CreateLogStream",
+          "logs:PutLogEvents",
+          "logs:DescribeLogGroups",
+          "logs:DescribeLogStreams",
+          
+          # LoadBalancer 조회
+          "elasticloadbalancing:DescribeLoadBalancers",
+          "elasticloadbalancing:DescribeTargetGroups",
+
+          # SSM Parameter Store 권한
+          "ssm:GetParameter",
+          "ssm:GetParameters",
+          "ssm:GetParametersByPath",
+          
+          # EC2 권한 추가 (Bastion Host 조회용)
+          "ec2:DescribeInstances",
+          "ec2:DescribeInstanceStatus",
+          "ec2:DescribeTags",
+          
+          # 계정 정보 조회
+          "sts:GetCallerIdentity",
+          
+          # IAM Role 조회 (AWS Load Balancer Controller Role 확인용)
+          "iam:ListRoles",
+          "iam:GetRole"
+        ]
+        Resource = "*"
+      }
+    ]
+  })
+}
+
+# =========================================
+# EC2 Key Pair for Bastion Host
+# =========================================
+resource "tls_private_key" "bastion_key" {
+  count     = var.enable_bastion_host ? 1 : 0
+  algorithm = "RSA"
+  rsa_bits  = 4096
+}
+
+resource "aws_key_pair" "bastion_key" {
+  count      = var.enable_bastion_host ? 1 : 0
+  key_name   = "${var.project_name}-bastion-key"
+  public_key = tls_private_key.bastion_key[0].public_key_openssh
+
+  tags = merge(local.common_tags, {
+    Name      = "${var.project_name}-bastion-key"
+    Component = "Bastion"
+  })
+}
+
+# SSH 개인키를 SSM Parameter Store에 저장
+resource "aws_ssm_parameter" "bastion_private_key" {
+  count = var.enable_bastion_host ? 1 : 0
+  name  = "/${var.project_name}/bastion/ssh-private-key"
+  type  = "SecureString"
+  value = tls_private_key.bastion_key[0].private_key_pem
+
+  tags = merge(local.common_tags, {
+    Name = "${var.project_name}-bastion-ssh-key"
+  })
+}
+
+# 기존 DB 비밀번호를 Parameter Store에 저장 (참조용)
+resource "aws_ssm_parameter" "db_password" {
+  name  = "/${var.project_name}/rds/master-password"
+  type  = "SecureString"
+  value = var.db_password  # 기존에 정의된 변수 사용
+
+  tags = merge(local.common_tags, {
+    Name = "${var.project_name}-db-password"
+  })
+}
+
+# =========================================
+# Bastion Host EC2 Instance
+# =========================================
+resource "aws_instance" "bastion" {
+  count                  = var.enable_bastion_host ? 1 : 0
+  ami                   = data.aws_ami.amazon_linux.id
+  instance_type         = var.bastion_instance_type
+  key_name              = aws_key_pair.bastion_key[0].key_name
+  vpc_security_group_ids = [aws_security_group.bastion.id]
+  subnet_id             = module.vpc.public_subnet_ids[0]
+  
+  # PostgreSQL 클라이언트 설치를 위한 user data
+  user_data = base64encode(<<-EOF
+    #!/bin/bash
+    yum update -y
+    amazon-linux-extras install -y postgresql13
+    yum install -y postgresql
+    
+    # AWS CLI 설치 (최신 버전)
+    curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+    unzip awscliv2.zip
+    ./aws/install
+    
+    # kubectl 설치
+    curl -O https://s3.us-west-2.amazonaws.com/amazon-eks/1.28.3/2023-11-14/bin/linux/amd64/kubectl
+    chmod +x ./kubectl
+    mv ./kubectl /usr/local/bin
+    
+    echo "Bastion host setup completed" > /var/log/bastion-setup.log
+  EOF
+  )
+
+  tags = merge(local.common_tags, {
+    Name      = "${var.project_name}-bastion-host"
+    Component = "Bastion"
+  })
+}
+
+# AMI 데이터 소스
+data "aws_ami" "amazon_linux" {
+  most_recent = true
+  owners      = ["amazon"]
+
+  filter {
+    name   = "name"
+    values = ["amzn2-ami-hvm-*-x86_64-gp2"]
+  }
+
+  filter {
+    name   = "virtualization-type"
+    values = ["hvm"]
+  }
+}

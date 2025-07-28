@@ -293,3 +293,60 @@ output "next_steps" {
     view_logs      = "Check CloudWatch logs in: ${aws_cloudwatch_log_group.application_logs.name}"
   }
 }
+
+# =========================================
+# GitHub Actions OIDC 정보
+# =========================================
+output "github_actions_roles" {
+  description = "GitHub Actions에서 사용할 IAM 역할 정보"
+  value = {
+    infrastructure_role_arn = aws_iam_role.github_actions_infra.arn
+    application_role_arn   = aws_iam_role.github_actions_app.arn
+    oidc_provider_arn      = aws_iam_openid_connect_provider.github_actions.arn
+  }
+}
+
+output "github_secrets_setup" {
+  description = "GitHub Secrets에 설정할 값들"
+  value = {
+    AWS_ROLE_ARN_INFRA = aws_iam_role.github_actions_infra.arn
+    AWS_ROLE_ARN_APP   = aws_iam_role.github_actions_app.arn
+    AWS_REGION         = var.aws_region
+    AWS_ACCOUNT_ID     = data.aws_caller_identity.current.account_id
+    DB_PASSWORD        = var.db_password
+  }
+  sensitive = true
+}
+
+output "rds_endpoint" {
+  description = "RDS 엔드포인트"
+  value       = module.rds.db_instance_endpoint
+}
+
+output "db_name" {
+  description = "데이터베이스 이름"
+  value       = var.db_name
+}
+
+output "db_username" {
+  description = "데이터베이스 사용자명"
+  value       = var.db_username
+}
+
+output "db_port" {
+  description = "데이터베이스 포트"
+  value       = module.rds.db_instance_port
+}
+
+# =========================================
+# Bastion Host 정보
+# =========================================
+output "bastion_public_ip" {
+  description = "Bastion Host 공인 IP"
+  value       = var.enable_bastion_host ? aws_instance.bastion[0].public_ip : null
+}
+
+output "bastion_private_ip" {
+  description = "Bastion Host 사설 IP"
+  value       = var.enable_bastion_host ? aws_instance.bastion[0].private_ip : null
+}

@@ -154,13 +154,16 @@ resource "aws_security_group" "cluster" {
   vpc_id      = var.vpc_id
   description = "Security group for EKS cluster control plane"
 
-  # HTTPS 통신 (EKS API)
-  ingress {
-    from_port   = 443
-    to_port     = 443
-    protocol    = "tcp"
-    cidr_blocks = var.cluster_endpoint_private_access_cidrs
-    description = "HTTPS access to EKS API"
+  # HTTPS 통신 (EKS API) - 동적 규칙
+  dynamic "ingress" {
+    for_each = length(var.cluster_endpoint_private_access_cidrs) > 0 ? [1] : []
+    content {
+      from_port   = 443
+      to_port     = 443
+      protocol    = "tcp"
+      cidr_blocks = var.cluster_endpoint_private_access_cidrs
+      description = "HTTPS access to EKS API"
+    }
   }
 
   egress {
@@ -323,6 +326,38 @@ resource "aws_security_group_rule" "node_group_from_cluster" {
   description             = "Communication with EKS cluster"
 }
 
+# EKS 클러스터 보안 그룹에 kubelet 포트 허용 규칙 추가
+resource "aws_security_group_rule" "cluster_kubelet_ingress" {
+  type                     = "ingress"
+  from_port                = 10250
+  to_port                  = 10250
+  protocol                 = "tcp"
+  source_security_group_id = aws_security_group.cluster.id
+  security_group_id        = aws_security_group.node_group.id
+  description              = "Allow kubelet communication from control plane"
+}
+
+resource "aws_security_group_rule" "cluster_kubelet_egress" {
+  type                     = "egress"
+  from_port                = 10250
+  to_port                  = 10250
+  protocol                 = "tcp"
+  source_security_group_id = aws_security_group.node_group.id
+  security_group_id        = aws_security_group.cluster.id
+  description              = "Allow kubelet communication to worker nodes"
+}
+
+# 노드 그룹 간 통신 허용
+resource "aws_security_group_rule" "node_to_node_kubelet" {
+  type                     = "ingress"
+  from_port                = 10250
+  to_port                  = 10250
+  protocol                 = "tcp"
+  self                     = true
+  security_group_id        = aws_security_group.node_group.id
+  description              = "Allow kubelet communication between nodes"
+}
+
 # 시작 템플릿 (노드 그룹용)
 resource "aws_launch_template" "node_group" {
   count = var.create_launch_template ? 1 : 0
@@ -358,6 +393,8 @@ resource "aws_launch_template" "node_group" {
     tags = merge(var.common_tags, {
       Name = "${var.cluster_name}-eks-node"
       Type = "EKS Worker Node"
+      # AWS Load Balancer Controller용 클러스터 자동 발견 태그
+      "kubernetes.io/cluster/${var.cluster_name}" = "owned"
     })
   }
 
@@ -395,7 +432,7 @@ resource "aws_eks_node_group" "main" {
 
   # 원격 액세스 설정
   dynamic "remote_access" {
-    for_each = var.enable_ssh_access ? [1] : []
+    for_each = var.enable_ssh_access && !var.create_launch_template ? [1] : []
     content {
       ec2_ssh_key               = var.ec2_key_pair_name
       source_security_group_ids = [aws_security_group.node_group.id]
@@ -424,6 +461,8 @@ resource "aws_eks_node_group" "main" {
   tags = merge(var.common_tags, {
     Name = "${var.cluster_name}-node-group"
     Type = "EKS Managed Node Group"
+    # AWS Load Balancer Controller용 클러스터 자동 발견 태그
+    "kubernetes.io/cluster/${var.cluster_name}" = "owned"
   })
 
   depends_on = [
@@ -740,47 +779,145 @@ resource "aws_iam_role_policy_attachment" "aws_load_balancer_controller_attach" 
   policy_arn = aws_iam_policy.aws_load_balancer_controller[0].arn
 }
 
-# 현재 사용자를 관리자로 추가하기 위한 로컬 변수
-locals {
-  # 현재 사용자를 기본 관리자로 설정
-  current_user_map = [{
-    userarn  = data.aws_caller_identity.current.arn
-    username = "admin"
-    groups   = ["system:masters"]
-  }]
-  
-  # 추가 관리자 사용자들
-  admin_users_map = [
-    for user_arn in var.cluster_admin_users : {
-      userarn  = user_arn
-      username = split("/", user_arn)[length(split("/", user_arn)) - 1]
-      groups   = ["system:masters"]
+
+# =========================================
+# AWS Load Balancer Controller ServiceAccount
+# =========================================
+resource "kubernetes_service_account" "aws_load_balancer_controller" {
+  count = var.enable_load_balancer ? 1 : 0
+
+  metadata {
+    name      = "aws-load-balancer-controller"
+    namespace = "kube-system"
+    annotations = {
+      "eks.amazonaws.com/role-arn" = aws_iam_role.aws_load_balancer_controller[0].arn
     }
-  ]
-  
-  # 추가 관리자 역할들
-  admin_roles_map = [
-    for role_arn in var.cluster_admin_roles : {
-      rolearn  = role_arn
-      username = split("/", role_arn)[length(split("/", role_arn)) - 1]
-      groups   = ["system:masters"]
-    }
-  ]
-  
-  # 모든 사용자 매핑 결합
-  all_user_mappings = concat(
-    local.current_user_map,
-    local.admin_users_map,
-    var.map_users
-  )
-  
-  # 모든 역할 매핑 결합 (노드 그룹 역할 + 추가 역할들)
-  all_role_mappings = concat([
-    {
-      rolearn  = aws_iam_role.node_group.arn
-      username = "system:node:{{EC2PrivateDNSName}}"
-      groups   = ["system:bootstrappers", "system:nodes"]
-    }
-  ], local.admin_roles_map, var.map_roles)
+  }
+
+  depends_on = [aws_eks_cluster.main]
 }
 
+# =========================================
+# AWS Load Balancer Controller Helm Release
+# =========================================
+resource "helm_release" "aws_load_balancer_controller" {
+  count = var.enable_load_balancer ? 1 : 0
+
+  name       = "walb-alb-controller"
+  repository = "https://aws.github.io/eks-charts"
+  chart      = "aws-load-balancer-controller"
+  namespace  = "kube-system"
+  version    = "1.8.1"
+
+  # Values 파일 경로 (상대 경로)
+  values = [
+    templatefile("${path.module}/../../helm-values/aws-load-balancer-controller.yaml", {
+      cluster_name = var.cluster_name
+      aws_region   = data.aws_region.current.name
+      vpc_id       = var.vpc_id
+    })
+  ]
+
+  # 의존성 설정
+  depends_on = [
+    kubernetes_service_account.aws_load_balancer_controller[0],
+    aws_iam_role_policy_attachment.aws_load_balancer_controller_attach[0],
+    aws_eks_node_group.main
+  ]
+
+  # 설치 시간 제한
+  timeout = 600
+
+  # 업그레이드 시 기존 리소스 재사용
+  replace = false
+  
+  # 설치 전 대기
+  wait = true
+  wait_for_jobs = true
+}
+
+# =========================================
+# Ingress 리소스 (선택적)
+# =========================================
+resource "kubernetes_ingress_v1" "walb_app" {
+  count = var.enable_load_balancer && var.create_ingress ? 1 : 0
+
+  metadata {
+    name      = "walb-app-ingress"
+    namespace = "walb-app"
+    annotations = {
+      # AWS Application Load Balancer 설정
+      "alb.ingress.kubernetes.io/scheme"                = "internet-facing"
+      "alb.ingress.kubernetes.io/target-type"           = "ip"
+      "alb.ingress.kubernetes.io/listen-ports"          = "[{\"HTTP\": 80}]"
+      
+      # Health Check 설정 (PHP 애플리케이션)
+      "alb.ingress.kubernetes.io/healthcheck-path"             = "/healthcheck.php"
+      "alb.ingress.kubernetes.io/healthcheck-interval-seconds" = "30"
+      "alb.ingress.kubernetes.io/healthcheck-timeout-seconds"  = "10"
+      "alb.ingress.kubernetes.io/healthy-threshold-count"      = "2"
+      "alb.ingress.kubernetes.io/unhealthy-threshold-count"    = "3"
+      "alb.ingress.kubernetes.io/healthcheck-protocol"         = "HTTP"
+      "alb.ingress.kubernetes.io/healthcheck-port"             = "80"
+      
+      # Load Balancer 설정
+      "alb.ingress.kubernetes.io/load-balancer-name" = "walb-app-ingress-alb"
+      "alb.ingress.kubernetes.io/target-group-attributes" = join(",", [
+        "stickiness.enabled=false",
+        "deregistration_delay.timeout_seconds=60",
+        "load_balancing.algorithm.type=round_robin",
+        "slow_start.duration_seconds=30"
+      ])
+      
+      # 태그 설정
+      "alb.ingress.kubernetes.io/tags" = join(",", [
+        "Environment=walb-app",
+        "Project=walb-app", 
+        "ManagedBy=Kubernetes",
+        "CreatedBy=AWS-Load-Balancer-Controller",
+        "Application=PHP-Blog"
+      ])
+    }
+  }
+
+  spec {
+    ingress_class_name = "alb"
+    
+    rule {
+      http {
+        path {
+          path      = "/"
+          path_type = "Prefix"
+          backend {
+            service {
+              name = "walb-app-service"
+              port {
+                number = 80
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  depends_on = [
+    helm_release.aws_load_balancer_controller[0],
+    kubernetes_namespace.walb_app[0]
+  ]
+}
+
+# =========================================
+# 애플리케이션 네임스페이스
+# =========================================
+resource "kubernetes_namespace" "walb_app" {
+  count = var.enable_load_balancer && var.create_ingress ? 1 : 0
+
+  metadata {
+    name = "walb-app"
+    labels = {
+      "app.kubernetes.io/name"       = "walb-app"
+      "app.kubernetes.io/managed-by" = "Terraform"
+    }
+  }
+}

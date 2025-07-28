@@ -6,15 +6,15 @@
 variable "project_name" {
   description = "프로젝트 이름"
   type        = string
-  default     = "WALB"
+  default     = "walb"
 }
 
 variable "environment" {
-  description = "환경 (dev, staging, prod)"
+  description = "환경 (dev, staging, prod, walb)"
   type        = string
-  default     = "dev"
+  default     = "walb"
   validation {
-    condition     = contains(["dev", "staging", "prod"], var.environment)
+    condition     = contains(["dev", "staging", "prod", "walb"], var.environment)
     error_message = "Environment must be dev, staging, or prod."
   }
 }
@@ -79,7 +79,7 @@ variable "rds_instance_class" {
 variable "db_name" {
   description = "데이터베이스 이름"
   type        = string
-  default     = "WALB_DB"
+  default     = "walb_DB"
 }
 
 variable "db_username" {
@@ -507,7 +507,7 @@ variable "developer_access_cidrs" {
 variable "enable_bastion_host" {
   description = "Bastion Host 생성 여부"
   type        = bool
-  default     = false  # 보안상 기본 비활성화
+  default     = true  # CI/CD를 위해 활성화
 }
 
 variable "bastion_instance_type" {
@@ -546,6 +546,14 @@ locals {
       backup_retention_days   = 30
       log_retention_days      = 90
     }
+    walb = {
+      instance_class           = "db.t3.micro"
+      node_desired_capacity   = 1
+      node_max_capacity       = 2
+      enable_deletion_protection = false
+      backup_retention_days   = 3
+      log_retention_days      = 7
+    }
   }
 
   # 현재 환경의 설정 적용
@@ -562,4 +570,11 @@ variable "db_user" {
   description = "데이터베이스 사용자명"
   type        = string
   default     = "dbadmin"
+}
+
+# GitHub Repository 설정
+variable "github_repository" {
+  description = "GitHub 리포지토리 (owner/repo 형식)"
+  type        = string
+  default     = "foiscs/HyundaiAWS_Project"  # 실제 리포지토리로 변경 필요
 }

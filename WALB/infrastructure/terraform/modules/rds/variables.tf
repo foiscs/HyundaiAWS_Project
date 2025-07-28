@@ -21,7 +21,7 @@ variable "database_subnet_ids" {
 variable "db_identifier" {
   description = "RDS 인스턴스 식별자"
   type        = string
-  default     = "my-rds-database"
+  default     = "walb-rds-database"
 }
 
 variable "engine" {

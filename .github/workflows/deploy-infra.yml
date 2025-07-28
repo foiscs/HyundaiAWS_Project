@@ -1,0 +1,197 @@
+# .github/workflows/deploy-infra.yml
+# 인프라 배포 워크플로우 (Terraform 변경시만 실행)
+
+name: Deploy Infrastructure
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'WALB/infrastructure/**'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'WALB/infrastructure/**'
+
+env:
+  PROJECT_NAME: "WALB-app"
+  TF_VERSION: "1.5.0"
+
+jobs:
+  deploy-infrastructure:
+    runs-on: ubuntu-latest
+    
+    # 워킹 디렉토리를 WALB로 설정
+    defaults:
+      run:
+        working-directory: ./WALB/infrastructure/terraform
+    
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+    # ===============================================
+    # 소스코드 체크아웃
+    # ===============================================
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    # ===============================================
+    # Terraform 설정
+    # ===============================================
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v2
+      with:
+        terraform_version: ${{ env.TF_VERSION }}
+
+    # ===============================================
+    # AWS 인증 (OIDC 방식)
+    # ===============================================
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: ${{ secrets.AWS_ROLE_ARN_INFRA }}
+        aws-region: ${{ secrets.AWS_REGION }}
+        role-session-name: GitHubActions-Infrastructure-${{ github.run_id }}
+
+    # ===============================================
+    # Terraform 초기화
+    # ===============================================
+    - name: Terraform Init
+      run: |
+        echo "🔧 Terraform 초기화 중..."
+        terraform init
+        echo "✅ Terraform 초기화 완료"
+
+    # ===============================================
+    # Terraform 형식 검증
+    # ===============================================
+    - name: Terraform Format Check
+      run: |
+        echo "📝 Terraform 형식 검증 중..."
+        terraform fmt -check -recursive
+        echo "✅ 형식 검증 완료"
+
+    # ===============================================
+    # Terraform 유효성 검증
+    # ===============================================
+    - name: Terraform Validate
+      run: |
+        echo "🔍 Terraform 구성 검증 중..."
+        terraform validate
+        echo "✅ 구성 검증 완료"
+
+    # ===============================================
+    # Terraform Plan (PR일 때)
+    # ===============================================
+    - name: Terraform Plan
+      if: github.event_name == 'pull_request'
+      run: |
+        echo "📋 Terraform Plan 실행 중..."
+        terraform plan -no-color -out=tfplan
+        echo "✅ Plan 실행 완료"
+
+    # ===============================================
+    # PR 코멘트에 Plan 결과 추가
+    # ===============================================
+    - name: Comment PR with Plan
+      if: github.event_name == 'pull_request'
+      uses: actions/github-script@v6
+      with:
+        script: |
+          const fs = require('fs');
+          const { execSync } = require('child_process');
+          
+          try {
+            const planOutput = execSync('cd infrastructure/terraform && terraform show -no-color tfplan', { encoding: 'utf8' });
+            
+            const comment = `## 🏗️ Terraform Plan 결과
+            
+            ### 📋 변경 사항 요약
+            \`\`\`
+            ${planOutput.substring(0, 4000)}
+            \`\`\`
+            
+            ### ℹ️ 추가 정보
+            - **워크플로우**: Infrastructure Deploy
+            - **환경**: ${process.env.PROJECT_NAME}
+            - **커밋**: ${context.sha.substring(0, 8)}
+            `;
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            });
+          } catch (error) {
+            console.log('Plan 결과를 가져올 수 없습니다:', error);
+          }
+
+    # ===============================================
+    # Terraform Apply (main 브랜치일 때만)
+    # ===============================================
+    - name: Terraform Apply
+      if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+      run: |
+        echo "🚀 인프라 배포 중..."
+        terraform apply -auto-approve
+        echo "✅ 인프라 배포 완료"
+
+    # ===============================================
+    # 배포 결과 확인
+    # ===============================================
+    - name: Verify Infrastructure
+      if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+      run: |
+        echo "🔍 배포된 리소스 확인 중..."
+        
+        # VPC 확인
+        VPC_ID=$(terraform output -raw vpc_id 2>/dev/null || echo "")
+        if [ -n "$VPC_ID" ]; then
+          echo "✅ VPC: $VPC_ID"
+        fi
+        
+        # EKS 클러스터 확인
+        EKS_CLUSTER=$(terraform output -raw eks_cluster_name 2>/dev/null || echo "")
+        if [ -n "$EKS_CLUSTER" ]; then
+          echo "✅ EKS Cluster: $EKS_CLUSTER"
+          aws eks describe-cluster --name $EKS_CLUSTER --query 'cluster.status' --output text
+        fi
+        
+        # RDS 확인
+        RDS_ENDPOINT=$(terraform output -raw rds_endpoint 2>/dev/null || echo "")
+        if [ -n "$RDS_ENDPOINT" ]; then
+          echo "✅ RDS Endpoint: $RDS_ENDPOINT"
+        fi
+        
+        # S3 버킷 확인
+        S3_LOGS_BUCKET=$(terraform output -raw s3_logs_bucket_name 2>/dev/null || echo "")
+        if [ -n "$S3_LOGS_BUCKET" ]; then
+          echo "✅ S3 Logs Bucket: $S3_LOGS_BUCKET"
+        fi
+
+    # ===============================================
+    # 인프라 배포 완료 알림
+    # ===============================================
+    - name: Infrastructure Deployment Notification
+      if: success() && github.ref == 'refs/heads/main' && github.event_name == 'push'
+      run: |
+        echo "🎉 인프라 배포 완료!"
+        echo "프로젝트: ${{ env.PROJECT_NAME }}"
+        echo "리전: ${{ secrets.AWS_REGION }}"
+        echo "커밋: ${{ github.sha }}"
+        echo "배포 시간: $(date)"
+
+    # ===============================================
+    # 배포 실패 시 롤백 정보 제공
+    # ===============================================
+    - name: Rollback Information
+      if: failure() && github.ref == 'refs/heads/main' && github.event_name == 'push'
+      run: |
+        echo "❌ 인프라 배포 실패"
+        echo "롤백이 필요한 경우 다음 명령어를 실행하세요:"
+        echo "terraform plan -destroy"
+        echo "terraform destroy"
+        echo "또는 이전 커밋으로 되돌린 후 다시 배포하세요."

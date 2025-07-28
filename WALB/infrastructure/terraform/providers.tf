@@ -3,12 +3,12 @@
 # =========================================
 
 terraform {
-  required_version = ">= 1.0"
+  required_version = ">= 1.8"
   
   required_providers {
     aws = {
       source  = "hashicorp/aws"
-      version = "~> 5.29.0"
+      version = "~> 5.70.0"
     }
     
     kubernetes = {
@@ -41,16 +41,14 @@ terraform {
       version = "~> 2.1"
     }
   }
-
-  # Terraform State Backend Configuration
-  # 운영 환경에서는 S3 backend 사용 권장
-  # backend "s3" {
-  #   bucket         = "your-terraform-state-bucket"
-  #   key            = "security-monitoring/terraform.tfstate"
-  #   region         = "ap-northeast-2"
-  #   encrypt        = true
-  #   dynamodb_table = "terraform-state-lock"
-  # }
+  backend "s3" {
+    bucket         = "walb-terraform-state-6026"  # bootstrap에서 생성된 버킷명
+    key            = "infrastructure/terraform.tfstate"
+    region         = "ap-northeast-2"
+    encrypt        = true
+    dynamodb_table = "walb-terraform-lock-6026"   # bootstrap에서 생성된 테이블명
+    kms_key_id     = "arn:aws:kms:ap-northeast-2:902597156026:key/ff0afd81-db5b-4723-8c08-3af172f32878"            # bootstrap에서 생성된 KMS 키
+  }
 }
 
 # =========================================
@@ -82,20 +80,23 @@ provider "aws" {
 # Kubernetes Provider
 # =========================================
 provider "kubernetes" {
-  host                   = module.eks.cluster_endpoint
-  cluster_ca_certificate = base64decode(module.eks.cluster_certificate_authority_data)
+  host                   = try(module.eks.cluster_endpoint, "")
+  cluster_ca_certificate = try(base64decode(module.eks.cluster_certificate_authority_data), "")
   
-  exec {
-    api_version = "client.authentication.k8s.io/v1beta1"
-    command     = "aws"
-    args = [
-      "eks",
-      "get-token",
-      "--cluster-name",
-      module.eks.cluster_name,
-      "--region",
-      var.aws_region
-    ]
+  dynamic "exec" {
+    for_each = can(module.eks.cluster_name) ? [1] : []
+    content {
+      api_version = "client.authentication.k8s.io/v1beta1"
+      command     = "aws"
+      args = [
+        "eks",
+        "get-token",
+        "--cluster-name",
+        module.eks.cluster_name,
+        "--region",
+        var.aws_region
+      ]
+    }
   }
 }
 
@@ -121,3 +122,4 @@ provider "helm" {
     }
   }
 }
+
