@@ -135,61 +135,23 @@ class IAMIdentificationChecker(BaseChecker):
         }]
     
     def execute_fix(self, selected_items):
-        """자동 조치 실행"""
-        try:
-            if self.session:
-                iam = self.session.client('iam')
-            else:
-                iam = boto3.client('iam')
-            
-            results = []
-            
-            for fix_id, items in selected_items.items():
-                if fix_id == 'add_identification_tags':
-                    for item in items:
-                        user_name = item['id']
-                        try:
-                            # 기본 식별 태그 추가
-                            default_tags = [
-                                {'Key': 'Name', 'Value': user_name},
-                                {'Key': 'ManagedBy', 'Value': 'WALB'},
-                                {'Key': 'Purpose', 'Value': 'IAM User Identification'},
-                                {'Key': 'LastReviewed', 'Value': str(datetime.now().date())}
-                            ]
-                            
-                            # 기존 태그가 있는지 확인하고 중복 방지
-                            existing_tags = iam.list_user_tags(UserName=user_name).get('Tags', [])
-                            existing_keys = {tag['Key'] for tag in existing_tags}
-                            
-                            new_tags = [tag for tag in default_tags if tag['Key'] not in existing_keys]
-                            
-                            if new_tags:
-                                iam.tag_user(UserName=user_name, Tags=new_tags)
-                                
-                                results.append({
-                                    'item': user_name,
-                                    'status': 'success',
-                                    'message': f'{user_name} 사용자에게 {len(new_tags)}개의 식별 태그가 추가되었습니다.'
-                                })
-                            else:
-                                results.append({
-                                    'item': user_name,
-                                    'status': 'success',
-                                    'message': f'{user_name} 사용자는 이미 모든 기본 태그를 보유하고 있습니다.'
-                                })
-                            
-                        except ClientError as e:
-                            results.append({
-                                'item': user_name,
-                                'status': 'error',
-                                'message': f'{user_name} 태그 추가 실패: {str(e)}'
-                            })
-            
-            return results
-            
-        except Exception as e:
-            return [{
-                'item': 'system',
-                'status': 'error',
-                'message': f'조치 실행 중 오류가 발생했습니다: {str(e)}'
-            }]
+        """
+        [1.3] IAM 사용자 계정 식별 관리 조치
+        - 원본: 태그가 없는 사용자에게 대화형으로 태그를 추가
+        - 웹 인터페이스에서는 수동 가이드 제공
+        """
+        # 원본에서는 대화형으로 사용자가 태그 키/값을 입력하는 방식
+        # 웹 인터페이스에서는 이를 수동 조치로 안내
+        return [{
+            'item': 'manual_tag_assignment',
+            'status': 'info',
+            'message': '[FIX] 1.3 태그가 없는 사용자에 대한 조치를 시작합니다.'
+        }, {
+            'item': 'interactive_tagging',
+            'status': 'info',
+            'message': '각 사용자별로 적절한 식별 태그(부서, 역할, 담당자 등)를 수동으로 추가해야 합니다.'
+        }, {
+            'item': 'manual_procedure',
+            'status': 'info',
+            'message': 'AWS 콘솔 > IAM > 사용자 선택 > 태그 탭에서 사용자별 맞춤 태그를 추가하세요.'
+        }]

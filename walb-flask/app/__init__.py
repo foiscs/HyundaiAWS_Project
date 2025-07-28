@@ -22,10 +22,14 @@ def create_app(config_name='default'):
     from app.views.connection import connection_bp
     from app.views.diagnosis import diagnosis_bp
     from app.views.api import api_bp
+    from app.views.monitoring import bp as monitoring_bp
+    from app.views.logs import logs_bp
     
     app.register_blueprint(main_bp)
     app.register_blueprint(connection_bp, url_prefix='/connection')
     app.register_blueprint(diagnosis_bp, url_prefix='/diagnosis') 
     app.register_blueprint(api_bp, url_prefix='/api')
+    app.register_blueprint(monitoring_bp)
+    app.register_blueprint(logs_bp)
     
     return app

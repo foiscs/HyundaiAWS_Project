@@ -1,0 +1,242 @@
+{% extends "base.html" %} 
+{% set page_title = "모니터링" %} 
+{% block title %}{{ page_title }}{% endblock %} 
+
+{% block content %}
+<!-- 히어로 헤더 -->
+<div class="bg-gradient-to-r from-indigo-600 to-blue-600 rounded-2xl p-8 text-white mb-8 relative overflow-hidden">
+    <div class="relative z-10">
+        <div class="flex items-center mb-4">
+            <span class="text-4xl mr-4 animate-pulse">📊</span>
+            <div>
+                <h1 class="text-3xl font-bold mb-2">실시간 모니터링</h1>
+                <p class="text-indigo-100">AWS 리소스의 실시간 상태를 모니터링합니다</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Background Pattern -->
+    <div class="absolute inset-0 opacity-10">
+        <div class="absolute top-10 right-10 w-20 h-20 bg-white rounded-full animate-pulse"></div>
+        <div class="absolute bottom-10 right-20 w-16 h-16 bg-white rounded-full animate-pulse delay-1000"></div>
+        <div class="absolute top-20 left-20 w-12 h-12 bg-white rounded-full animate-pulse delay-2000"></div>
+    </div>
+</div>
+
+<!-- 계정 선택 섹션 -->
+<div class="account-selection-section">
+    <h2 class="section-title">
+        <span class="section-icon">☁️</span>
+        모니터링할 AWS 계정 선택
+    </h2>
+
+    {% if accounts %}
+    <div class="accounts-grid">
+        {% for account in accounts %}
+        <div class="account-card {% if selected_account and selected_account.account_id == account.account_id %}selected{% endif %}" 
+             data-account-id="{{ account.account_id }}" 
+             onclick="selectAccount('{{ account.account_id }}')">
+            <div class="account-header">
+                <h3 class="account-name">{{ account.cloud_name }}</h3>
+                <div class="account-type-badge">
+                    {% if account.connection_type == 'role' %}
+                    <span class="badge badge-role">Role</span>
+                    {% else %}
+                    <span class="badge badge-key">Key</span>
+                    {% endif %}
+                </div>
+            </div>
+            <div class="account-details">
+                <div class="account-detail">
+                    <span class="detail-label">계정 ID</span>
+                    <span class="detail-value">{{ account.account_id }}</span>
+                </div>
+                <div class="account-detail">
+                    <span class="detail-label">리전</span>
+                    <span class="detail-value">{{ account.primary_region }}</span>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="empty-state">
+        <div class="empty-icon">📋</div>
+        <h3>등록된 AWS 계정이 없습니다</h3>
+        <p>모니터링을 시작하려면 먼저 AWS 계정을 연결해주세요.</p>
+        <a href="{{ url_for('connection.index') }}" class="btn btn-primary">
+            <span>💫</span> AWS 계정 연결하기
+        </a>
+    </div>
+    {% endif %}
+</div>
+
+<!-- 모니터링 콘텐츠 -->
+{% if selected_account %}
+<div class="monitoring-content mt-8">
+    <div class="bg-white rounded-xl shadow-sm p-8 text-center">
+        <h2 class="text-2xl font-bold mb-4">Hello World! 🌍</h2>
+        <p class="text-gray-600">선택된 계정: <strong>{{ selected_account.cloud_name }}</strong> ({{ selected_account.account_id }})</p>
+        <p class="text-gray-500 mt-4">모니터링 기능은 현재 개발 중입니다.</p>
+    </div>
+</div>
+{% endif %}
+
+<script>
+// 계정 선택
+function selectAccount(accountId) {
+    window.location.href = `/monitoring?account=${accountId}`;
+}
+</script>
+
+{% endblock %}
+
+{% block extra_css %}
+<style>
+/* 계정 선택 섹션 스타일 재사용 */
+.account-selection-section {
+    margin-bottom: 2rem;
+}
+
+.section-title {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: #2d3748;
+    margin-bottom: 1.5rem;
+    display: flex;
+    align-items: center;
+}
+
+.section-icon {
+    font-size: 1.75rem;
+    margin-right: 0.5rem;
+}
+
+.accounts-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 1.5rem;
+}
+
+.account-card {
+    background: white;
+    border: 2px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 1.5rem;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.account-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
+    border-color: #cbd5e0;
+}
+
+.account-card.selected {
+    border-color: #4299e1;
+    background: #ebf8ff;
+}
+
+.account-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+}
+
+.account-name {
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: #2d3748;
+}
+
+.account-type-badge .badge {
+    padding: 0.25rem 0.75rem;
+    border-radius: 9999px;
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+
+.badge-role {
+    background: #e6fffa;
+    color: #00a896;
+}
+
+.badge-key {
+    background: #fef3c7;
+    color: #d97706;
+}
+
+.account-details {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.account-detail {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.875rem;
+}
+
+.detail-label {
+    color: #718096;
+}
+
+.detail-value {
+    color: #2d3748;
+    font-weight: 500;
+}
+
+.empty-state {
+    text-align: center;
+    padding: 4rem;
+    background: white;
+    border-radius: 12px;
+    border: 2px dashed #e2e8f0;
+}
+
+.empty-icon {
+    font-size: 4rem;
+    margin-bottom: 1rem;
+}
+
+.btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1.5rem;
+    border-radius: 8px;
+    font-weight: 600;
+    text-decoration: none;
+    transition: all 0.2s ease;
+    margin-top: 1rem;
+}
+
+.btn-primary {
+    background: #4299e1;
+    color: white;
+}
+
+.btn-primary:hover {
+    background: #3182ce;
+    transform: translateY(-1px);
+}
+
+.monitoring-content {
+    animation: fadeIn 0.5s ease-in;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+</style>
+{% endblock %}

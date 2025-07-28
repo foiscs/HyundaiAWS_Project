@@ -43,13 +43,13 @@ class DiagnosisConfig:
                 {"code": "1.4", "name": "IAM 그룹 관리", "severity": "중", "description": "IAM 그룹의 권한 관리 상태를 점검합니다", "implemented": True},
                 {"code": "1.5", "name": "EC2 키 페어 접근 관리", "severity": "상", "description": "EC2 인스턴스의 키 페어 접근 권한을 점검합니다", "implemented": True},
                 {"code": "1.6", "name": "S3 키 페어 저장 관리", "severity": "상", "description": "S3에 저장된 키 페어의 보안을 점검합니다", "implemented": True},
-                {"code": "1.7", "name": "사용자 접근 키 주기적 변경", "severity": "중", "description": "사용자 접근 키의 주기적 변경 상태를 점검합니다", "implemented": False},
+                {"code": "1.7", "name": "루트 계정 사용", "severity": "중", "description": "AWS 루트 계정의 사용 현황을 점검합니다", "implemented": True},
                 {"code": "1.8", "name": "접근 키 관리", "severity": "상", "description": "AWS 접근 키의 관리 상태를 점검합니다", "implemented": True},
                 {"code": "1.9", "name": "MFA 설정", "severity": "상", "description": "다단계 인증(MFA) 설정 상태를 점검합니다", "implemented": True},
                 {"code": "1.10", "name": "패스워드 정책", "severity": "중", "description": "계정 패스워드 정책 설정을 점검합니다", "implemented": True},
-                {"code": "1.11", "name": "사용자 권한 검토", "severity": "중", "description": "사용자별 권한 할당 상태를 점검합니다", "implemented": False},
-                {"code": "1.12", "name": "사용자 활동 모니터링", "severity": "중", "description": "사용자 활동 로그 및 모니터링을 점검합니다", "implemented": False},
-                {"code": "1.13", "name": "계정 잠금 정책", "severity": "중", "description": "계정 잠금 및 해제 정책을 점검합니다", "implemented": False}
+                {"code": "1.11", "name": "EKS 사용자 관리", "severity": "중", "description": "EKS 클러스터의 사용자 관리를 점검합니다", "implemented": True},
+                {"code": "1.12", "name": "EKS 서비스 계정", "severity": "중", "description": "EKS 서비스 계정 보안을 점검합니다", "implemented": True},
+                {"code": "1.13", "name": "EKS 익명 접근", "severity": "중", "description": "EKS 클러스터의 익명 접근을 점검합니다", "implemented": True}
             ],
             "권한 관리": [
                 {"code": "2.1", "name": "인스턴스 서비스 정책", "severity": "상", "description": "EC2 인스턴스의 서비스 정책을 점검합니다", "implemented": True},
@@ -57,33 +57,33 @@ class DiagnosisConfig:
                 {"code": "2.3", "name": "기타 서비스 정책", "severity": "중", "description": "기타 AWS 서비스의 정책을 점검합니다", "implemented": True}
             ],
             "가상 자원": [
-                {"code": "3.1", "name": "보안그룹 ANY 설정", "severity": "상", "description": "보안그룹의 ANY(0.0.0.0/0) 설정을 점검합니다", "implemented": True},
-                {"code": "3.2", "name": "보안그룹 불필요한 정책", "severity": "상", "description": "보안그룹의 불필요한 정책을 점검합니다", "implemented": True},
-                {"code": "3.3", "name": "VPC 플로우 로그", "severity": "중", "description": "VPC 플로우 로그 설정을 점검합니다", "implemented": False},
-                {"code": "3.4", "name": "ELB 접근 로그", "severity": "중", "description": "ELB의 접근 로그 설정을 점검합니다", "implemented": False},
-                {"code": "3.5", "name": "CloudFront 로그", "severity": "중", "description": "CloudFront의 로그 설정을 점검합니다", "implemented": False},
-                {"code": "3.6", "name": "NACL 설정", "severity": "중", "description": "네트워크 ACL의 설정을 점검합니다", "implemented": False},
-                {"code": "3.7", "name": "Route Table 설정", "severity": "중", "description": "라우팅 테이블의 설정을 점검합니다", "implemented": False},
-                {"code": "3.8", "name": "VPC 엔드포인트", "severity": "하", "description": "VPC 엔드포인트 설정을 점검합니다", "implemented": False},
-                {"code": "3.9", "name": "인터넷 게이트웨이", "severity": "중", "description": "인터넷 게이트웨이 설정을 점검합니다", "implemented": False},
-                {"code": "3.10", "name": "NAT 게이트웨이", "severity": "중", "description": "NAT 게이트웨이 설정을 점검합니다", "implemented": False}
+                {"code": "3.1", "name": "보안 그룹 인/아웃바운드 ANY 설정 관리", "severity": "상", "description": "보안그룹의 ANY(0.0.0.0/0) 설정을 점검합니다", "implemented": True},
+                {"code": "3.2", "name": "보안 그룹 인/아웃바운드 불필요 정책 관리", "severity": "상", "description": "보안그룹의 불필요한 정책을 점검합니다", "implemented": True},
+                {"code": "3.3", "name": "네트워크 ACL 인/아웃바운드 트래픽 정책 관리", "severity": "중", "description": "네트워크 ACL의 트래픽 정책을 점검합니다", "implemented": True},
+                {"code": "3.4", "name": "라우팅 테이블 정책 관리", "severity": "중", "description": "라우팅 테이블의 정책을 점검합니다", "implemented": True},
+                {"code": "3.5", "name": "인터넷 게이트웨이 연결 관리", "severity": "중", "description": "인터넷 게이트웨이 연결 상태를 점검합니다", "implemented": True},
+                {"code": "3.6", "name": "NAT 게이트웨이 연결 관리", "severity": "중", "description": "NAT 게이트웨이 연결 상태를 점검합니다", "implemented": True},
+                {"code": "3.7", "name": "S3 버킷/객체 접근 관리", "severity": "상", "description": "S3 버킷/객체의 접근 권한을 점검합니다", "implemented": True},
+                {"code": "3.8", "name": "RDS 서브넷 가용 영역 관리", "severity": "중", "description": "RDS 서브넷의 가용 영역 구성을 점검합니다", "implemented": True},
+                {"code": "3.9", "name": "EKS Pod 보안 정책 설정", "severity": "상", "description": "EKS Pod 보안 정책을 점검합니다", "implemented": True},
+                {"code": "3.10", "name": "ELB 제어 정책 관리", "severity": "중", "description": "ELB의 제어 정책을 점검합니다", "implemented": True}
             ],
             "운영 관리": [
-                {"code": "4.1", "name": "EBS 암호화", "severity": "상", "description": "EBS 볼륨의 암호화 설정을 점검합니다", "implemented": False},
-                {"code": "4.2", "name": "S3 암호화", "severity": "상", "description": "S3 버킷의 암호화 설정을 점검합니다", "implemented": False},
-                {"code": "4.3", "name": "RDS 암호화", "severity": "상", "description": "RDS 인스턴스의 암호화 설정을 점검합니다", "implemented": False},
-                {"code": "4.4", "name": "CloudTrail 설정", "severity": "상", "description": "CloudTrail의 로깅 설정을 점검합니다", "implemented": False},
-                {"code": "4.5", "name": "CloudWatch 모니터링", "severity": "중", "description": "CloudWatch 모니터링 설정을 점검합니다", "implemented": False},
-                {"code": "4.6", "name": "Config 설정", "severity": "중", "description": "AWS Config 설정을 점검합니다", "implemented": False},
-                {"code": "4.7", "name": "GuardDuty 설정", "severity": "중", "description": "GuardDuty 위협 탐지 설정을 점검합니다", "implemented": False},
-                {"code": "4.8", "name": "Trusted Advisor", "severity": "하", "description": "Trusted Advisor 권고사항을 점검합니다", "implemented": False},
-                {"code": "4.9", "name": "KMS 키 관리", "severity": "상", "description": "KMS 키의 관리 상태를 점검합니다", "implemented": False},
-                {"code": "4.10", "name": "Lambda 보안", "severity": "중", "description": "Lambda 함수의 보안 설정을 점검합니다", "implemented": False},
-                {"code": "4.11", "name": "API Gateway 보안", "severity": "중", "description": "API Gateway의 보안 설정을 점검합니다", "implemented": False},
-                {"code": "4.12", "name": "SNS 암호화", "severity": "중", "description": "SNS 토픽의 암호화 설정을 점검합니다", "implemented": False},
-                {"code": "4.13", "name": "SQS 암호화", "severity": "중", "description": "SQS 큐의 암호화 설정을 점검합니다", "implemented": False},
-                {"code": "4.14", "name": "ECR 이미지 스캔", "severity": "중", "description": "ECR 이미지의 보안 스캔을 점검합니다", "implemented": False},
-                {"code": "4.15", "name": "EKS 보안", "severity": "상", "description": "EKS 클러스터의 보안 설정을 점검합니다", "implemented": False}
+                {"code": "4.1", "name": "EBS 및 볼륨 암호화 설정", "severity": "상", "description": "EBS 볼륨의 암호화 설정을 점검합니다", "implemented": True},
+                {"code": "4.2", "name": "RDS 암호화 설정", "severity": "상", "description": "RDS 인스턴스의 암호화 설정을 점검합니다", "implemented": True},
+                {"code": "4.3", "name": "S3 암호화 설정", "severity": "상", "description": "S3 버킷의 암호화 설정을 점검합니다", "implemented": True},
+                {"code": "4.4", "name": "통신구간 암호화 설정", "severity": "중", "description": "통신구간 암호화 설정을 점검합니다", "implemented": True},
+                {"code": "4.5", "name": "CloudTrail 암호화 설정", "severity": "상", "description": "CloudTrail 로그 암호화 설정을 점검합니다", "implemented": True},
+                {"code": "4.6", "name": "CloudWatch 암호화 설정", "severity": "중", "description": "CloudWatch 로그 암호화 설정을 점검합니다", "implemented": True},
+                {"code": "4.7", "name": "AWS 사용자 계정 접근 로깅 설정", "severity": "중", "description": "사용자 계정 접근 로깅을 점검합니다", "implemented": True},
+                {"code": "4.8", "name": "인스턴스 로깅 설정", "severity": "중", "description": "EC2 인스턴스 로깅 설정을 점검합니다", "implemented": True},
+                {"code": "4.9", "name": "RDS 로깅 설정", "severity": "중", "description": "RDS 로깅 설정을 점검합니다", "implemented": True},
+                {"code": "4.10", "name": "S3 버킷 로깅 설정", "severity": "중", "description": "S3 버킷 로깅 설정을 점검합니다", "implemented": True},
+                {"code": "4.11", "name": "VPC 플로우 로깅 설정", "severity": "중", "description": "VPC 플로우 로깅 설정을 점검합니다", "implemented": True},
+                {"code": "4.12", "name": "로그 보존 기간 설정", "severity": "중", "description": "로그 보존 기간 설정을 점검합니다", "implemented": True},
+                {"code": "4.13", "name": "백업 사용 여부", "severity": "중", "description": "백업 설정 사용 여부를 점검합니다", "implemented": True},
+                {"code": "4.14", "name": "EKS Cluster 제어 플레인 로깅 설정", "severity": "중", "description": "EKS 제어 플레인 로깅을 점검합니다", "implemented": True},
+                {"code": "4.15", "name": "EKS Cluster 암호화 설정", "severity": "상", "description": "EKS 클러스터 암호화 설정을 점검합니다", "implemented": True}
             ]
         }
     

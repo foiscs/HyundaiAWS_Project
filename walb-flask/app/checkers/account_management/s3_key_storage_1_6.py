@@ -213,6 +213,71 @@ class S3KeyStorageChecker(BaseChecker):
             'action_type': 'secure_files'
         }]
     
+    def _get_manual_guide(self, result):
+        """수동 조치 가이드 반환 - 원본 1.6 fix() 함수 내용"""
+        if not result.get('has_issues'):
+            return None
+        
+        risky_files = result.get('risky_key_files', [])
+        if not risky_files:
+            return None
+        
+        # 원본 fix() 함수의 수동 조치 옵션들을 웹 UI로 변환
+        guide_steps = [
+            {
+                'type': 'warning',
+                'title': '[FIX] 1.6 공개된 S3 버킷의 Key Pair 파일 조치',
+                'content': '공개된 버킷의 .pem 파일을 삭제하거나 버킷 자체를 비공개로 전환해야 합니다.'
+            },
+            {
+                'type': 'step',
+                'title': '옵션 1. 키 파일 삭제 (Delete Keys)',
+                'content': '위험한 .pem 파일들을 S3 버킷에서 완전히 삭제합니다. 주의: 파일이 삭제되면 복구할 수 없습니다.'
+            },
+            {
+                'type': 'step',
+                'title': '옵션 2. 버킷 비공개 전환 (Privatize Bucket)',
+                'content': '버킷의 모든 퍼블릭 액세스를 차단하여 외부 접근을 완전히 막습니다.'
+            },
+            {
+                'type': 'step',
+                'title': '옵션 3. 객체별 ACL 설정',
+                'content': '개별 .pem 파일의 ACL을 수정하여 소유자만 접근 가능하도록 설정합니다.'
+            }
+        ]
+        
+        # 위험한 파일 목록을 버킷별로 그룹화
+        bucket_groups = {}
+        for file_info in risky_files:
+            bucket = file_info['bucket_name']
+            if bucket not in bucket_groups:
+                bucket_groups[bucket] = []
+            bucket_groups[bucket].append(file_info['object_key'])
+        
+        # CLI 명령어 추가
+        cli_commands = []
+        for bucket, files in bucket_groups.items():
+            cli_commands.append(f"# 버킷 '{bucket}' 비공개 전환")
+            cli_commands.append(f"aws s3api put-public-access-block --bucket {bucket} --public-access-block-configuration BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true")
+            cli_commands.append(f"")
+            cli_commands.append(f"# '{bucket}' 키 파일들 삭제")
+            for file_key in files:
+                cli_commands.append(f"aws s3 rm s3://{bucket}/{file_key}")
+            cli_commands.append("")
+        
+        if cli_commands:
+            guide_steps.append({
+                'type': 'commands',
+                'title': 'AWS CLI 명령어 예시',
+                'content': cli_commands
+            })
+        
+        return {
+            'title': '1.6 S3 Key Pair 저장소 관리 수동 조치 가이드',
+            'description': '원본 팀원이 작성한 수동 조치 절차를 따라 키 파일 보안을 강화하세요.',
+            'steps': guide_steps
+        }
+    
     def execute_fix(self, selected_items):
         """자동 조치 실행"""
         try:
