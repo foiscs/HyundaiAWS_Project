@@ -197,8 +197,9 @@ class DiagnosisService:
             
             # 로깅 세션 시작
             if enable_logging:
-                account_name = getattr(account, 'account_name', 'Unknown')
-                session_id = diagnosis_logger.start_session(account_name, "batch")
+                account_id = getattr(account, 'account_id', 'Unknown')
+                account_name = getattr(account, 'cloud_name', None)
+                session_id = diagnosis_logger.start_session(account_id, account_name, "batch")
             
             # AWS 세션 생성
             aws_session = self.create_aws_session(account)
@@ -227,9 +228,10 @@ class DiagnosisService:
                     failed_count += 1
             
             # 세션 요약 로그
+            log_file_path = None
             if enable_logging:
                 diagnosis_logger.log_session_summary(len(item_codes), success_count, failed_count)
-                log_file_path = diagnosis_logger.get_session_log_path()
+                log_file_path = diagnosis_logger.get_session_log_path()  # end_session() 전에 경로 저장
                 diagnosis_logger.end_session()
             
             result = {

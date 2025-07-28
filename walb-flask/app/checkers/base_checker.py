@@ -61,10 +61,21 @@ class BaseChecker(ABC):
             'fix_options': self._get_fix_options(result) if result.get('has_issues') else None
         }
         
-        # 수동 조치 가이드가 있으면 추가
-        manual_guide = self._get_manual_guide(result)
-        if manual_guide:
-            formatted_result['manual_guide'] = manual_guide
+        # 수동 조치 가이드는 보안 이슈가 있을 때만 표시 (다양한 시그니처 지원)
+        if result.get('has_issues'):
+            try:
+                manual_guide = self._get_manual_guide(result)
+            except TypeError:
+                # 인자를 받지 않는 메서드의 경우
+                try:
+                    manual_guide = self._get_manual_guide()
+                except:
+                    manual_guide = None
+            except:
+                manual_guide = None
+                
+            if manual_guide:
+                formatted_result['manual_guide'] = manual_guide
             
         return formatted_result
     
