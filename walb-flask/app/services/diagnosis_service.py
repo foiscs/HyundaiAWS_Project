@@ -7,6 +7,7 @@ from datetime import datetime
 from botocore.exceptions import ClientError, NoCredentialsError # type: ignore
 from app.config.diagnosis_config import DiagnosisConfig
 from app.utils.aws_handler import AWSConnectionHandler
+from app.utils.diagnosis_logger import diagnosis_logger
 
 class DiagnosisService:
     """진단 서비스 클래스 - mainHub의 DiagnosisCoreEngine 기능 이식"""
@@ -86,13 +87,14 @@ class DiagnosisService:
                 'error_message': str(e)
             }
     
-    def run_single_diagnosis(self, account, item_code):
+    def run_single_diagnosis(self, account, item_code, enable_logging=True):
         """
         개별 진단 항목 실행
         
         Args:
             account: AWSAccount 모델 인스턴스
             item_code (str): 진단 항목 코드 (예: "1.1")
+            enable_logging (bool): 로깅 활성화 여부
             
         Returns:
             dict: 진단 결과
@@ -101,26 +103,39 @@ class DiagnosisService:
             # 진단 항목 정보 조회
             item_info = self.get_item_by_code(item_code)
             if not item_info:
-                return {
+                result = {
                     'status': 'error',
                     'message': f'진단 항목을 찾을 수 없습니다: {item_code}'
                 }
+                if enable_logging:
+                    diagnosis_logger.log_diagnosis_result(item_code, "알 수 없는 항목", result)
+                return result
+            
+            # 진단 시작 로그
+            if enable_logging:
+                diagnosis_logger.log_diagnosis_start(item_code, item_info['name'])
             
             # AWS 세션 생성
             aws_session = self.create_aws_session(account)
             if not aws_session:
-                return {
+                result = {
                     'status': 'error',
                     'message': 'AWS 세션 생성에 실패했습니다.'
                 }
+                if enable_logging:
+                    diagnosis_logger.log_diagnosis_result(item_code, item_info['name'], result)
+                return result
             
             # 체커 인스턴스 생성 및 진단 실행
             checker = self._get_checker_instance(item_code, aws_session)
             if not checker:
-                return {
+                result = {
                     'status': 'error',
                     'message': f'진단 체커를 찾을 수 없습니다: {item_code}'
                 }
+                if enable_logging:
+                    diagnosis_logger.log_diagnosis_result(item_code, item_info['name'], result)
+                return result
             
             # 진단 실행
             raw_result = checker.run_diagnosis()
@@ -129,7 +144,7 @@ class DiagnosisService:
             formatted_result = checker.get_result_summary(raw_result)
             
             # 결과 포맷팅
-            return {
+            result = {
                 'status': 'success',
                 'item_code': item_code,
                 'item_name': item_info['name'],
@@ -140,23 +155,35 @@ class DiagnosisService:
                 'executed_at': datetime.now().isoformat()
             }
             
+            # 진단 결과 로그
+            if enable_logging:
+                diagnosis_logger.log_diagnosis_result(item_code, item_info['name'], result)
+            
+            return result
+            
         except Exception as e:
-            return {
+            result = {
                 'status': 'error',
                 'message': f'진단 실행 중 오류 발생: {str(e)}'
             }
+            if enable_logging:
+                item_name = item_info.get('name', '알 수 없는 항목') if 'item_info' in locals() else '알 수 없는 항목'
+                diagnosis_logger.log_diagnosis_result(item_code, item_name, result)
+            return result
     
-    def run_batch_diagnosis(self, account, item_codes=None):
+    def run_batch_diagnosis(self, account, item_codes=None, enable_logging=True):
         """
         일괄 진단 실행
         
         Args:
             account: AWSAccount 모델 인스턴스
             item_codes (list): 진단할 항목 코드 목록 (None이면 전체)
+            enable_logging (bool): 로깅 활성화 여부
             
         Returns:
             dict: 일괄 진단 결과
         """
+        session_id = None
         try:
             # 진단할 항목 결정
             if item_codes is None:
@@ -168,13 +195,22 @@ class DiagnosisService:
                         all_codes.append(item['code'])
                 item_codes = all_codes
             
+            # 로깅 세션 시작
+            if enable_logging:
+                account_name = getattr(account, 'account_name', 'Unknown')
+                session_id = diagnosis_logger.start_session(account_name, "batch")
+            
             # AWS 세션 생성
             aws_session = self.create_aws_session(account)
             if not aws_session:
-                return {
+                result = {
                     'status': 'error',
                     'message': 'AWS 세션 생성에 실패했습니다.'
                 }
+                if enable_logging:
+                    diagnosis_logger.log_session_summary(len(item_codes), 0, len(item_codes))
+                    diagnosis_logger.end_session()
+                return result
             
             # 각 항목별 진단 실행
             results = {}
@@ -182,7 +218,7 @@ class DiagnosisService:
             failed_count = 0
             
             for item_code in item_codes:
-                result = self.run_single_diagnosis(account, item_code)
+                result = self.run_single_diagnosis(account, item_code, enable_logging=enable_logging)
                 results[item_code] = result
                 
                 if result['status'] == 'success':
@@ -190,7 +226,13 @@ class DiagnosisService:
                 else:
                     failed_count += 1
             
-            return {
+            # 세션 요약 로그
+            if enable_logging:
+                diagnosis_logger.log_session_summary(len(item_codes), success_count, failed_count)
+                log_file_path = diagnosis_logger.get_session_log_path()
+                diagnosis_logger.end_session()
+            
+            result = {
                 'status': 'success',
                 'total_items': len(item_codes),
                 'success_count': success_count,
@@ -199,7 +241,16 @@ class DiagnosisService:
                 'executed_at': datetime.now().isoformat()
             }
             
+            # 로그 파일 경로 추가
+            if enable_logging and log_file_path:
+                result['log_file_path'] = log_file_path
+                result['session_id'] = session_id
+            
+            return result
+            
         except Exception as e:
+            if enable_logging and session_id:
+                diagnosis_logger.end_session()
             return {
                 'status': 'error',
                 'message': f'일괄 진단 실행 중 오류 발생: {str(e)}'
@@ -290,9 +341,34 @@ class DiagnosisService:
                 "2.2": "app.checkers.authorization.network_service_policy_2_2.NetworkServicePolicyChecker",
                 "2.3": "app.checkers.authorization.other_service_policy_2_3.OtherServicePolicyChecker",
                 
-                # 가상 자원 (2개)
-                "3.1": "app.checkers.virtual_resources.security_group_any_3_1.SecurityGroupAnyChecker",  # 구현 필요
-                "3.2": "app.checkers.virtual_resources.security_group_unnecessary_3_2.SecurityGroupUnnecessaryChecker"  # 구현 필요
+                # 가상 자원 (10개) - 모두 구현 완료
+                "3.1": "app.checkers.virtual_resources.sg_any_rule_3_1.SecurityGroupAnyRuleChecker",
+                "3.2": "app.checkers.virtual_resources.sg_unnecessary_policy_3_2.SecurityGroupUnnecessaryPolicyChecker",
+                "3.3": "app.checkers.virtual_resources.nacl_traffic_policy_3_3.NaclTrafficPolicyChecker",
+                "3.4": "app.checkers.virtual_resources.route_table_policy_3_4.RouteTablePolicyChecker",
+                "3.5": "app.checkers.virtual_resources.igw_connection_3_5.InternetGatewayConnectionChecker",
+                "3.6": "app.checkers.virtual_resources.nat_gateway_connection_3_6.NatGatewayConnectionChecker",
+                "3.7": "app.checkers.virtual_resources.s3_bucket_access_3_7.S3BucketAccessChecker",
+                "3.8": "app.checkers.virtual_resources.rds_subnet_az_3_8.RdsSubnetAzChecker",
+                "3.9": "app.checkers.virtual_resources.eks_pod_security_policy_3_9.EksPodSecurityPolicyChecker",
+                "3.10": "app.checkers.virtual_resources.elb_connection_3_10.ElbConnectionChecker",
+                
+                # 운영 관리 (15개) - 모두 구현 완료
+                "4.1": "app.checkers.operation.ebs_encryption_4_1.EbsEncryptionChecker",
+                "4.2": "app.checkers.operation.rds_encryption_4_2.RdsEncryptionChecker",
+                "4.3": "app.checkers.operation.s3_encryption_4_3.S3EncryptionChecker",
+                "4.4": "app.checkers.operation.transit_encryption_4_4.TransitEncryptionChecker",
+                "4.5": "app.checkers.operation.cloudtrail_encryption_4_5.CloudtrailEncryptionChecker",
+                "4.6": "app.checkers.operation.cloudwatch_encryption_4_6.CloudwatchEncryptionChecker",
+                "4.7": "app.checkers.operation.user_account_logging_4_7.UserAccountLoggingChecker",
+                "4.8": "app.checkers.operation.instance_logging_4_8.InstanceLoggingChecker",
+                "4.9": "app.checkers.operation.rds_logging_4_9.RdsLoggingChecker",
+                "4.10": "app.checkers.operation.s3_bucket_logging_4_10.S3BucketLoggingChecker",
+                "4.11": "app.checkers.operation.vpc_flow_logging_4_11.VpcFlowLoggingChecker",
+                "4.12": "app.checkers.operation.log_retention_period_4_12.LogRetentionPeriodChecker",
+                "4.13": "app.checkers.operation.backup_usage_4_13.BackupUsageChecker",
+                "4.14": "app.checkers.operation.eks_control_plane_logging_4_14.EksControlPlaneLoggingChecker",
+                "4.15": "app.checkers.operation.eks_cluster_encryption_4_15.EksClusterEncryptionChecker"
             }
             
             # 체커 클래스 경로 조회

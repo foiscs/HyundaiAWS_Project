@@ -387,6 +387,22 @@
     gap: 1.5rem;
 }
 
+/* 2열 레이아웃 (기본값) */
+@media (min-width: 768px) {
+    .items-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+/* 1열 레이아웃 (space-y-4 클래스가 추가되었을 때) */
+.items-grid.space-y-4 {
+    display: block;
+}
+
+.items-grid.space-y-4 > .diagnosis-item:not(:first-child) {
+    margin-top: 1rem;
+}
+
 .diagnosis-item {
     background: white;
     border: 1px solid #e2e8f0;
@@ -1330,4 +1346,200 @@
 .btn-xs {
     font-size: 0.7rem;
     padding: 0.2rem 0.4rem;
+}
+
+/* 진단 결과 대시보드 스타일 */
+.diagnosis-results-dashboard {
+    margin-top: 2rem;
+    margin-bottom: 2rem;
+    animation: fadeIn 0.5s ease-in;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.dashboard-title {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: #2d3748;
+    margin-bottom: 1.5rem;
+    display: flex;
+    align-items: center;
+}
+
+.dashboard-icon {
+    font-size: 1.75rem;
+    margin-right: 0.5rem;
+}
+
+.results-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1.5rem;
+    margin-bottom: 2rem;
+}
+
+.result-card {
+    background: white;
+    border-radius: 12px;
+    padding: 1.5rem;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    border: 2px solid transparent;
+    transition: all 0.3s ease;
+}
+
+.result-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+}
+
+.total-card {
+    border-color: #e2e8f0;
+    background: linear-gradient(135deg, #f7fafc 0%, #ffffff 100%);
+}
+
+.vulnerable-card {
+    border-color: #feb2b2;
+    background: linear-gradient(135deg, #fff5f5 0%, #ffffff 100%);
+}
+
+.safe-card {
+    border-color: #9ae6b4;
+    background: linear-gradient(135deg, #f0fff4 0%, #ffffff 100%);
+}
+
+.risk-distribution-card {
+    border-color: #d6f5ff;
+    background: linear-gradient(135deg, #f0f9ff 0%, #ffffff 100%);
+}
+
+.result-icon {
+    font-size: 2.5rem;
+    margin-bottom: 1rem;
+    display: inline-block;
+}
+
+.result-content {
+    text-align: center;
+}
+
+.result-number {
+    font-size: 2.5rem;
+    font-weight: 700;
+    color: #2d3748;
+    line-height: 1;
+}
+
+.result-label {
+    font-size: 1rem;
+    color: #4a5568;
+    margin-top: 0.5rem;
+    font-weight: 600;
+}
+
+.result-percentage {
+    font-size: 0.875rem;
+    color: #718096;
+    margin-top: 0.25rem;
+}
+
+.distribution-header {
+    text-align: center;
+    margin-bottom: 1rem;
+}
+
+.distribution-title {
+    font-size: 1.125rem;
+    font-weight: 600;
+    color: #2d3748;
+}
+
+.distribution-content {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.risk-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.5rem 0;
+    border-bottom: 1px solid #e2e8f0;
+}
+
+.risk-item:last-child {
+    border-bottom: none;
+}
+
+.risk-label {
+    font-size: 0.875rem;
+    font-weight: 500;
+}
+
+.risk-count {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: #2d3748;
+}
+
+/* 진행률 바 스타일 */
+.progress-bar-container {
+    background: white;
+    border-radius: 12px;
+    padding: 1.5rem;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.progress-bar-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.75rem;
+    font-weight: 600;
+    color: #2d3748;
+}
+
+.progress-bar-bg {
+    background: #e2e8f0;
+    border-radius: 9999px;
+    height: 20px;
+    position: relative;
+    overflow: hidden;
+}
+
+.progress-bar-fill {
+    background: linear-gradient(90deg, #4299e1 0%, #48bb78 100%);
+    height: 100%;
+    border-radius: 9999px;
+    transition: width 0.3s ease;
+    position: relative;
+}
+
+.progress-bar-fill::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: linear-gradient(90deg, rgba(255,255,255,0.3) 0%, rgba(255,255,255,0) 100%);
+    animation: shimmer 2s infinite;
+}
+
+@keyframes shimmer {
+    0% {
+        transform: translateX(-100%);
+    }
+    100% {
+        transform: translateX(100%);
+    }
 }

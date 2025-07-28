@@ -73,8 +73,8 @@
         <div class="flex items-center mb-4">
             <span class="text-4xl mr-4 animate-bounce">🏠</span>
             <div>
-                <h1 class="text-3xl font-bold mb-2">WALB 대시보드</h1>
-                <p class="text-blue-100">AWS 보안 관리 통합 대시보드</p>
+                <h1 class="text-3xl font-bold mb-2">멀티 클라우드 보안 관리 대시보드</h1>
+                <p class="text-blue-100">Terraform & boto3 하이브리드 IaC 자동화 + Kinesis & Splunk 통합 모니터링</p>
             </div>
         </div>
     </div>
@@ -191,7 +191,7 @@
             <div class="flex gap-2 mt-4" id="actions-{{ account.account_id }}-{{ account.cloud_name }}">
                 {% if account.status == 'active' %}
                 <button onclick="window.location.href='{{ url_for('diagnosis.index') }}?account={{ account.account_id }}'" class="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium">🛡️ 보안 진단</button>
-                <button class="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors text-sm font-medium">📊 모니터링</button>
+                <button onclick="window.location.href='{{ url_for('monitoring.index') }}?account={{ account.account_id }}'" class="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors text-sm font-medium">📊 모니터링</button>
                 {% else %}
                 <button disabled class="flex-1 px-4 py-2 bg-gray-400 text-gray-600 rounded-lg cursor-not-allowed text-sm font-medium">⚠️ 재연결 필요</button>
                 <button disabled class="px-4 py-2 bg-gray-400 text-gray-600 rounded-lg cursor-not-allowed text-sm font-medium">⚠️ 재연결 필요</button>
@@ -348,7 +348,7 @@
                 // 연결 성공 시 활성화된 버튼들
                 actionsElement.innerHTML = `
                     <button onclick="window.location.href='/diagnosis?account=${accountId}'" class="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium">🛡️ 보안 진단</button>
-                    <button class="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors text-sm font-medium">📊 모니터링</button>
+                    <button onclick="window.location.href='/monitoring?account=${accountId}'" class="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors text-sm font-medium">📊 모니터링</button>
                     <button onclick="editConnection('${accountId}', '${cloudName}')" class="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors text-sm font-medium">⚙️ 수정</button>
                     <button onclick="deleteAccount('${accountId}', '${cloudName}')" class="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-sm font-medium">🗑️ 삭제</button>
                 `;

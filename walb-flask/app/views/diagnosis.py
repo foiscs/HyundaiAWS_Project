@@ -109,8 +109,8 @@ def run_all_diagnosis():
         # 진단 서비스 초기화
         diagnosis_service = DiagnosisService()
         
-        # 전체 진단 실행
-        result = diagnosis_service.run_batch_diagnosis(account)
+        # 전체 진단 실행 (로깅 활성화)
+        result = diagnosis_service.run_batch_diagnosis(account, enable_logging=True)
         
         return jsonify(result)
         

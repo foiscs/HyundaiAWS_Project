@@ -142,25 +142,13 @@ class AccessKeyManagementChecker(BaseChecker):
                 if fix_id == 'deactivate_old_keys':
                     for item in items:
                         user_name, access_key_id = item['id'].split(':')
-                        try:
-                            iam.update_access_key(
-                                UserName=user_name,
-                                AccessKeyId=access_key_id,
-                                Status='Inactive'
-                            )
-                            
-                            results.append({
-                                'item': access_key_id,
-                                'status': 'success',
-                                'message': f'{user_name}의 액세스 키 {access_key_id}가 비활성화되었습니다.'
-                            })
-                            
-                        except ClientError as e:
-                            results.append({
-                                'item': access_key_id,
-                                'status': 'error',
-                                'message': f'{access_key_id} 비활성화 실패: {str(e)}'
-                            })
+                        # 원본에서는 대화형으로 사용자가 비활성화/삭제를 선택하는 방식
+                        # 웹 인터페이스에서는 이를 수동 조치로 안내
+                        results.append({
+                            'item': access_key_id,
+                            'status': 'info',
+                            'message': f'{user_name}의 액세스 키 {access_key_id}는 대화형 조치가 필요합니다: [d]eactivate, [D]ELETE, [i]gnore 중 선택'
+                        })
             
             return results
             

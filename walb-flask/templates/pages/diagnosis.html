@@ -5,8 +5,8 @@
                     <div class="flex items-center mb-4">
                         <span class="text-4xl mr-4 animate-bounce">🔍</span>
                         <div>
-                            <h1 class="text-3xl font-bold mb-2">보안 진단</h1>
-                            <p class="text-purple-100">AWS 리소스 보안 상태를 종합적으로 진단합니다</p>
+                            <h1 class="text-3xl font-bold mb-2">AWS 인프라 종합 보안 진단 & 자동 조치</h1>
+                            <p class="text-purple-100">총 41개 항목 완전 자동화 (KISA ISMS-P 31개 점검 항목 + 2024 SK Shieldus 클라우드 보안 가이드라인 10개)</p>
                         </div>
                     </div>
                 </div>
@@ -123,6 +123,78 @@
                     </div>
                 </div>
             </div>
+            
+            <!-- 진단 결과 대시보드 -->
+            <div class="diagnosis-results-dashboard" id="resultsDashboard" style="display: none;">
+                <h2 class="dashboard-title">
+                    <span class="dashboard-icon">📊</span>
+                    진단 결과 요약
+                </h2>
+                
+                <div class="results-grid">
+                    <!-- 총 진단 항목 -->
+                    <div class="result-card total-card">
+                        <div class="result-icon">📋</div>
+                        <div class="result-content">
+                            <div class="result-number" id="totalScanned">0</div>
+                            <div class="result-label">진단 완료</div>
+                            <div class="result-percentage">전체 41개 중</div>
+                        </div>
+                    </div>
+                    
+                    <!-- 취약 항목 -->
+                    <div class="result-card vulnerable-card">
+                        <div class="result-icon">⚠️</div>
+                        <div class="result-content">
+                            <div class="result-number" id="vulnerableCount">0</div>
+                            <div class="result-label">취약</div>
+                            <div class="result-percentage" id="vulnerablePercentage">0%</div>
+                        </div>
+                    </div>
+                    
+                    <!-- 안전 항목 -->
+                    <div class="result-card safe-card">
+                        <div class="result-icon">✅</div>
+                        <div class="result-content">
+                            <div class="result-number" id="safeCount">0</div>
+                            <div class="result-label">안전</div>
+                            <div class="result-percentage" id="safePercentage">0%</div>
+                        </div>
+                    </div>
+                    
+                    <!-- 위험도별 분포 -->
+                    <div class="result-card risk-distribution-card">
+                        <div class="distribution-header">
+                            <span class="distribution-title">위험도 분포</span>
+                        </div>
+                        <div class="distribution-content">
+                            <div class="risk-item">
+                                <span class="risk-label">🔴 상위험</span>
+                                <span class="risk-count" id="highRiskCount">0</span>
+                            </div>
+                            <div class="risk-item">
+                                <span class="risk-label">🟡 중위험</span>
+                                <span class="risk-count" id="mediumRiskCount">0</span>
+                            </div>
+                            <div class="risk-item">
+                                <span class="risk-label">🟢 저위험</span>
+                                <span class="risk-count" id="lowRiskCount">0</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- 안전률 바 -->
+                <div class="progress-bar-container">
+                    <div class="progress-bar-header">
+                        <span>전체 안전률</span>
+                        <span id="safetyRate">0%</span>
+                    </div>
+                    <div class="progress-bar-bg">
+                        <div class="progress-bar-fill" id="safetyBarFill" style="width: 0%"></div>
+                    </div>
+                </div>
+            </div>
             {% endif %}
 
             <!-- 진단 항목 섹션 -->
@@ -139,7 +211,6 @@
                         <h3 class="category-title">{{ category }}</h3>
                         <div class="category-meta">
                             <span class="item-count">{{ items|length }}개 항목</span>
-                            <button class="btn btn-sm btn-outline" onclick="runCategoryDiagnosis('{{ category }}')"><span>🎯</span> 카테고리 진단</button>
                         </div>
                     </div>
 
@@ -215,10 +286,21 @@
             <script>
                 let selectedAccountId = null;
                 let diagnosisInProgress = false;
+                let diagnosisResults = {
+                    total: 0,
+                    vulnerable: 0,
+                    safe: 0,
+                    highRisk: 0,
+                    mediumRisk: 0,
+                    lowRisk: 0
+                };
 
                 // 계정 선택
                 function selectAccount(accountId) {
                     selectedAccountId = accountId;
+                    
+                    // 레이아웃을 2열로 리셋
+                    localStorage.setItem('diagnosisLayout', '2');
 
                     // 페이지 새로고침으로 서버에서 데이터 받아오기
                     window.location.href = `/diagnosis?account=${accountId}`;
@@ -343,9 +425,18 @@
                     }
 
                     diagnosisInProgress = true;
+                    
+                    // 레이아웃 라디오 버튼 비활성화
+                    setLayoutRadioEnabled(false);
 
                     // 진행 상태 패널 표시
                     showProgressPanel();
+                    
+                    // 진단 결과 초기화
+                    resetDiagnosisResults();
+                    
+                    // 진단 결과 대시보드 표시
+                    document.getElementById('resultsDashboard').style.display = 'block';
 
                     // 모든 진단 항목을 대기 상태로 변경
                     const allItems = document.querySelectorAll('.diagnosis-item');
@@ -378,9 +469,13 @@
                             scrollToCurrentItem(itemCode);
 
                             try {
-                                await runSingleDiagnosisQuiet(itemCode);
+                                const result = await runSingleDiagnosisQuiet(itemCode);
                                 setItemStatus(itemCode, 'completed');
                                 completedCount++;
+                                
+                                // 진단 결과 업데이트
+                                updateDiagnosisResults(result);
+                                
                                 addDebugLog(`✅ [${itemCode}] 진단 완료`);
                             } catch (error) {
                                 setItemStatus(itemCode, 'completed'); // 실패해도 버튼은 복구
@@ -416,6 +511,8 @@
                         updateCurrentStatus(`진단 중 오류 발생: ${error.message}`);
                     } finally {
                         diagnosisInProgress = false;
+                        // 레이아웃 라디오 버튼 다시 활성화
+                        setLayoutRadioEnabled(true);
                     }
                 }
 
@@ -863,9 +960,88 @@
 
                     if (result.status === 'success') {
                         displayDiagnosisResult(itemCode, result);
+                        return result;  // 결과 반환 추가
                     } else {
                         throw new Error(result.message || '진단 실패');
                     }
+                }
+
+                // 진단 결과 초기화
+                function resetDiagnosisResults() {
+                    diagnosisResults = {
+                        total: 0,
+                        vulnerable: 0,
+                        safe: 0,
+                        highRisk: 0,
+                        mediumRisk: 0,
+                        lowRisk: 0
+                    };
+                    updateDashboard();
+                }
+
+                // 진단 결과 업데이트
+                function updateDiagnosisResults(result) {
+                    if (!result || !result.result) return;
+                    
+                    console.log('진단 결과 업데이트:', result);
+                    
+                    diagnosisResults.total++;
+                    
+                    // 취약/안전 판단
+                    if (result.result.has_issues) {
+                        diagnosisResults.vulnerable++;
+                    } else {
+                        diagnosisResults.safe++;
+                    }
+                    
+                    // 위험도별 분류
+                    const riskLevel = result.result.risk_level;
+                    console.log('위험도 레벨:', riskLevel);
+                    
+                    if (riskLevel === 'high') {
+                        diagnosisResults.highRisk++;
+                    } else if (riskLevel === 'medium') {
+                        diagnosisResults.mediumRisk++;
+                    } else if (riskLevel === 'low') {
+                        diagnosisResults.lowRisk++;
+                    } else {
+                        console.warn('알 수 없는 위험도 레벨:', riskLevel);
+                    }
+                    
+                    console.log('현재 진단 결과 상태:', diagnosisResults);
+                    updateDashboard();
+                }
+
+                // 대시보드 UI 업데이트
+                function updateDashboard() {
+                    // 총 진단 항목
+                    document.getElementById('totalScanned').textContent = diagnosisResults.total;
+                    
+                    // 취약 항목
+                    document.getElementById('vulnerableCount').textContent = diagnosisResults.vulnerable;
+                    const vulnerablePercentage = diagnosisResults.total > 0 
+                        ? Math.round((diagnosisResults.vulnerable / diagnosisResults.total) * 100) 
+                        : 0;
+                    document.getElementById('vulnerablePercentage').textContent = `${vulnerablePercentage}%`;
+                    
+                    // 안전 항목
+                    document.getElementById('safeCount').textContent = diagnosisResults.safe;
+                    const safePercentage = diagnosisResults.total > 0 
+                        ? Math.round((diagnosisResults.safe / diagnosisResults.total) * 100) 
+                        : 0;
+                    document.getElementById('safePercentage').textContent = `${safePercentage}%`;
+                    
+                    // 위험도별 분포
+                    document.getElementById('highRiskCount').textContent = diagnosisResults.highRisk;
+                    document.getElementById('mediumRiskCount').textContent = diagnosisResults.mediumRisk;
+                    document.getElementById('lowRiskCount').textContent = diagnosisResults.lowRisk;
+                    
+                    // 안전률 바
+                    const safetyRate = diagnosisResults.total > 0 
+                        ? Math.round((diagnosisResults.safe / diagnosisResults.total) * 100) 
+                        : 0;
+                    document.getElementById('safetyRate').textContent = `${safetyRate}%`;
+                    document.getElementById('safetyBarFill').style.width = `${safetyRate}%`;
                 }
 
                 // 클립보드 복사
@@ -900,6 +1076,44 @@
                     }
                 }
 
+                // 레이아웃 변경 함수
+                function changeLayout(columns) {
+                    const itemsGrid = document.querySelectorAll('.items-grid');
+                    
+                    itemsGrid.forEach(grid => {
+                        if (columns === 1) {
+                            grid.classList.remove('grid', 'grid-cols-1', 'md:grid-cols-2', 'gap-4');
+                            grid.classList.add('space-y-4');
+                        } else {
+                            grid.classList.remove('space-y-4');
+                            grid.classList.add('grid', 'grid-cols-1', 'md:grid-cols-2', 'gap-4');
+                        }
+                    });
+                    
+                    // 로컬 스토리지에 저장
+                    localStorage.setItem('diagnosisLayout', columns.toString());
+                }
+
+                // 라디오 버튼 활성화/비활성화
+                function setLayoutRadioEnabled(enabled) {
+                    const radios = document.querySelectorAll('input[name="layout"]');
+                    const labels = document.querySelectorAll('#layoutRadioGroup label');
+                    
+                    radios.forEach(radio => {
+                        radio.disabled = !enabled;
+                    });
+                    
+                    labels.forEach(label => {
+                        if (enabled) {
+                            label.classList.remove('opacity-50', 'cursor-not-allowed');
+                            label.classList.add('cursor-pointer');
+                        } else {
+                            label.classList.add('opacity-50', 'cursor-not-allowed');
+                            label.classList.remove('cursor-pointer');
+                        }
+                    });
+                }
+
                 // 페이지 로드 시 선택된 계정이 있으면 자동 선택
                 document.addEventListener('DOMContentLoaded', function() {
                     {% if selected_account %}
@@ -916,6 +1130,24 @@
                         diagnosisItems.style.display = 'block';
                     }
                     {% endif %}
+                    
+                    // 저장된 레이아웃 설정 불러오기
+                    const savedLayout = localStorage.getItem('diagnosisLayout');
+                    if (savedLayout) {
+                        const radio = document.getElementById(savedLayout === '1' ? 'layout1Col' : 'layout2Col');
+                        if (radio) {
+                            radio.checked = true;
+                            changeLayout(parseInt(savedLayout));
+                        }
+                    }
+                    
+                    // 라디오 버튼 이벤트 리스너
+                    const layoutRadios = document.querySelectorAll('input[name="layout"]');
+                    layoutRadios.forEach(radio => {
+                        radio.addEventListener('change', function() {
+                            changeLayout(parseInt(this.value));
+                        });
+                    });
                 });
             </script>
             {% endblock %} {% block extra_css %}
