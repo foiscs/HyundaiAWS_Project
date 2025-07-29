@@ -52,7 +52,7 @@ jobs:
           composer install --no-dev --optimize-autoloader --no-interaction
           echo "✅ Composer 검증 완료"
         else
-          echo "ℹ️ Composer 파일이 없습니다. Docker 빌드만 실행합니다."
+          echo "ℹ️ Composer 파일이 없습니다. Docker 빌드만 실행합니다"
         fi
     
     # ===============================================
