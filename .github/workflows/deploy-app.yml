@@ -144,7 +144,10 @@ jobs:
     - name: Test Database Connection via Bastion
       run: |
         # AWS CLI를 사용해서 리소스 정보 직접 조회
-        PROJECT_NAME="walb-app"
+        PROJECT_NAME="${{ env.PROJECT_NAME }}"
+        
+        echo "🔍 설정된 환경변수:"
+        echo "  PROJECT_NAME: $PROJECT_NAME"
         
         # RDS 엔드포인트 조회 (walb-app 프로젝트용)
         echo "🔍 RDS 인스턴스 조회 중..."
@@ -160,19 +163,38 @@ jobs:
             --output text 2>/dev/null || echo "")
         fi
         
-        # Bastion Host IP 조회 (태그 기반)
+        # Bastion Host IP 조회 (여러 방법으로 시도)
         echo "🔍 Bastion Host 조회 중..."
+        
+        # 방법 1: 정확한 태그 이름으로 조회
         BASTION_IP=$(aws ec2 describe-instances \
-          --filters "Name=tag:Name,Values=walb-bastion-host" "Name=instance-state-name,Values=running" \
+          --filters "Name=tag:Name,Values=${PROJECT_NAME}-bastion-host" "Name=instance-state-name,Values=running" \
           --query "Reservations[0].Instances[0].PublicIpAddress" \
           --output text 2>/dev/null || echo "")
         
         if [ -z "$BASTION_IP" ] || [ "$BASTION_IP" == "None" ]; then
-          # 태그로 안 되면 보안그룹으로 조회
+          echo "⚠️ 방법 1 실패. 대체 방법 시도 중..."
+          
+          # 방법 2: Component 태그로 조회
           BASTION_IP=$(aws ec2 describe-instances \
-            --filters "Name=tag:Component,Values=Bastion" "Name=instance-state-name,Values=running" \
+            --filters "Name=tag:Component,Values=Bastion" "Name=instance-state-name,Values=running" "Name=tag:Project,Values=${PROJECT_NAME}" \
             --query "Reservations[0].Instances[0].PublicIpAddress" \
             --output text 2>/dev/null || echo "")
+        fi
+        
+        if [ -z "$BASTION_IP" ] || [ "$BASTION_IP" == "None" ]; then
+          echo "❌ Bastion Host를 찾을 수 없습니다."
+          echo "🔍 디버깅 정보:"
+          echo "  찾고 있는 태그: Name=${PROJECT_NAME}-bastion-host"
+          echo "  또는 Component=Bastion, Project=${PROJECT_NAME}"
+          
+          echo "🔍 현재 실행 중인 인스턴스들:"
+          aws ec2 describe-instances \
+            --filters "Name=instance-state-name,Values=running" \
+            --query "Reservations[*].Instances[*].[InstanceId,Tags[?Key=='Name'].Value[0] | [0],Tags[?Key=='Component'].Value[0] | [0],Tags[?Key=='Project'].Value[0] | [0],PublicIpAddress]" \
+            --output table || echo "인스턴스 조회 실패"
+          
+          exit 1
         fi
         
         # DB 사용자명과 DB 이름 (하드코딩된 값 사용)
@@ -463,19 +485,46 @@ jobs:
         sudo apt-get update && sudo apt-get install -y postgresql-client
         
         # 환경 변수 설정
-        PROJECT_NAME="walb-app"
+        PROJECT_NAME="${{ env.PROJECT_NAME }}"
         DB_HOST="${{ env.RDS_ENDPOINT }}"
         DB_NAME="mydb"
         DB_USER="dbadmin"
         
-        # Bastion Host IP 조회
+        echo "🔍 설정된 환경변수:"
+        echo "  PROJECT_NAME: $PROJECT_NAME"
+        echo "  DB_HOST: $DB_HOST"
+        
+        # Bastion Host IP 조회 (여러 방법으로 시도)
+        echo "🔍 Bastion Host 조회 중..."
+        
+        # 방법 1: 정확한 태그 이름으로 조회
         BASTION_IP=$(aws ec2 describe-instances \
-          --filters "Name=tag:Name,Values=walb-bastion-host" "Name=instance-state-name,Values=running" \
+          --filters "Name=tag:Name,Values=${PROJECT_NAME}-bastion-host" "Name=instance-state-name,Values=running" \
           --query "Reservations[0].Instances[0].PublicIpAddress" \
           --output text 2>/dev/null || echo "")
         
         if [ -z "$BASTION_IP" ] || [ "$BASTION_IP" == "None" ]; then
+          echo "⚠️ 방법 1 실패. 대체 방법 시도 중..."
+          
+          # 방법 2: Component 태그로 조회
+          BASTION_IP=$(aws ec2 describe-instances \
+            --filters "Name=tag:Component,Values=Bastion" "Name=instance-state-name,Values=running" "Name=tag:Project,Values=${PROJECT_NAME}" \
+            --query "Reservations[0].Instances[0].PublicIpAddress" \
+            --output text 2>/dev/null || echo "")
+        fi
+        
+        if [ -z "$BASTION_IP" ] || [ "$BASTION_IP" == "None" ]; then
           echo "❌ Bastion Host를 찾을 수 없습니다."
+          echo "🔍 디버깅 정보:"
+          echo "  찾고 있는 태그: Name=${PROJECT_NAME}-bastion-host"
+          echo "  또는 Component=Bastion, Project=${PROJECT_NAME}"
+          
+          echo "🔍 현재 실행 중인 인스턴스들:"
+          aws ec2 describe-instances \
+            --filters "Name=instance-state-name,Values=running" \
+            --query "Reservations[*].Instances[*].[InstanceId,Tags[?Key=='Name'].Value[0] | [0],Tags[?Key=='Component'].Value[0] | [0],Tags[?Key=='Project'].Value[0] | [0],PublicIpAddress]" \
+            --output table || echo "인스턴스 조회 실패"
+          
           exit 1
         fi
         
