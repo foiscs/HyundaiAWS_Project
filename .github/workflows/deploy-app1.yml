@@ -42,19 +42,19 @@ jobs:
         sudo chmod +x /usr/local/bin/yq
         
         # app1-config.yml에서 값 읽기
-        PROJECT_NAME=$(yq eval '.app1_config.project_name' .github/workflows/config/app1-config.yml)
-        DB_NAME=$(yq eval '.app1_config.database.name' .github/workflows/config/app1-config.yml)
-        DB_USER=$(yq eval '.app1_config.database.user' .github/workflows/config/app1-config.yml)
-        DB_PORT=$(yq eval '.app1_config.database.port' .github/workflows/config/app1-config.yml)
-        DB_RDS_IDENTIFIER=$(yq eval '.app1_config.database.rds_identifier' .github/workflows/config/app1-config.yml)
-        EKS_CLUSTER_NAME=$(yq eval '.app1_config.eks.cluster_name' .github/workflows/config/app1-config.yml)
-        S3_BUCKET_NAME=$(yq eval '.app1_config.s3.bucket_name' .github/workflows/config/app1-config.yml)
-        IAM_ROLE_NAME=$(yq eval '.app1_config.iam.role_name' .github/workflows/config/app1-config.yml)
-        BASTION_HOST_TAG=$(yq eval '.app1_config.bastion.host_tag_name' .github/workflows/config/app1-config.yml)
-        DEPLOYMENT_NAME=$(yq eval '.app1_config.application.deployment_name' .github/workflows/config/app1-config.yml)
-        IMAGE_NAME=$(yq eval '.app1_config.application.image_name' .github/workflows/config/app1-config.yml)
-        HEALTH_CHECK_PATH=$(yq eval '.app1_config.application.health_check_path' .github/workflows/config/app1-config.yml)
-        AWS_REGION=$(yq eval '.app1_config.network.region' .github/workflows/config/app1-config.yml)
+        PROJECT_NAME=$(yq eval '.app1_config.project_name' ../.github/workflows/config/app1-config.yml)
+        DB_NAME=$(yq eval '.app1_config.database.name' ../.github/workflows/config/app1-config.yml)
+        DB_USER=$(yq eval '.app1_config.database.user' ../.github/workflows/config/app1-config.yml)
+        DB_PORT=$(yq eval '.app1_config.database.port' ../.github/workflows/config/app1-config.yml)
+        DB_RDS_IDENTIFIER=$(yq eval '.app1_config.database.rds_identifier' ../.github/workflows/config/app1-config.yml)
+        EKS_CLUSTER_NAME=$(yq eval '.app1_config.eks.cluster_name' ../.github/workflows/config/app1-config.yml)
+        S3_BUCKET_NAME=$(yq eval '.app1_config.s3.bucket_name' ../.github/workflows/config/app1-config.yml)
+        IAM_ROLE_NAME=$(yq eval '.app1_config.iam.role_name' ../.github/workflows/config/app1-config.yml)
+        BASTION_HOST_TAG=$(yq eval '.app1_config.bastion.host_tag_name' ../.github/workflows/config/app1-config.yml)
+        DEPLOYMENT_NAME=$(yq eval '.app1_config.application.deployment_name' ../.github/workflows/config/app1-config.yml)
+        IMAGE_NAME=$(yq eval '.app1_config.application.image_name' ../.github/workflows/config/app1-config.yml)
+        HEALTH_CHECK_PATH=$(yq eval '.app1_config.application.health_check_path' ../.github/workflows/config/app1-config.yml)
+        AWS_REGION=$(yq eval '.app1_config.network.region' ../.github/workflows/config/app1-config.yml)
         
         # 환경변수로 설정
         echo "PROJECT_NAME=$PROJECT_NAME" >> $GITHUB_ENV
