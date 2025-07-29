@@ -55,12 +55,27 @@ RUN sed -ri -e 's!/var/www/!${APACHE_DOCUMENT_ROOT}!g' /etc/apache2/apache2.conf
 # 권한 설정
 RUN chown -R www-data:www-data /var/www/html \
     && chmod -R 755 /var/www/html
-# PHP 설정
-RUN echo "upload_max_filesize = 10M" > /usr/local/etc/php/conf.d/uploads.ini \
-    && echo "post_max_size = 10M" >> /usr/local/etc/php/conf.d/uploads.ini \
-    && echo "memory_limit = 256M" >> /usr/local/etc/php/conf.d/uploads.ini \
-    && echo "max_execution_time = 30" >> /usr/local/etc/php/conf.d/uploads.ini \
-    && echo "date.timezone = Asia/Seoul" >> /usr/local/etc/php/conf.d/uploads.ini
+# PHP 최적화 설정
+RUN echo "upload_max_filesize = 10M" > /usr/local/etc/php/conf.d/optimization.ini \
+    && echo "post_max_size = 10M" >> /usr/local/etc/php/conf.d/optimization.ini \
+    && echo "memory_limit = 256M" >> /usr/local/etc/php/conf.d/optimization.ini \
+    && echo "max_execution_time = 30" >> /usr/local/etc/php/conf.d/optimization.ini \
+    && echo "date.timezone = Asia/Seoul" >> /usr/local/etc/php/conf.d/optimization.ini \
+    && echo "" >> /usr/local/etc/php/conf.d/optimization.ini \
+    && echo "# Database connection optimization" >> /usr/local/etc/php/conf.d/optimization.ini \
+    && echo "pdo.dsn.* = pgsql:host=walb-rds-database.cx02kko4cplr.ap-northeast-2.rds.amazonaws.com" >> /usr/local/etc/php/conf.d/optimization.ini \
+    && echo "default_socket_timeout = 10" >> /usr/local/etc/php/conf.d/optimization.ini \
+    && echo "" >> /usr/local/etc/php/conf.d/optimization.ini \
+    && echo "# OPcache settings for performance" >> /usr/local/etc/php/conf.d/optimization.ini \
+    && echo "opcache.enable = 1" >> /usr/local/etc/php/conf.d/optimization.ini \
+    && echo "opcache.memory_consumption = 128" >> /usr/local/etc/php/conf.d/optimization.ini \
+    && echo "opcache.max_accelerated_files = 4000" >> /usr/local/etc/php/conf.d/optimization.ini \
+    && echo "opcache.revalidate_freq = 60" >> /usr/local/etc/php/conf.d/optimization.ini \
+    && echo "opcache.fast_shutdown = 1" >> /usr/local/etc/php/conf.d/optimization.ini \
+    && echo "" >> /usr/local/etc/php/conf.d/optimization.ini \
+    && echo "# DNS cache optimization" >> /usr/local/etc/php/conf.d/optimization.ini \
+    && echo "realpath_cache_size = 32M" >> /usr/local/etc/php/conf.d/optimization.ini \
+    && echo "realpath_cache_ttl = 600" >> /usr/local/etc/php/conf.d/optimization.ini
 
 EXPOSE 80
 
