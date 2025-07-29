@@ -128,18 +128,15 @@ class BackupUsageChecker(BaseChecker):
 
         # AWS Backup 플랜이 없으면 수동 가이드 포함
         if findings['no_backup_plan']:
-            return {
-                'status': 'partial_success' if results else 'manual_required',
-                'results': results,
-                'message': f"RDS 자동 백업 {len([r for r in results if r['status'] == 'success'])}건 완료. AWS Backup 플랜은 수동 설정이 필요합니다.",
-                'manual_guide': self._get_manual_guide(findings)
-            }
+            # 수동 조치 안내를 results에 추가
+            results.append({
+                'item': 'backup_plan_manual',
+                'status': 'info',
+                'message': f"RDS 자동 백업 {len([r for r in results if r['item'] != 'backup_plan_manual'])}건 완료. AWS Backup 플랜은 수동 설정이 필요합니다."
+            })
+            return results
 
-        return {
-            'status': 'success',
-            'results': results,
-            'message': f"{len([r for r in results if r['status'] == 'success'])}개 항목에 대한 조치가 완료되었습니다."
-        }
+        return results
 
     def _get_manual_guide(self, findings):
         """백업 설정 수동 조치 가이드 반환"""

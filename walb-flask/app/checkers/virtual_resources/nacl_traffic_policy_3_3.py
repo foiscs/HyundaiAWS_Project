@@ -95,12 +95,12 @@ class NaclTrafficPolicyChecker(BaseChecker):
         - 사용자 확인 후 광범위한 허용 규칙을 삭제
         """
         if not selected_items:
-            return {'status': 'no_action', 'message': '선택된 항목이 없습니다.'}
+            return [{'item': 'no_selection', 'status': 'info', 'message': '선택된 항목이 없습니다.'}]
 
         # 진단 재실행으로 최신 데이터 확보
         diagnosis_result = self.run_diagnosis()
         if diagnosis_result['status'] != 'success' or not diagnosis_result.get('vulnerable_nacls'):
-            return {'status': 'no_action', 'message': '조치할 위험한 NACL 규칙이 없습니다.'}
+            return [{'item': 'no_action_needed', 'status': 'info', 'message': '조치할 위험한 NACL 규칙이 없습니다.'}]
 
         vulnerable_nacls = diagnosis_result['vulnerable_nacls']
         ec2 = self.session.client('ec2')
@@ -122,28 +122,23 @@ class NaclTrafficPolicyChecker(BaseChecker):
                     
                     print(f"     [SUCCESS] 규칙 #{nacl_info['RuleNumber']}을(를) 삭제했습니다.")
                     results.append({
+                        'item': f"NACL {nacl_info['NaclId']}",
                         'status': 'success',
-                        'resource': f"NACL {nacl_info['NaclId']}",
-                        'action': f"규칙 #{nacl_info['RuleNumber']} ({nacl_info['Direction']}) 삭제",
                         'message': f"NACL '{nacl_info['NaclId']}'의 위험한 규칙을 삭제했습니다."
                     })
                     
                 except ClientError as e:
                     print(f"     [ERROR] 규칙 삭제 실패: {e}")
                     results.append({
+                        'item': f"NACL {nacl_info['NaclId']}",
                         'status': 'error',
-                        'resource': f"NACL {nacl_info['NaclId']}",
-                        'error': str(e),
                         'message': f"NACL '{nacl_info['NaclId']}' 규칙 삭제 실패: {str(e)}"
                     })
             else:
                 print(f"     [INFO] NACL '{nacl_info['NaclId']}'의 규칙 삭제를 건너뜁니다.")
 
-        return {
-            'status': 'success',
-            'results': results,
-            'message': f"{len(results)}개 항목에 대한 조치가 완료되었습니다."
-        }
+        # 다른 체커들과 일관된 형식으로 results 배열 직접 반환
+        return results
 
     def _get_fix_options(self, diagnosis_result):
         """자동 조치 옵션 반환"""

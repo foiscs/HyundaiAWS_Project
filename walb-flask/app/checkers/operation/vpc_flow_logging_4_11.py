@@ -75,12 +75,12 @@ class VpcFlowLoggingChecker(BaseChecker):
         - 각 VPC에 대해 별도 로그 그룹을 생성하고, 공통 IAM 역할을 사용
         """
         if not selected_items:
-            return {'status': 'no_action', 'message': '선택된 항목이 없습니다.'}
+            return [{'item': 'no_selection', 'status': 'info', 'message': '선택된 항목이 없습니다.'}]
 
         # 진단 재실행으로 최신 데이터 확보
         diagnosis_result = self.run_diagnosis()
         if diagnosis_result['status'] != 'success' or not diagnosis_result.get('vpcs_without_logs'):
-            return {'status': 'no_action', 'message': 'VPC Flow Logs 조치가 필요한 항목이 없습니다.'}
+            return [{'item': 'no_action_needed', 'status': 'info', 'message': 'VPC Flow Logs 조치가 필요한 항목이 없습니다.'}]
 
         vpcs_without_logs = diagnosis_result['vpcs_without_logs']
         results = []
@@ -92,11 +92,11 @@ class VpcFlowLoggingChecker(BaseChecker):
         iam_role_arn = self._get_or_create_common_iam_role()
         if not iam_role_arn:
             print("     [ERROR] IAM 역할 생성 실패로 인해 조치를 중단합니다.")
-            return {
+            return [{
+                'item': 'system',
                 'status': 'error',
-                'message': 'IAM 역할 생성 실패로 인해 조치를 중단했습니다.',
-                'results': []
-            }
+                'message': 'IAM 역할 생성 실패로 인해 조치를 중단했습니다.'
+            }]
 
         for vpc_id in vpcs_without_logs:
             # 선택된 항목인지 확인
@@ -107,9 +107,8 @@ class VpcFlowLoggingChecker(BaseChecker):
                     log_group_created = self._create_log_group_if_needed(log_group_name)
                     if not log_group_created:
                         results.append({
+                            'item': f"VPC {vpc_id}",
                             'status': 'error',
-                            'resource': f"VPC {vpc_id}",
-                            'error': '로그 그룹 생성 실패',
                             'message': f"VPC '{vpc_id}'의 로그 그룹 생성에 실패했습니다."
                         })
                         continue
@@ -123,25 +122,20 @@ class VpcFlowLoggingChecker(BaseChecker):
                     )
                     print(f"     [SUCCESS] VPC '{vpc_id}'에 Flow Log 생성 완료.\n")
                     results.append({
+                        'item': f"VPC {vpc_id}",
                         'status': 'success',
-                        'resource': f"VPC {vpc_id}",
-                        'action': 'VPC Flow Logs 생성',
                         'message': f"VPC '{vpc_id}'에 Flow Log를 생성했습니다."
                     })
                 except ClientError as e:
                     print(f"     [ERROR] VPC '{vpc_id}'에 Flow Log 생성 실패: {e}\n")
                     results.append({
+                        'item': f"VPC {vpc_id}",
                         'status': 'error',
-                        'resource': f"VPC {vpc_id}",
-                        'error': str(e),
                         'message': f"VPC '{vpc_id}'에 Flow Log 생성 실패: {str(e)}"
                     })
 
-        return {
-            'status': 'success' if all(r['status'] == 'success' for r in results) else 'partial_success',
-            'results': results,
-            'message': f"{len(results)}개 VPC에 대한 Flow Logs 설정 조치가 완료되었습니다."
-        }
+        # 다른 체커들과 일관된 형식으로 results 배열 직접 반환
+        return results
 
     def _create_log_group_if_needed(self, log_group_name):
         """필요시 CloudWatch 로그 그룹 생성"""
