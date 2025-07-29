@@ -8,10 +8,12 @@ on:
     branches: [ main ]
     paths:
       - 'WALB/server2/**'
+      - '.github/workflows/deploy-app2.yml'
   pull_request:
     branches: [ main ]
     paths:
       - 'WALB/server2/**'
+      - '.github/workflows/deploy-app2.yml'
 
 env:
   PROJECT_NAME: ${{ vars.PROJECT_NAME || 'walb2-app' }}
@@ -58,13 +60,7 @@ jobs:
         if [ -f "server2/pom.xml" ]; then
           cd server2
           echo "📦 Maven 의존성 검증 및 빌드 중..."
-          # Maven Wrapper가 없으면 시스템 Maven 사용
-          if [ -f "./mvnw" ]; then
-            ./mvnw clean compile test package -DskipTests=false
-          else
-            echo "⚠️ Maven Wrapper가 없습니다. 시스템 Maven을 사용합니다."
-            mvn clean compile test package -DskipTests=false
-          fi
+          mvn clean compile test package -DskipTests=false
           echo "✅ Maven 빌드 완료"
           ls -la target/
         else
