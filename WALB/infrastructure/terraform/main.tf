@@ -507,6 +507,12 @@ resource "kubernetes_config_map_v1_data" "aws_auth" {
         rolearn  = aws_iam_role.github_actions_infra.arn
         username = "github-actions-infra"
         groups   = ["system:masters"]
+      },
+      # 기존 GitHub Actions 역할 (하위 호환성)
+      {
+        rolearn  = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/walb-github"
+        username = "github-actions-legacy"
+        groups   = ["system:masters"]
       }
     ])
     
