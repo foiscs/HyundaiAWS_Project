@@ -221,7 +221,7 @@ class UserAccountLoggingChecker(BaseChecker):
             'message': f"{len(results)}개 항목에 대한 조치가 완료되었습니다."
         }
 
-    def get_fix_options(self, diagnosis_result):
+    def _get_fix_options(self, diagnosis_result):
         """자동 조치 옵션 반환"""
         if diagnosis_result.get('compliant_trail_exists'):
             return []

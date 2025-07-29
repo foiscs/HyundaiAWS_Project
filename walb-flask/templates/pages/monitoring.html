@@ -74,11 +74,147 @@
 <!-- 모니터링 콘텐츠 -->
 {% if selected_account %}
 <div class="monitoring-content mt-8">
-    <div class="bg-white rounded-xl shadow-sm p-8 text-center">
-        <h2 class="text-2xl font-bold mb-4">Hello World! 🌍</h2>
-        <p class="text-gray-600">선택된 계정: <strong>{{ selected_account.cloud_name }}</strong> ({{ selected_account.account_id }})</p>
-        <p class="text-gray-500 mt-4">모니터링 기능은 현재 개발 중입니다.</p>
+    <!-- 서비스 상태 카드 -->
+    <div class="bg-white rounded-xl shadow-sm p-6 mb-6">
+        <div class="flex items-center justify-between mb-4">
+            <h2 class="text-xl font-bold text-gray-800">
+                <span class="mr-2">⚙️</span>
+                Kinesis 로그 수집 서비스
+            </h2>
+            <div class="service-status-badge" id="serviceStatusBadge">
+                {% if service_status and service_status.running %}
+                <span class="badge badge-success">🟢 실행중</span>
+                {% elif service_status and service_status.exists %}
+                <span class="badge badge-warning">🟡 중지됨</span>
+                {% else %}
+                <span class="badge badge-error">🔴 미설치</span>
+                {% endif %}
+            </div>
+        </div>
+        
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+            <div class="stat-card">
+                <div class="stat-label">계정 ID</div>
+                <div class="stat-value">{{ selected_account.account_id }}</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">연결 방식</div>
+                <div class="stat-value">
+                    {% if selected_account.connection_type == 'role' %}
+                    <span class="badge badge-role">Role</span>
+                    {% else %}
+                    <span class="badge badge-key">Access Key</span>
+                    {% endif %}
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">리전</div>
+                <div class="stat-value">{{ selected_account.primary_region }}</div>
+            </div>
+        </div>
+        
+        <!-- 서비스 제어 버튼 -->
+        <div class="service-controls">
+            {% if not service_status or not service_status.exists %}
+            <button onclick="createService()" class="btn btn-primary" id="createBtn">
+                <span>🚀</span> 서비스 생성
+            </button>
+            {% else %}
+                {% if service_status.running %}
+                <button onclick="stopService()" class="btn btn-warning" id="stopBtn">
+                    <span>⏹️</span> 서비스 중지
+                </button>
+                {% else %}
+                <button onclick="startService()" class="btn btn-success" id="startBtn">
+                    <span>▶️</span> 서비스 시작
+                </button>
+                {% endif %}
+                <button onclick="removeService()" class="btn btn-danger" id="removeBtn">
+                    <span>🗑️</span> 서비스 삭제
+                </button>
+                <button onclick="viewLogs()" class="btn btn-secondary" id="logsBtn">
+                    <span>📋</span> 로그 보기
+                </button>
+            {% endif %}
+        </div>
     </div>
+    
+    <!-- Splunk 모니터링 카드 -->
+    {% if service_status and service_status.running %}
+    <div class="bg-white rounded-xl shadow-sm p-6 mb-6">
+        <h2 class="text-xl font-bold text-gray-800 mb-4">
+            <span class="mr-2">📊</span>
+            Splunk 모니터링 대시보드
+        </h2>
+        
+        {% if monitoring_status and monitoring_status.monitoring_active %}
+        <div class="monitoring-stats mb-6">
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div class="stat-card">
+                    <div class="stat-label">사용 가능한 로그</div>
+                    <div class="stat-value">{{ monitoring_status.available_logs|length }}개</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">총 로그 크기</div>
+                    <div class="stat-value">{{ '%.1f'|format(monitoring_status.total_log_size / 1024 / 1024) }} MB</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">마지막 업데이트</div>
+                    <div class="stat-value">
+                        {% if monitoring_status.last_activity %}
+                        {{ monitoring_status.last_activity[:19] }}
+                        {% else %}
+                        없음
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">모니터링 상태</div>
+                    <div class="stat-value">
+                        <span class="badge badge-success">활성</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Splunk 대시보드 링크 -->
+        <div class="splunk-dashboards">
+            <h3 class="text-lg font-semibold mb-3">📈 대시보드 바로가기</h3>
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+                <a href="/monitoring/splunk/redirect/{{ selected_account.account_id }}?log_type=cloudtrail" 
+                   target="_blank" class="dashboard-link">
+                    <span class="dashboard-icon">🔍</span>
+                    <span class="dashboard-name">CloudTrail</span>
+                </a>
+                <a href="/monitoring/splunk/redirect/{{ selected_account.account_id }}?log_type=guardduty" 
+                   target="_blank" class="dashboard-link">
+                    <span class="dashboard-icon">🛡️</span>
+                    <span class="dashboard-name">GuardDuty</span>
+                </a>
+                <a href="/monitoring/splunk/redirect/{{ selected_account.account_id }}?log_type=security-hub" 
+                   target="_blank" class="dashboard-link">
+                    <span class="dashboard-icon">🔒</span>
+                    <span class="dashboard-name">Security Hub</span>
+                </a>
+                <a href="/monitoring/splunk/redirect/{{ selected_account.account_id }}?search=*" 
+                   target="_blank" class="dashboard-link">
+                    <span class="dashboard-icon">📊</span>
+                    <span class="dashboard-name">전체 로그</span>
+                </a>
+            </div>
+        </div>
+        {% else %}
+        <div class="text-center py-8">
+            <div class="text-6xl mb-4">⏳</div>
+            <h3 class="text-lg font-semibold mb-2">로그 수집 대기 중</h3>
+            <p class="text-gray-600">Kinesis 서비스가 실행된 후 로그가 수집되면 여기에 표시됩니다.</p>
+        </div>
+        {% endif %}
+    </div>
+    {% endif %}
+    
+    <!-- 알림 메시지 -->
+    <div id="alertMessage" class="alert-message" style="display: none;"></div>
 </div>
 {% endif %}
 
@@ -86,6 +222,230 @@
 // 계정 선택
 function selectAccount(accountId) {
     window.location.href = `/monitoring?account=${accountId}`;
+}
+
+// 현재 선택된 계정 ID
+const ACCOUNT_ID = '{{ selected_account.account_id if selected_account else "" }}';
+
+// 알림 메시지 표시
+function showAlert(message, type = 'info') {
+    const alertDiv = document.getElementById('alertMessage');
+    alertDiv.className = `alert-message alert-${type}`;
+    alertDiv.textContent = message;
+    alertDiv.style.display = 'block';
+    
+    // 5초 후 자동 숨김
+    setTimeout(() => {
+        alertDiv.style.display = 'none';
+    }, 5000);
+}
+
+// 로딩 상태 표시
+function setButtonLoading(buttonId, loading = true) {
+    const button = document.getElementById(buttonId);
+    if (!button) return;
+    
+    if (loading) {
+        button.disabled = true;
+        button.innerHTML = '<span>⏳</span> 처리중...';
+    } else {
+        button.disabled = false;
+        // 원래 내용은 페이지 새로고침으로 복원됨
+    }
+}
+
+// 서비스 생성
+async function createService() {
+    if (!ACCOUNT_ID) {
+        showAlert('계정 ID가 없습니다', 'error');
+        return;
+    }
+    
+    setButtonLoading('createBtn');
+    showAlert('Kinesis 서비스를 생성하고 있습니다...', 'info');
+    
+    try {
+        const response = await fetch('/monitoring/service/create', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: `account_id=${ACCOUNT_ID}`
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            showAlert(result.message, 'success');
+            // 페이지 새로고침으로 상태 업데이트
+            setTimeout(() => {
+                window.location.reload();
+            }, 2000);
+        } else {
+            showAlert(result.message, 'error');
+            setButtonLoading('createBtn', false);
+        }
+    } catch (error) {
+        showAlert('서비스 생성 중 오류가 발생했습니다', 'error');
+        setButtonLoading('createBtn', false);
+    }
+}
+
+// 서비스 시작
+async function startService() {
+    if (!ACCOUNT_ID) {
+        showAlert('계정 ID가 없습니다', 'error');
+        return;
+    }
+    
+    setButtonLoading('startBtn');
+    showAlert('Kinesis 서비스를 시작하고 있습니다...', 'info');
+    
+    try {
+        const response = await fetch('/monitoring/service/start', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: `account_id=${ACCOUNT_ID}`
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            showAlert(result.message, 'success');
+            setTimeout(() => {
+                window.location.reload();
+            }, 2000);
+        } else {
+            showAlert(result.message, 'error');
+            setButtonLoading('startBtn', false);
+        }
+    } catch (error) {
+        showAlert('서비스 시작 중 오류가 발생했습니다', 'error');
+        setButtonLoading('startBtn', false);
+    }
+}
+
+// 서비스 중지
+async function stopService() {
+    if (!ACCOUNT_ID) {
+        showAlert('계정 ID가 없습니다', 'error');
+        return;
+    }
+    
+    if (!confirm('서비스를 중지하시겠습니까?')) {
+        return;
+    }
+    
+    setButtonLoading('stopBtn');
+    showAlert('Kinesis 서비스를 중지하고 있습니다...', 'info');
+    
+    try {
+        const response = await fetch('/monitoring/service/stop', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: `account_id=${ACCOUNT_ID}`
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            showAlert(result.message, 'success');
+            setTimeout(() => {
+                window.location.reload();
+            }, 2000);
+        } else {
+            showAlert(result.message, 'error');
+            setButtonLoading('stopBtn', false);
+        }
+    } catch (error) {
+        showAlert('서비스 중지 중 오류가 발생했습니다', 'error');
+        setButtonLoading('stopBtn', false);
+    }
+}
+
+// 서비스 삭제
+async function removeService() {
+    if (!ACCOUNT_ID) {
+        showAlert('계정 ID가 없습니다', 'error');
+        return;
+    }
+    
+    if (!confirm('서비스를 완전히 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.')) {
+        return;
+    }
+    
+    setButtonLoading('removeBtn');
+    showAlert('Kinesis 서비스를 삭제하고 있습니다...', 'info');
+    
+    try {
+        const response = await fetch('/monitoring/service/remove', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: `account_id=${ACCOUNT_ID}`
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            showAlert(result.message, 'success');
+            setTimeout(() => {
+                window.location.reload();
+            }, 2000);
+        } else {
+            showAlert(result.message, 'error');
+            setButtonLoading('removeBtn', false);
+        }
+    } catch (error) {
+        showAlert('서비스 삭제 중 오류가 발생했습니다', 'error');
+        setButtonLoading('removeBtn', false);
+    }
+}
+
+// 서비스 로그 보기
+async function viewLogs() {
+    if (!ACCOUNT_ID) {
+        showAlert('계정 ID가 없습니다', 'error');
+        return;
+    }
+    
+    try {
+        const response = await fetch(`/monitoring/service/logs/${ACCOUNT_ID}?lines=100`);
+        const result = await response.json();
+        
+        if (result.success) {
+            // 새 창에서 로그 표시
+            const logWindow = window.open('', '_blank', 'width=800,height=600');
+            logWindow.document.write(`
+                <html>
+                <head>
+                    <title>Kinesis Service Logs - ${ACCOUNT_ID}</title>
+                    <style>
+                        body { font-family: monospace; margin: 20px; background: #1a1a1a; color: #00ff00; }
+                        pre { white-space: pre-wrap; word-wrap: break-word; }
+                        .header { color: #ffffff; margin-bottom: 20px; }
+                    </style>
+                </head>
+                <body>
+                    <div class="header">
+                        <h2>Kinesis Service Logs</h2>
+                        <p>Account: ${ACCOUNT_ID} | Lines: ${result.lines_count}</p>
+                    </div>
+                    <pre>${result.logs}</pre>
+                </body>
+                </html>
+            `);
+        } else {
+            showAlert('로그를 가져오는데 실패했습니다: ' + result.error, 'error');
+        }
+    } catch (error) {
+        showAlert('로그 조회 중 오류가 발생했습니다', 'error');
+    }
 }
 </script>
 
@@ -237,6 +597,182 @@ function selectAccount(accountId) {
         opacity: 1;
         transform: translateY(0);
     }
+}
+
+/* 새로 추가된 스타일 */
+.stat-card {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 1rem;
+    text-align: center;
+}
+
+.stat-label {
+    font-size: 0.875rem;
+    color: #64748b;
+    margin-bottom: 0.5rem;
+}
+
+.stat-value {
+    font-size: 1.125rem;
+    font-weight: 600;
+    color: #1e293b;
+}
+
+.service-controls {
+    display: flex;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+}
+
+.badge {
+    padding: 0.25rem 0.75rem;
+    border-radius: 9999px;
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+
+.badge-success {
+    background: #dcfce7;
+    color: #166534;
+}
+
+.badge-warning {
+    background: #fef3c7;
+    color: #d97706;
+}
+
+.badge-error {
+    background: #fee2e2;
+    color: #dc2626;
+}
+
+.btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1.5rem;
+    border-radius: 8px;
+    font-weight: 600;
+    text-decoration: none;
+    border: none;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.btn-primary {
+    background: #3b82f6;
+    color: white;
+}
+
+.btn-primary:hover:not(:disabled) {
+    background: #2563eb;
+    transform: translateY(-1px);
+}
+
+.btn-success {
+    background: #10b981;
+    color: white;
+}
+
+.btn-success:hover:not(:disabled) {
+    background: #059669;
+    transform: translateY(-1px);
+}
+
+.btn-warning {
+    background: #f59e0b;
+    color: white;
+}
+
+.btn-warning:hover:not(:disabled) {
+    background: #d97706;
+    transform: translateY(-1px);
+}
+
+.btn-danger {
+    background: #ef4444;
+    color: white;
+}
+
+.btn-danger:hover:not(:disabled) {
+    background: #dc2626;
+    transform: translateY(-1px);
+}
+
+.btn-secondary {
+    background: #6b7280;
+    color: white;
+}
+
+.btn-secondary:hover:not(:disabled) {
+    background: #4b5563;
+    transform: translateY(-1px);
+}
+
+.dashboard-link {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 1rem;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    text-decoration: none;
+    color: #1e293b;
+    transition: all 0.2s ease;
+}
+
+.dashboard-link:hover {
+    background: #f1f5f9;
+    border-color: #cbd5e0;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.dashboard-icon {
+    font-size: 1.5rem;
+}
+
+.dashboard-name {
+    font-weight: 600;
+}
+
+.alert-message {
+    padding: 1rem;
+    border-radius: 8px;
+    margin: 1rem 0;
+    font-weight: 500;
+}
+
+.alert-info {
+    background: #dbeafe;
+    color: #1e40af;
+    border: 1px solid #93c5fd;
+}
+
+.alert-success {
+    background: #dcfce7;
+    color: #166534;
+    border: 1px solid #86efac;
+}
+
+.alert-error {
+    background: #fee2e2;
+    color: #dc2626;
+    border: 1px solid #fca5a5;
+}
+
+.monitoring-stats {
+    background: #f8fafc;
+    border-radius: 12px;
+    padding: 1.5rem;
 }
 </style>
 {% endblock %}

@@ -21,8 +21,8 @@ class AWSConnectionHandler:
         핸들러 초기화
         - 테스트할 서비스 목록 정의
         """
-        # WALB 서비스 자체의 실제 계정 ID (mainHub와 동일)
-        self.walb_service_account_id = "292967571836"
+        # WALB 서비스가 실행되는 EC2 인스턴스의 계정 ID
+        self.walb_service_account_id = "253157413163"
         self.test_services = [
             'ec2', 's3', 'iam', 'cloudtrail', 
             'cloudwatch', 'rds', 'eks'
@@ -54,8 +54,8 @@ class AWSConnectionHandler:
         account_id = walb_account_id or self.walb_service_account_id
         current_app.logger.info(f"Trust Policy - Account ID: '{account_id}'")
         
-        # ARN 문자열을 직접 구성 (mainHub와 동일)
-        arn_string = f"arn:aws:iam::{account_id}:user/walb-service-user"
+        # ARN 문자열을 EC2-KinesisForwarder-Role로 변경
+        arn_string = f"arn:aws:iam::{account_id}:role/EC2-KinesisForwarder-Role"
         current_app.logger.info(f"Trust Policy - ARN: '{arn_string}'")
         
         return {
@@ -108,32 +108,17 @@ class AWSConnectionHandler:
             dict: 연결 테스트 결과
         """
         try:
-            # Flask config에서 WALB 서비스 자격증명 가져오기 (mainHub secrets.toml와 동일)
+            # EC2 인스턴스 Role을 사용해서 STS 클라이언트 생성
             try:
-                walb_access_key = current_app.config.get("WALB_ACCESS_KEY_ID")
-                walb_secret_key = current_app.config.get("WALB_SECRET_ACCESS_KEY")
-                walb_region = current_app.config.get("WALB_REGION", region)
+                # EC2 인스턴스의 Role 자격증명을 자동으로 사용
+                sts_client = boto3.client('sts', region_name=region)
                 
-                if not walb_access_key or not walb_secret_key:
-                    return {
-                        'status': 'failed',
-                        'error_message': 'WALB 서비스 자격증명이 설정되지 않았습니다.'
-                    }
-                
-                # WALB 서비스 자격증명으로 STS 클라이언트 생성
-                sts_client = boto3.client(
-                    'sts',
-                    aws_access_key_id=walb_access_key,
-                    aws_secret_access_key=walb_secret_key,
-                    region_name=walb_region
-                )
-                
-                current_app.logger.info("WALB 서비스 자격증명으로 STS 클라이언트 생성 성공")
+                current_app.logger.info("EC2 인스턴스 Role로 STS 클라이언트 생성 성공")
                 
             except Exception as e:
                 return {
                     'status': 'failed',
-                    'error_message': f'WALB 서비스 자격증명 설정 오류: {str(e)}'
+                    'error_message': f'EC2 인스턴스 Role 설정 오류: {str(e)}'
                 }
             
             current_app.logger.info(f"Role ARN으로 연결 시도: {role_arn}")
@@ -383,8 +368,9 @@ class AWSConnectionHandler:
             return 0
         
     def create_session_from_role(self, role_arn, external_id, region='ap-northeast-2'):
-        """Cross-Account Role로 세션 생성"""
+        """Cross-Account Role로 세션 생성 (EC2 인스턴스 Role 사용)"""
         try:
+            # EC2 인스턴스의 Role 자격증명을 자동으로 사용
             sts_client = boto3.client('sts', region_name=region)
             response = sts_client.assume_role(
                 RoleArn=role_arn,

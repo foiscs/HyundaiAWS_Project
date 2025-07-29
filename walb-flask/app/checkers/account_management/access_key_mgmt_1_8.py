@@ -142,13 +142,24 @@ class AccessKeyManagementChecker(BaseChecker):
                 if fix_id == 'deactivate_old_keys':
                     for item in items:
                         user_name, access_key_id = item['id'].split(':')
-                        # 원본에서는 대화형으로 사용자가 비활성화/삭제를 선택하는 방식
-                        # 웹 인터페이스에서는 이를 수동 조치로 안내
-                        results.append({
-                            'item': access_key_id,
-                            'status': 'info',
-                            'message': f'{user_name}의 액세스 키 {access_key_id}는 대화형 조치가 필요합니다: [d]eactivate, [D]ELETE, [i]gnore 중 선택'
-                        })
+                        try:
+                            # 오래된 키 비활성화 자동 실행
+                            iam.update_access_key(
+                                UserName=user_name,
+                                AccessKeyId=access_key_id,
+                                Status='Inactive'
+                            )
+                            results.append({
+                                'item': access_key_id,
+                                'status': 'success',
+                                'message': f'{user_name}의 액세스 키 {access_key_id}를 비활성화했습니다.'
+                            })
+                        except ClientError as e:
+                            results.append({
+                                'item': access_key_id,
+                                'status': 'error',
+                                'message': f'{user_name}의 액세스 키 {access_key_id} 비활성화 실패: {str(e)}'
+                            })
             
             return results
             
@@ -158,3 +169,61 @@ class AccessKeyManagementChecker(BaseChecker):
                 'status': 'error',
                 'message': f'조치 실행 중 오류가 발생했습니다: {str(e)}'
             }]
+    
+    def _get_manual_guide(self, result):
+        """수동 조치 가이드 반환"""
+        guide = {
+            'title': '액세스 키 관리 수동 조치 가이드',
+            'description': '원본 팀원이 작성한 수동 절차를 따라 보안을 강화하세요.',
+            'steps': []
+        }
+        
+        # 루트 계정 액세스 키가 있는 경우
+        old_keys = result.get('old_access_keys', [])
+        multiple_keys = result.get('users_with_multiple_keys', [])
+        
+        if old_keys:
+            guide['steps'].append({
+                'type': 'warning',
+                'title': '[FIX] 오래된 Access Key 교체 안내',
+                'content': '생성된 지 90일 이상 경과한 키는 주기적으로 교체(rotation)해야 합니다.'
+            })
+            guide['steps'].append({
+                'type': 'info',
+                'title': '키 교체 절차',
+                'content': '자동화는 권장되지 않으며, 수동으로 새 키를 생성한 뒤 기존 키를 삭제하세요.'
+            })
+            guide['steps'].append({
+                'type': 'step',
+                'title': '1. 새 액세스 키 생성',
+                'content': 'IAM 콘솔에서 사용자를 선택하고 "보안 자격 증명" 탭에서 새 액세스 키를 생성합니다.'
+            })
+            guide['steps'].append({
+                'type': 'step',
+                'title': '2. 애플리케이션 업데이트',
+                'content': '새 액세스 키로 모든 애플리케이션과 스크립트를 업데이트합니다.'
+            })
+            guide['steps'].append({
+                'type': 'step',
+                'title': '3. 기존 키 비활성화',
+                'content': '새 키가 정상 작동하는지 확인 후 기존 키를 비활성화합니다.'
+            })
+            guide['steps'].append({
+                'type': 'step',
+                'title': '4. 기존 키 삭제',
+                'content': '일정 기간 후 문제가 없으면 기존 키를 완전히 삭제합니다.'
+            })
+        
+        if multiple_keys:
+            guide['steps'].append({
+                'type': 'warning',
+                'title': '[FIX] 다중 액세스 키 정리',
+                'content': '사용자당 1개의 활성 액세스 키만 유지하는 것이 권장됩니다.'
+            })
+            guide['steps'].append({
+                'type': 'info',
+                'title': '다중 키 정리 절차',
+                'content': '사용하지 않는 키를 식별하여 비활성화 또는 삭제하세요.'
+            })
+            
+        return guide if guide['steps'] else None
