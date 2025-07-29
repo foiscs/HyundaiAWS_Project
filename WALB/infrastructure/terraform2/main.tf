@@ -325,7 +325,7 @@ module "rds" {
 
   # 모니터링 설정
   monitoring_interval = 60
-  enabled_cloudwatch_logs_exports = ["error", "general", "slow"]
+  enabled_cloudwatch_logs_exports = ["error", "general", "slowquery"]
   log_retention_days = var.security_log_retention_days
 
   # Multi-AZ 설정
@@ -508,12 +508,6 @@ resource "kubernetes_config_map_v1_data" "aws_auth" {
         username = "github-actions-infra"
         groups   = ["system:masters"]
       },
-      # 기존 GitHub Actions 역할 (하위 호환성)
-      {
-        rolearn  = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/walb2-github"
-        username = "github-actions-legacy"
-        groups   = ["system:masters"]
-      }
     ])
     
     mapUsers = yamlencode([
@@ -645,7 +639,14 @@ resource "aws_iam_openid_connect_provider" "github_actions" {
     Name      = "${var.project_name}-github-oidc-provider"
     Component = "CI/CD"
   })
+
+  lifecycle {
+    create_before_destroy = true
+    ignore_changes        = [thumbprint_list]
+    prevent_destroy       = true
+  }
 }
+
 
 # GitHub Actions IAM Role for Infrastructure (Terraform)
 resource "aws_iam_role" "github_actions_infra" {
@@ -896,12 +897,11 @@ resource "aws_instance" "bastion" {
   vpc_security_group_ids = [aws_security_group.bastion.id]
   subnet_id             = module.vpc.public_subnet_ids[0]
   
-  # PostgreSQL 클라이언트 설치를 위한 user data
+  # MySQL 클라이언트 설치를 위한 user data
   user_data = base64encode(<<-EOF
     #!/bin/bash
     yum update -y
-    amazon-linux-extras install -y postgresql13
-    yum install -y postgresql
+    yum install -y mysql
     
     # AWS CLI 설치 (최신 버전)
     curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"

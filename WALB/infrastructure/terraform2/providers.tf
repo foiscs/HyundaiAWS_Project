@@ -43,7 +43,7 @@ terraform {
   }
   backend "s3" {
     bucket         = "walb-terraform-state-3163"  # bootstrap에서 생성된 버킷명
-    key            = "infrastructure/terraform.tfstate"
+    key            = "infrastructure/terraform2.tfstate"
     region         = "ap-northeast-2"
     encrypt        = true
     dynamodb_table = "walb-terraform-lock-3163"   # bootstrap에서 생성된 테이블명
@@ -80,11 +80,11 @@ provider "aws" {
 # Kubernetes Provider
 # =========================================
 provider "kubernetes" {
-  host                   = try(module.eks.cluster_endpoint, "")
+  host                   = try(module.eks.cluster_endpoint, "https://kubernetes.default.svc")
   cluster_ca_certificate = try(base64decode(module.eks.cluster_certificate_authority_data), "")
   
   dynamic "exec" {
-    for_each = can(module.eks.cluster_name) ? [1] : []
+    for_each = try(module.eks.cluster_name, null) != null ? [1] : []
     content {
       api_version = "client.authentication.k8s.io/v1beta1"
       command     = "aws"
@@ -105,20 +105,23 @@ provider "kubernetes" {
 # =========================================
 provider "helm" {
   kubernetes {
-    host                   = module.eks.cluster_endpoint
-    cluster_ca_certificate = base64decode(module.eks.cluster_certificate_authority_data)
+    host                   = try(module.eks.cluster_endpoint, "https://kubernetes.default.svc")
+    cluster_ca_certificate = try(base64decode(module.eks.cluster_certificate_authority_data), "")
     
-    exec {
-      api_version = "client.authentication.k8s.io/v1beta1"
-      command     = "aws"
-      args = [
-        "eks",
-        "get-token",
-        "--cluster-name",
-        module.eks.cluster_name,
-        "--region",
-        var.aws_region
-      ]
+    dynamic "exec" {
+      for_each = try(module.eks.cluster_name, null) != null ? [1] : []
+      content {
+        api_version = "client.authentication.k8s.io/v1beta1"
+        command     = "aws"
+        args = [
+          "eks",
+          "get-token",
+          "--cluster-name",
+          module.eks.cluster_name,
+          "--region",
+          var.aws_region
+        ]
+      }
     }
   }
 }

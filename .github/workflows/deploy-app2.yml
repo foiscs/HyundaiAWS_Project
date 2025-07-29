@@ -1,25 +1,26 @@
-# .github/workflows/deploy-app.yml
-# PHP 애플리케이션 배포 워크플로우 (server 폴더 변경시만 실행)
+# .github/workflows/deploy-app2.yml
+# Java Spring Boot 애플리케이션 배포 워크플로우 (server2 폴더 변경시만 실행)
 
-name: Deploy PHP Application
+name: Deploy Java Spring Boot Application
 
 on:
   push:
-    branches: [ main, terraform ]
+    branches: [ main ]
     paths:
-      - 'WALB/server/**'
+      - 'WALB/server2/**'
   pull_request:
-    branches: [ main, terraform ]
+    branches: [ main ]
     paths:
-      - 'WALB/server/**'
+      - 'WALB/server2/**'
 
 env:
-  PROJECT_NAME: ${{ vars.PROJECT_NAME || 'walb-app' }}
+  PROJECT_NAME: ${{ vars.PROJECT_NAME || 'walb2-app' }}
   DB_NAME: ${{ vars.DB_NAME || 'mydb' }}
   DB_USER: ${{ vars.DB_USER || 'dbadmin' }}
-  EKS_CLUSTER_NAME: ${{ vars.EKS_CLUSTER_NAME || 'walb-eks-cluster' }}
-  S3_BUCKET_NAME: ${{ vars.S3_BUCKET_NAME || 'walb-app-files' }}
-  IAM_ROLE_NAME: ${{ vars.IAM_ROLE_NAME || 'walb-app-eks-app-role' }}
+  EKS_CLUSTER_NAME: ${{ vars.EKS_CLUSTER_NAME || 'm-cluster' }}  # 기존 deploy.yml과 일치
+  S3_BUCKET_NAME: ${{ vars.S3_BUCKET_NAME || 'walb2-app-files' }}
+  IAM_ROLE_NAME: ${{ vars.IAM_ROLE_NAME || 'walb2-app-eks-app-role' }}
+  DEPLOYMENT_NAME: ${{ vars.DEPLOYMENT_NAME || 'music1-deployment' }}  # 기존 deploy.yml과 일치
   
 jobs:
   build-and-deploy:
@@ -42,25 +43,33 @@ jobs:
       uses: actions/checkout@v4
     
     # ===============================================
-    # PHP 및 Composer 환경 설정
+    # Java 및 Maven 환경 설정
     # ===============================================
-    - name: Set up PHP
-      uses: shivammathur/setup-php@v2
+    - name: Set up JDK 17
+      uses: actions/setup-java@v4
       with:
-        php-version: '8.1'
-        extensions: pdo, pdo_mysql, mbstring, xml, zip, gd
-        coverage: none
+        java-version: '17'
+        distribution: 'temurin'
+        cache: maven
     
-    - name: Validate Composer
+    - name: Validate and Build Maven Project
       run: |
-        echo "🔍 PHP 애플리케이션 검증 중..."
-        if [ -f "server/composer.json" ]; then
-          cd server
-          composer validate --no-check-publish
-          composer install --no-dev --optimize-autoloader --no-interaction
-          echo "✅ Composer 검증 완료"
+        echo "🔍 Java Spring Boot 애플리케이션 검증 중..."
+        if [ -f "server2/pom.xml" ]; then
+          cd server2
+          echo "📦 Maven 의존성 검증 및 빌드 중..."
+          # Maven Wrapper가 없으면 시스템 Maven 사용
+          if [ -f "./mvnw" ]; then
+            ./mvnw clean compile test package -DskipTests=false
+          else
+            echo "⚠️ Maven Wrapper가 없습니다. 시스템 Maven을 사용합니다."
+            mvn clean compile test package -DskipTests=false
+          fi
+          echo "✅ Maven 빌드 완료"
+          ls -la target/
         else
-          echo "ℹ️ Composer 파일이 없습니다. Docker 빌드만 실행합니다."
+          echo "❌ pom.xml 파일이 없습니다."
+          exit 1
         fi
     
     # ===============================================
@@ -137,8 +146,8 @@ jobs:
         IMAGE_TAG=${{ github.sha }}
         IMAGE_URI=${{ env.ECR_REPOSITORY }}:$IMAGE_TAG
         
-        # server 폴더로 이동해서 Docker 빌드
-        cd server
+        # server2 폴더로 이동해서 Docker 빌드
+        cd server2
         docker build -t $IMAGE_URI .
         docker tag $IMAGE_URI ${{ env.ECR_REPOSITORY }}:latest
         
@@ -679,38 +688,9 @@ jobs:
           exit 1
         fi
         
-        # 기존 테이블 확인
-        echo "🔍 기존 테이블 확인 중..."
-        EXISTING_TABLES=$(mysql \
-          -h localhost \
-          -P $LOCAL_PORT \
-          -u "$DB_USER" \
-          -p"${{ secrets.DB_PASSWORD }}" \
-          "$DB_NAME" \
-          -sN -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = '$DB_NAME' AND table_name IN ('users', 'posts', 'images', 'files');" 2>/dev/null || echo "0")
-        
-        echo "📊 기존 테이블 개수: $EXISTING_TABLES/4"
-        
-        if [ "$EXISTING_TABLES" -lt "4" ]; then
-          echo "📝 스키마 파일 적용 중..."
-          if mysql \
-            -h localhost \
-            -P $LOCAL_PORT \
-            -u "$DB_USER" \
-            -p"${{ secrets.DB_PASSWORD }}" \
-            "$DB_NAME" \
-            < server/files/schema.sql; then
-            echo "✅ 스키마 적용 완료"
-          else
-            echo "❌ 스키마 적용 실패"
-            kill $SSH_PID 2>/dev/null
-            rm -f bastion_key.pem
-            exit 1
-          fi
-
-        else
-          echo "ℹ️ 모든 테이블이 이미 존재합니다 ($EXISTING_TABLES/4). 스키마 적용을 건너뜁니다."
-        fi
+        # 기본 연결 테스트만 수행 (Java 애플리케이션은 자체적으로 DB 연결 관리)
+        echo "🔍 데이터베이스 연결 확인 완료"
+        echo "ℹ️ Java Spring Boot 애플리케이션은 자체적으로 데이터베이스 연결을 설정합니다."
 
         # 정리 작업
         echo "🧹 정리 작업 중..."
@@ -832,9 +812,100 @@ jobs:
           kubectl get nodes --show-labels
 
       # ===============================================
-      # AWS Load Balancer Controller 확인
+      # Ingress 및 ALB 동기화 상태 체크 및 정리
       # ===============================================
-    - name: Check AWS Load Balancer Controller
+    - name: Check and Clean Ingress Resources
+      run: |
+          echo "🔍 기존 Ingress 리소스 및 finalizer 상태 체크 중..."
+          
+          # Ingress finalizer 체크 및 정리 함수
+          check_and_clean_ingress() {
+            local namespace="$1"
+            local ingress_name="$2"
+            
+            echo "🔍 Ingress '$ingress_name' (네임스페이스: $namespace) 상태 확인..."
+            
+            # Ingress 존재 확인
+            if ! kubectl get ingress "$ingress_name" -n "$namespace" >/dev/null 2>&1; then
+              echo "ℹ️ Ingress '$ingress_name'이 존재하지 않습니다."
+              return 0
+            fi
+            
+            # finalizer 확인
+            local finalizers=$(kubectl get ingress "$ingress_name" -n "$namespace" -o jsonpath='{.metadata.finalizers}' 2>/dev/null || echo "")
+            
+            if [[ "$finalizers" == *"ingress.k8s.aws/resources"* ]]; then
+              echo "⚠️ Ingress '$ingress_name'에 finalizer가 남아있습니다: $finalizers"
+              
+              # Ingress 삭제 시도
+              echo "🗑️ Ingress 삭제 시도 중..."
+              kubectl delete ingress "$ingress_name" -n "$namespace" --timeout=30s &
+              local delete_pid=$!
+              
+              # 30초 대기
+              sleep 30
+              
+              # 프로세스가 아직 실행 중인지 확인
+              if kill -0 $delete_pid 2>/dev/null; then
+                echo "⚠️ Ingress 삭제가 finalizer로 인해 멈춤. 강제 정리 시작..."
+                kill $delete_pid 2>/dev/null || true
+                
+                # validating webhook 확인 및 삭제
+                echo "🔍 validating webhook 확인 중..."
+                local webhook_exists=$(kubectl get validatingwebhookconfigurations aws-load-balancer-webhook 2>/dev/null | wc -l)
+                if [ "$webhook_exists" -gt 0 ]; then
+                  echo "🗑️ aws-load-balancer-webhook 삭제 중..."
+                  kubectl delete validatingwebhookconfigurations aws-load-balancer-webhook --timeout=10s || echo "webhook 삭제 실패 (이미 없을 수 있음)"
+                  echo "✅ webhook 삭제 완료"
+                else
+                  echo "ℹ️ validating webhook이 이미 없습니다."
+                fi
+                
+                # mutating webhook 확인 및 삭제
+                local mutating_webhook_exists=$(kubectl get mutatingwebhookconfigurations aws-load-balancer-webhook 2>/dev/null | wc -l)
+                if [ "$mutating_webhook_exists" -gt 0 ]; then
+                  echo "🗑️ aws-load-balancer-webhook (mutating) 삭제 중..."
+                  kubectl delete mutatingwebhookconfigurations aws-load-balancer-webhook --timeout=10s || echo "mutating webhook 삭제 실패 (이미 없을 수 있음)"
+                  echo "✅ mutating webhook 삭제 완료"
+                fi
+                
+                # finalizer 강제 제거
+                echo "🔧 finalizer 강제 제거 중..."
+                if kubectl patch ingress "$ingress_name" -n "$namespace" -p '{"metadata":{"finalizers":[]}}' --type=merge; then
+                  echo "✅ finalizer 제거 성공"
+                  
+                  # 다시 삭제 시도
+                  echo "🗑️ Ingress 재삭제 시도..."
+                  if kubectl delete ingress "$ingress_name" -n "$namespace" --timeout=30s; then
+                    echo "✅ Ingress '$ingress_name' 삭제 완료"
+                  else
+                    echo "⚠️ Ingress 재삭제 실패. 수동 확인 필요"
+                  fi
+                else
+                  echo "❌ finalizer 제거 실패"
+                fi
+              else
+                echo "✅ Ingress '$ingress_name' 정상 삭제 완료"
+              fi
+            else
+              echo "✅ Ingress '$ingress_name'에 문제되는 finalizer 없음"
+            fi
+          }
+          
+          # 모든 네임스페이스의 Ingress 조회 및 체크
+          echo "🔍 모든 네임스페이스의 Ingress 리소스 조회..."
+          kubectl get ingress -A --no-headers 2>/dev/null | while read namespace name class hosts address ports age; do
+            if [ -n "$namespace" ] && [ -n "$name" ]; then
+              check_and_clean_ingress "$namespace" "$name"
+            fi
+          done || echo "ℹ️ 기존 Ingress 리소스가 없습니다."
+          
+          echo "✅ Ingress 리소스 정리 완료"
+
+      # ===============================================
+      # AWS Load Balancer Controller 확인 및 복구
+      # ===============================================
+    - name: Check and Recover AWS Load Balancer Controller
       run: |
           echo "🔍 AWS Load Balancer Controller 상태 확인 중..."
           
@@ -842,6 +913,15 @@ jobs:
           if kubectl get pods -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller >/dev/null 2>&1; then
             echo "✅ AWS Load Balancer Controller Pod 발견"
             kubectl get pods -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller
+            
+            # Pod 상태 확인
+            local running_pods=$(kubectl get pods -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller --field-selector=status.phase=Running --no-headers | wc -l)
+            if [ "$running_pods" -eq 0 ]; then
+              echo "⚠️ AWS Load Balancer Controller Pod가 Running 상태가 아닙니다. 재시작 중..."
+              kubectl rollout restart deployment -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller
+              kubectl rollout status deployment -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller --timeout=120s
+              echo "✅ AWS Load Balancer Controller 재시작 완료"
+            fi
           else
             echo "❌ AWS Load Balancer Controller를 찾을 수 없습니다."
             echo "Terraform으로 AWS Load Balancer Controller를 먼저 설치해주세요."
@@ -859,20 +939,82 @@ jobs:
             exit 1
           fi
           
+          # Webhook config 재생성 대기
+          echo "⏳ webhook config 재생성 대기 중..."
+          sleep 10
+          
           # ValidatingAdmissionWebhook 확인
-          if kubectl get validatingwebhookconfigurations | grep -E "(vingress|aws-load-balancer)" >/dev/null 2>&1; then
-            echo "✅ ValidatingWebhookConfiguration 확인됨"
-            kubectl get validatingwebhookconfigurations | grep -E "(vingress|aws-load-balancer)"
-          else
+          local webhook_ready=false
+          for i in {1..6}; do
+            if kubectl get validatingwebhookconfigurations | grep -E "(vingress|aws-load-balancer)" >/dev/null 2>&1; then
+              echo "✅ ValidatingWebhookConfiguration 확인됨"
+              kubectl get validatingwebhookconfigurations | grep -E "(vingress|aws-load-balancer)"
+              webhook_ready=true
+              break
+            else
+              echo "⏳ ValidatingWebhookConfiguration 대기 중... ($i/6)"
+              sleep 5
+            fi
+          done
+          
+          if [ "$webhook_ready" != "true" ]; then
             echo "⚠️ ValidatingWebhookConfiguration을 찾을 수 없습니다."
             echo "AWS Load Balancer Controller가 아직 완전히 준비되지 않았을 수 있습니다."
+            echo "🔧 Controller 강제 재시작 중..."
+            kubectl rollout restart deployment -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller
+            kubectl rollout status deployment -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller --timeout=120s
+            
+            # 재시작 후 다시 확인
+            echo "⏳ 재시작 후 webhook 재확인..."
+            sleep 15
+            if kubectl get validatingwebhookconfigurations | grep -E "(vingress|aws-load-balancer)" >/dev/null 2>&1; then
+              echo "✅ ValidatingWebhookConfiguration 재확인 성공"
+            else
+              echo "❌ ValidatingWebhookConfiguration 재확인 실패. 수동 점검 필요"
+            fi
           fi
           
           echo "✅ AWS Load Balancer Controller 확인 완료 - Ingress 기반 ALB 생성 준비됨"
 
       # ===============================================
-      # Kubernetes 매니페스트 파일 생성
+      # 기존 k8s 매니페스트 업데이트 및 사용
       # ===============================================
+    - name: Update existing Kubernetes manifests
+      run: |
+          echo "🔧 기존 k8s 매니페스트 파일 업데이트 중..."
+          cd server2
+          cd k8s
+          
+          # namespace.yml 업데이트 (프로젝트명 사용)
+          sed -i "s/music1-namespace/${{ env.PROJECT_NAME }}/g" namespace.yml
+          
+          # deployment.yml 업데이트
+          sed -i "s/music1-deployment/${{ env.PROJECT_NAME }}-app/g" deployment.yml
+          sed -i "s/music1-namespace/${{ env.PROJECT_NAME }}/g" deployment.yml
+          sed -i "s/music1-app/${{ env.PROJECT_NAME }}-app/g" deployment.yml
+          sed -i "s/music1-service/${{ env.PROJECT_NAME }}-service/g" deployment.yml
+          sed -i "s|YOUR_ECR_URI/music1-app:latest|${{ steps.build-image.outputs.image }}|g" deployment.yml
+          
+          # Spring Boot Actuator 헬스체크로 변경
+          sed -i "s|path: /api/music|path: /actuator/health|g" deployment.yml
+          
+          # Service를 ClusterIP로 변경 (Ingress 사용을 위해)
+          sed -i "s/type: LoadBalancer/type: ClusterIP/g" deployment.yml
+          
+          # ServiceAccount 추가
+          sed -i "/spec:/a\\      serviceAccountName: ${{ env.PROJECT_NAME }}-service-account" deployment.yml
+          
+          # envFrom 설정 추가 (환경변수 주입)
+          sed -i "/- name: SPRING_PROFILES_ACTIVE/i\\        envFrom:\n        - configMapRef:\n            name: ${{ env.PROJECT_NAME }}-config\n        - secretRef:\n            name: ${{ env.PROJECT_NAME }}-secret" deployment.yml
+          
+          echo "✅ 기존 k8s 매니페스트 업데이트 완료"
+          
+          # 업데이트된 파일 확인
+          echo "📋 업데이트된 namespace.yml:"
+          cat namespace.yml
+          echo "📋 업데이트된 deployment.yml:"
+          cat deployment.yml
+
     - name: Get Subnet Information
       run: |
           echo "🔍 서브넷 정보 조회 중..."
@@ -893,15 +1035,9 @@ jobs:
           
           echo "PUBLIC_SUBNETS=$PUBLIC_SUBNETS" >> $GITHUB_ENV
 
-    - name: Generate Kubernetes manifests
+    - name: Generate additional Kubernetes manifests
       run: |
-          echo "📝 Kubernetes 매니페스트 생성 중..."
-
-          # Namespace 생성
-          echo "apiVersion: v1" > namespace.yaml
-          echo "kind: Namespace" >> namespace.yaml
-          echo "metadata:" >> namespace.yaml
-          echo "  name: ${{ env.PROJECT_NAME }}" >> namespace.yaml
+          echo "📝 추가 Kubernetes 매니페스트 생성 중..."
           
           # ConfigMap 생성 (환경변수)
           echo "apiVersion: v1" > configmap.yaml
@@ -918,13 +1054,11 @@ jobs:
           echo '  AWS_S3_BUCKET: "${{ env.S3_BUCKET_NAME }}"' >> configmap.yaml
           echo '  AWS_S3_REGION: "${{ secrets.AWS_REGION }}"' >> configmap.yaml
           echo '  STORAGE_TYPE: "s3"' >> configmap.yaml
-          echo '  APP_ENV: "production"' >> configmap.yaml
-          echo '  APP_DEBUG: "false"' >> configmap.yaml
-          echo '  PHP_MEMORY_LIMIT: "256M"' >> configmap.yaml
-          echo '  PHP_MAX_EXECUTION_TIME: "30"' >> configmap.yaml
-          echo '  PHP_TIMEZONE: "Asia/Seoul"' >> configmap.yaml
-          echo '  UPLOAD_MAX_SIZE: "10M"' >> configmap.yaml
-          echo '  SESSION_LIFETIME: "7200"' >> configmap.yaml
+          echo '  SPRING_PROFILES_ACTIVE: "production"' >> configmap.yaml
+          echo '  JAVA_OPTS: "-Xmx512m -Xms256m"' >> configmap.yaml
+          echo '  TZ: "Asia/Seoul"' >> configmap.yaml
+          echo '  SERVER_PORT: "8080"' >> configmap.yaml
+          echo '  MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE: "health,info,prometheus"' >> configmap.yaml
         
           # Secret 생성 (DB 패스워드)
           echo "apiVersion: v1" > secret.yaml
@@ -935,80 +1069,6 @@ jobs:
           echo "type: Opaque" >> secret.yaml
           echo "data:" >> secret.yaml
           echo "  DB_PASSWORD: $(echo -n '${{ secrets.DB_PASSWORD }}' | base64)" >> secret.yaml
-          
-          # Deployment 생성
-          echo "apiVersion: apps/v1" > deployment.yaml
-          echo "kind: Deployment" >> deployment.yaml
-          echo "metadata:" >> deployment.yaml
-          echo "  name: ${{ env.PROJECT_NAME }}-app" >> deployment.yaml
-          echo "  namespace: ${{ env.PROJECT_NAME }}" >> deployment.yaml
-          echo "  labels:" >> deployment.yaml
-          echo "    app: ${{ env.PROJECT_NAME }}-app" >> deployment.yaml
-          echo "spec:" >> deployment.yaml
-          echo "  replicas: 2" >> deployment.yaml
-          echo "  selector:" >> deployment.yaml
-          echo "    matchLabels:" >> deployment.yaml
-          echo "      app: ${{ env.PROJECT_NAME }}-app" >> deployment.yaml
-          echo "  template:" >> deployment.yaml
-          echo "    metadata:" >> deployment.yaml
-          echo "      labels:" >> deployment.yaml
-          echo "        app: ${{ env.PROJECT_NAME }}-app" >> deployment.yaml
-          echo "    spec:" >> deployment.yaml
-          echo "      serviceAccountName: ${{ env.PROJECT_NAME }}-service-account" >> deployment.yaml
-          echo "      containers:" >> deployment.yaml
-          echo "      - name: php-app" >> deployment.yaml
-          echo "        image: ${{ steps.build-image.outputs.image }}" >> deployment.yaml
-          echo "        ports:" >> deployment.yaml
-          echo "        - containerPort: 80" >> deployment.yaml  
-          echo "          name: http" >> deployment.yaml
-          echo "        envFrom:" >> deployment.yaml
-          echo "        - configMapRef:" >> deployment.yaml
-          echo "            name: ${{ env.PROJECT_NAME }}-config" >> deployment.yaml
-          echo "        - secretRef:" >> deployment.yaml
-          echo "            name: ${{ env.PROJECT_NAME }}-secret" >> deployment.yaml
-          echo "        livenessProbe:" >> deployment.yaml
-          echo "          httpGet:" >> deployment.yaml
-          echo "            path: /healthcheck.php" >> deployment.yaml
-          echo "            port: 80" >> deployment.yaml
-          echo "          initialDelaySeconds: 60" >> deployment.yaml
-          echo "          periodSeconds: 30" >> deployment.yaml
-          echo "          timeoutSeconds: 10" >> deployment.yaml
-          echo "        readinessProbe:" >> deployment.yaml
-          echo "          httpGet:" >> deployment.yaml
-          echo "            path: /healthcheck.php" >> deployment.yaml
-          echo "            port: 80" >> deployment.yaml
-          echo "          initialDelaySeconds: 30" >> deployment.yaml
-          echo "          periodSeconds: 10" >> deployment.yaml
-          echo "          timeoutSeconds: 5" >> deployment.yaml
-          echo "        resources:" >> deployment.yaml
-          echo "          requests:" >> deployment.yaml
-          echo '            memory: "256Mi"' >> deployment.yaml
-          echo '            cpu: "250m"' >> deployment.yaml
-          echo "          limits:" >> deployment.yaml
-          echo '            memory: "512Mi"' >> deployment.yaml
-          echo '            cpu: "500m"' >> deployment.yaml
-          echo "        securityContext:" >> deployment.yaml
-          echo "          runAsNonRoot: false" >> deployment.yaml
-          echo "          allowPrivilegeEscalation: false" >> deployment.yaml
-          echo "          readOnlyRootFilesystem: false" >> deployment.yaml
-
-          # Service 생성 (Ingress 기반이므로 ClusterIP 사용)
-          echo "apiVersion: v1" > service.yaml
-          echo "kind: Service" >> service.yaml
-          echo "metadata:" >> service.yaml
-          echo "  name: ${{ env.PROJECT_NAME }}-service" >> service.yaml
-          echo "  namespace: ${{ env.PROJECT_NAME }}" >> service.yaml
-          echo "  labels:" >> service.yaml
-          echo "    app: ${{ env.PROJECT_NAME }}-app" >> service.yaml
-          echo "spec:" >> service.yaml
-          echo "  type: ClusterIP" >> service.yaml
-          echo "  ports:" >> service.yaml
-          echo "  - port: 80" >> service.yaml
-          echo "    targetPort: 80" >> service.yaml
-          echo "    protocol: TCP" >> service.yaml
-          echo "    name: http" >> service.yaml
-          echo "  selector:" >> service.yaml
-          echo "    app: ${{ env.PROJECT_NAME }}-app" >> service.yaml
 
           # Ingress 생성 (AWS Load Balancer Controller 사용)
           echo "apiVersion: networking.k8s.io/v1" > ingress.yaml
@@ -1024,14 +1084,14 @@ jobs:
           echo '    alb.ingress.kubernetes.io/listen-ports: '"'"'[{"HTTP": 80}]'"'"'' >> ingress.yaml
           echo "    alb.ingress.kubernetes.io/subnets: ${{ env.PUBLIC_SUBNETS }}" >> ingress.yaml
           echo "    " >> ingress.yaml
-          echo "    # Health Check 설정 (PHP 애플리케이션)" >> ingress.yaml
-          echo "    alb.ingress.kubernetes.io/healthcheck-path: /healthcheck.php" >> ingress.yaml
+          echo "    # Health Check 설정 (Spring Boot 애플리케이션)" >> ingress.yaml
+          echo "    alb.ingress.kubernetes.io/healthcheck-path: /actuator/health" >> ingress.yaml
           echo "    alb.ingress.kubernetes.io/healthcheck-interval-seconds: '30'" >> ingress.yaml
           echo "    alb.ingress.kubernetes.io/healthcheck-timeout-seconds: '10'" >> ingress.yaml
           echo "    alb.ingress.kubernetes.io/healthy-threshold-count: '2'" >> ingress.yaml
           echo "    alb.ingress.kubernetes.io/unhealthy-threshold-count: '3'" >> ingress.yaml
           echo "    alb.ingress.kubernetes.io/healthcheck-protocol: HTTP" >> ingress.yaml
-          echo "    alb.ingress.kubernetes.io/healthcheck-port: '80'" >> ingress.yaml
+          echo "    alb.ingress.kubernetes.io/healthcheck-port: '8080'" >> ingress.yaml
           echo "    " >> ingress.yaml
           echo "    # Load Balancer 설정" >> ingress.yaml
           echo "    alb.ingress.kubernetes.io/load-balancer-name: ${{ env.PROJECT_NAME }}-ingress-alb" >> ingress.yaml
@@ -1047,7 +1107,7 @@ jobs:
           echo "          service:" >> ingress.yaml
           echo "            name: ${{ env.PROJECT_NAME }}-service" >> ingress.yaml
           echo "            port:" >> ingress.yaml
-          echo "              number: 80" >> ingress.yaml
+          echo "              number: 8080" >> ingress.yaml
 
           echo "✅ Ingress 기반 매니페스트 생성 완료"
 
@@ -1070,15 +1130,15 @@ jobs:
       run: |
           echo "🚀 EKS에 애플리케이션 배포 중..."
 
-          # Namespace 먼저 생성
-          kubectl apply -f namespace.yaml
+          # 기존 k8s 매니페스트 적용
+          echo "📦 기존 k8s 리소스 배포 중..."
+          kubectl apply -f server2/k8s/namespace.yml
+          kubectl apply -f server2/k8s/deployment.yml
 
-          # 나머지 리소스 배포
+          # 추가 리소스 배포  
           kubectl apply -f serviceaccount.yaml
           kubectl apply -f configmap.yaml
           kubectl apply -f secret.yaml
-          kubectl apply -f deployment.yaml
-          kubectl apply -f service.yaml
 
           # Ingress 배포 (AWS Load Balancer Controller로 ALB 생성)
           echo "🔗 Ingress 리소스 배포 중..."
@@ -1087,6 +1147,30 @@ jobs:
           echo "🚀 Ingress 배포 시작..."
           if kubectl apply -f ingress.yaml; then
             echo "✅ Ingress 리소스 생성 성공"
+            
+            # Ingress와 ALB 동기화 상태 체크
+            echo "🔍 Ingress와 ALB 동기화 상태 체크 중..."
+            
+            # webhook이 정상 작동하는지 확인
+            if ! kubectl get validatingwebhookconfigurations | grep -E "(vingress|aws-load-balancer)" >/dev/null 2>&1; then
+              echo "⚠️ Webhook이 없습니다. Controller 재시작 중..."
+              kubectl rollout restart deployment -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller
+              kubectl rollout status deployment -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller --timeout=120s
+              sleep 10
+            fi
+            
+            # Ingress finalizer 상태 확인
+            local ingress_finalizers=$(kubectl get ingress ${{ env.PROJECT_NAME }}-ingress -n ${{ env.PROJECT_NAME }} -o jsonpath='{.metadata.finalizers}' 2>/dev/null || echo "")
+            if [[ -z "$ingress_finalizers" ]]; then
+              echo "⚠️ Ingress finalizer가 설정되지 않았습니다. AWS Load Balancer Controller 상태 확인 중..."
+              kubectl describe ingress ${{ env.PROJECT_NAME }}-ingress -n ${{ env.PROJECT_NAME }} | grep -A 10 "Events:" || true
+              
+              # Controller 로그 확인
+              echo "🔍 Controller 로그 확인:"
+              kubectl logs -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller --tail=10 || true
+            else
+              echo "✅ Ingress finalizer 설정됨: $ingress_finalizers"
+            fi
             
             # ALB 생성 대기 (총 20분)
             echo "⏳ AWS Load Balancer Controller에 의한 ALB 생성 대기 중..."
@@ -1104,7 +1188,7 @@ jobs:
                 fi
                 
                 # ALB가 실제로 응답하는지 확인
-                if curl -s --connect-timeout 5 --max-time 10 -o /dev/null -w "%{http_code}" "http://$ALB_DNS/healthcheck.php" | grep -E "^(200|404)$" >/dev/null; then
+                if curl -s --connect-timeout 5 --max-time 10 -o /dev/null -w "%{http_code}" "http://$ALB_DNS/actuator/health" | grep -E "^(200|404)$" >/dev/null; then
                   echo "✅ ALB 프로비저닝 완료 및 연결 가능: $ALB_DNS"
                   echo "ALB_HOSTNAME=$ALB_DNS" >> $GITHUB_ENV
                   echo "DEPLOYMENT_METHOD=Ingress" >> $GITHUB_ENV
@@ -1139,23 +1223,53 @@ jobs:
             if [ "$ALB_CREATED" != "true" ]; then
               echo "⚠️ ALB 생성/프로비저닝 시간 초과 (20분) - 상세 진단 실행"
               
+              # 현재 시간 로깅
+              echo "🕐 진단 시작 시간: $(date)"
+              
               echo "🔍 최종 Ingress 상태:"
               kubectl get ingress ${{ env.PROJECT_NAME }}-ingress -n ${{ env.PROJECT_NAME }} -o yaml || true
               kubectl describe ingress ${{ env.PROJECT_NAME }}-ingress -n ${{ env.PROJECT_NAME }} || true
+              
+              echo "🔍 Ingress finalizer 상태 재확인:"
+              local final_finalizers=$(kubectl get ingress ${{ env.PROJECT_NAME }}-ingress -n ${{ env.PROJECT_NAME }} -o jsonpath='{.metadata.finalizers}' 2>/dev/null || echo "NONE")
+              echo "Finalizers: $final_finalizers"
+              
+              if [[ "$final_finalizers" == *"ingress.k8s.aws/resources"* ]]; then
+                echo "✅ Finalizer가 설정되어 있음 - Controller가 인식했음"
+              else
+                echo "❌ Finalizer가 없음 - Controller가 Ingress를 처리하지 못했음"
+              fi
               
               echo "🔍 AWS Load Balancer Controller 상세 상태:"
               kubectl get pods -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller -o wide || true
               kubectl describe pods -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller || true
               
-              echo "🔍 AWS Load Balancer Controller 최근 로그:"
-              kubectl logs -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller --tail=200 || true
+              echo "🔍 AWS Load Balancer Controller 최근 로그 (실패 관련):"
+              kubectl logs -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller --tail=200 | grep -i "error\|fail\|denied\|invalid\|timeout" || echo "관련 에러 로그 없음"
+              
+              echo "🔍 AWS Load Balancer Controller 전체 로그 (최근 50줄):"
+              kubectl logs -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller --tail=50 || true
               
               echo "🔍 IngressClass 확인:"
               kubectl get ingressclass || true
               kubectl describe ingressclass alb || true
               
               echo "🔍 ValidatingWebhookConfiguration 확인:"
-              kubectl get validatingwebhookconfigurations | grep -E "(vingress|aws-load-balancer)" || echo "웹훅 없음"
+              local webhook_status=$(kubectl get validatingwebhookconfigurations | grep -E "(vingress|aws-load-balancer)" || echo "웹훅 없음")
+              echo "Webhook 상태: $webhook_status"
+              
+              if [[ "$webhook_status" == "웹훅 없음" ]]; then
+                echo "❌ ValidatingWebhookConfiguration이 없습니다!"
+                echo "🔧 이는 Ingress 생성이 차단되지 않았지만 Controller가 처리하지 못했음을 의미합니다."
+              else
+                echo "✅ ValidatingWebhookConfiguration이 있습니다."
+              fi
+              
+              echo "🔍 모든 네임스페이스의 Ingress 확인:"
+              kubectl get ingress -A || true
+              
+              echo "🔍 AWS CLI를 통한 ALB 확인:"
+              aws elbv2 describe-load-balancers --query "LoadBalancers[?contains(LoadBalancerName, \`${{ env.PROJECT_NAME }}\`) || contains(LoadBalancerName, \`k8s\`)].{Name:LoadBalancerName,State:State.Code,DNS:DNSName}" --output table 2>/dev/null || echo "AWS CLI로 ALB 조회 실패"
               
               # ALB가 생성되었지만 프로비저닝이 완료되지 않은 경우 환경변수 설정
               if [ -n "$ALB_DNS" ] && [ "$ALB_DNS" != "null" ]; then
@@ -1254,7 +1368,7 @@ jobs:
             
             # 실제 연결 테스트
             echo "🔍 ALB 연결 테스트 중..."
-            if curl -s --connect-timeout 10 --max-time 15 -o /dev/null -w "%{http_code}" "http://${ALB_HOSTNAME}/healthcheck.php" | grep -E "^(200|404)$" >/dev/null; then
+            if curl -s --connect-timeout 10 --max-time 15 -o /dev/null -w "%{http_code}" "http://${ALB_HOSTNAME}/actuator/health" | grep -E "^(200|404)$" >/dev/null; then
               echo "✅ ALB 연결 성공 - 애플리케이션 접속 가능"
             else
               echo "⚠️ ALB 연결 실패 - 헬스체크 문제일 수 있습니다"
@@ -1270,7 +1384,7 @@ jobs:
             echo "ℹ️ 5-10분 후 접속이 가능할 예정입니다."
             
             echo "🔍 현재 ALB 연결 상태:"
-            curl -s --connect-timeout 5 --max-time 10 -w "HTTP 상태코드: %{http_code}, 응답시간: %{time_total}s\n" "http://${ALB_HOSTNAME}/healthcheck.php" || echo "아직 연결 불가"
+            curl -s --connect-timeout 5 --max-time 10 -w "HTTP 상태코드: %{http_code}, 응답시간: %{time_total}s\n" "http://${ALB_HOSTNAME}/actuator/health" || echo "아직 연결 불가"
             
             echo "🔍 Ingress 상태:"
             kubectl describe ingress ${{ env.PROJECT_NAME }}-ingress -n ${{ env.PROJECT_NAME }}
@@ -1324,7 +1438,7 @@ jobs:
     - name: Application Deployment Notification
       if: success() && ${{ github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/terraform') }}
       run: |
-          echo "🎉 PHP 애플리케이션 배포 완료!"
+          echo "🎉 Java Spring Boot 애플리케이션 배포 완료!"
           echo "프로젝트: ${{ env.PROJECT_NAME }}"
           echo "이미지: ${{ steps.build-image.outputs.image }}"
           echo "클러스터: ${{ env.EKS_CLUSTER_NAME }}"
@@ -1338,12 +1452,70 @@ jobs:
           kubectl get all -n ${{ env.PROJECT_NAME }} || echo "리소스 조회 실패"
 
       # ===============================================
-      # 배포 실패 시 롤백
+      # 배포 실패 시 롤백 및 정리
       # ===============================================
     - name: Rollback on failure
       if: ${{ failure() && github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/terraform') }}
       run: |
-          echo "❌ 배포 실패 - 이전 버전으로 롤백 중.."
+          echo "❌ 배포 실패 - 롤백 및 정리 시작..."
+          
+          # Ingress finalizer 체크 및 정리 함수 재정의
+          check_and_clean_ingress() {
+            local namespace="$1"
+            local ingress_name="$2"
+            
+            echo "🔍 실패한 Ingress '$ingress_name' (네임스페이스: $namespace) 정리 중..."
+            
+            # Ingress 존재 확인
+            if ! kubectl get ingress "$ingress_name" -n "$namespace" >/dev/null 2>&1; then
+              echo "ℹ️ Ingress '$ingress_name'이 존재하지 않습니다."
+              return 0
+            fi
+            
+            # finalizer 확인
+            local finalizers=$(kubectl get ingress "$ingress_name" -n "$namespace" -o jsonpath='{.metadata.finalizers}' 2>/dev/null || echo "")
+            
+            if [[ "$finalizers" == *"ingress.k8s.aws/resources"* ]]; then
+              echo "⚠️ Ingress '$ingress_name'에 finalizer가 남아있습니다. 강제 정리 시작..."
+              
+              # validating webhook 삭제
+              kubectl delete validatingwebhookconfigurations aws-load-balancer-webhook --timeout=10s 2>/dev/null || echo "validating webhook 없음"
+              
+              # mutating webhook 삭제
+              kubectl delete mutatingwebhookconfigurations aws-load-balancer-webhook --timeout=10s 2>/dev/null || echo "mutating webhook 없음"
+              
+              # finalizer 강제 제거
+              echo "🔧 finalizer 강제 제거 중..."
+              if kubectl patch ingress "$ingress_name" -n "$namespace" -p '{"metadata":{"finalizers":[]}}' --type=merge; then
+                echo "✅ finalizer 제거 성공"
+                
+                # Ingress 삭제
+                kubectl delete ingress "$ingress_name" -n "$namespace" --timeout=30s || echo "Ingress 삭제 실패"
+                echo "✅ Ingress '$ingress_name' 정리 완료"
+              else
+                echo "⚠️ finalizer 제거 실패. 수동 확인 필요"
+              fi
+            else
+              echo "✅ Ingress '$ingress_name'에 문제되는 finalizer 없음"
+              # 정상 삭제 시도
+              kubectl delete ingress "$ingress_name" -n "$namespace" --timeout=30s || echo "Ingress 삭제 실패"
+            fi
+          }
+          
+          # 실패한 Ingress 정리
+          if kubectl get ingress -n ${{ env.PROJECT_NAME }} >/dev/null 2>&1; then
+            echo "🗑️ 실패한 Ingress 리소스 정리 중..."
+            check_and_clean_ingress "${{ env.PROJECT_NAME }}" "${{ env.PROJECT_NAME }}-ingress"
+          fi
+          
+          # 애플리케이션 롤백
+          echo "🔄 애플리케이션 롤백 중..."
           kubectl rollout undo deployment/${{ env.PROJECT_NAME }}-app -n ${{ env.PROJECT_NAME }} || true
           kubectl rollout status deployment/${{ env.PROJECT_NAME }}-app -n ${{ env.PROJECT_NAME }} --timeout=300s || true
-          echo "✅ 롤백 시도 완료"
+          
+          # AWS Load Balancer Controller 복구
+          echo "🔧 AWS Load Balancer Controller 복구 중..."
+          kubectl rollout restart deployment -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller || true
+          kubectl rollout status deployment -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller --timeout=120s || true
+          
+          echo "✅ 롤백 및 정리 완료"
