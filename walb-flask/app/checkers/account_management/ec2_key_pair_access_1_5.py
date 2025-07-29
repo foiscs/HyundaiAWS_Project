@@ -23,7 +23,7 @@ class KeyPairAccessChecker(BaseChecker):
             if self.session:
                 ec2 = self.session.client('ec2')
             else:
-                ec2 = boto3.client('ec2')
+                ec2 = self.session.client('ec2')
             
             instances_without_keypair = []
             all_instances = []

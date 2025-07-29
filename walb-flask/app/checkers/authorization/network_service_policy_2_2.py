@@ -23,7 +23,7 @@ class NetworkServicePolicyChecker(BaseChecker):
             if self.session:
                 iam = self.session.client('iam')
             else:
-                iam = boto3.client('iam')
+                iam = self.session.client('iam')
             
             # 원본 로직: 과도한 권한 정책 목록
             overly_permissive_policies = {

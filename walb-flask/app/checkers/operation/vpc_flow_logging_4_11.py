@@ -28,7 +28,7 @@ class VpcFlowLoggingChecker(BaseChecker):
         - 모든 VPC에서 Flow Logs가 활성화되어 있는지 확인
         """
         print("[INFO] 4.11 VPC 플로우 로깅 설정 체크 중...")
-        ec2 = boto3.client('ec2')
+        ec2 = self.session.client('ec2')
 
         try:
             all_vpcs = {vpc['VpcId'] for vpc in ec2.describe_vpcs()['Vpcs']}
@@ -88,7 +88,7 @@ class VpcFlowLoggingChecker(BaseChecker):
         print("[FIX] 4.11 VPC Flow Logs 설정 조치를 시작합니다.")
         print("→ 각 VPC에 대해 별도 로그 그룹을 생성하고, 공통 IAM 역할을 사용합니다.\n")
 
-        ec2 = boto3.client('ec2')
+        ec2 = self.session.client('ec2')
         iam_role_arn = self._get_or_create_common_iam_role()
         if not iam_role_arn:
             print("     [ERROR] IAM 역할 생성 실패로 인해 조치를 중단합니다.")
@@ -145,7 +145,7 @@ class VpcFlowLoggingChecker(BaseChecker):
 
     def _create_log_group_if_needed(self, log_group_name):
         """필요시 CloudWatch 로그 그룹 생성"""
-        logs = boto3.client('logs')
+        logs = self.session.client('logs')
         try:
             result = logs.describe_log_groups(logGroupNamePrefix=log_group_name)
             exists = any(g['logGroupName'] == log_group_name for g in result.get('logGroups', []))
@@ -160,7 +160,7 @@ class VpcFlowLoggingChecker(BaseChecker):
 
     def _get_or_create_common_iam_role(self):
         """공통 IAM 역할 생성 또는 기존 역할 사용"""
-        iam = boto3.client('iam')
+        iam = self.session.client('iam')
         role_name = "FlowLogsCommonRole"
         trust_policy = {
             "Version": "2012-10-17",

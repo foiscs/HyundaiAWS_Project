@@ -31,7 +31,7 @@ class LogRetentionPeriodChecker(BaseChecker):
         if self.session:
             logs = self.session.client('logs')
         else:
-            logs = boto3.client('logs')
+            logs = self.session.client('logs')
             
         short_retention_groups = []
 
@@ -102,7 +102,7 @@ class LogRetentionPeriodChecker(BaseChecker):
         if self.session:
             logs = self.session.client('logs')
         else:
-            logs = boto3.client('logs')
+            logs = self.session.client('logs')
             
         results = []
         

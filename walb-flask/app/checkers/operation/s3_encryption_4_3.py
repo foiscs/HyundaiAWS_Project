@@ -26,7 +26,7 @@ class S3EncryptionChecker(BaseChecker):
         - S3 버킷에 기본 암호화가 설정되어 있는지 점검하고, 미설정 버킷 목록을 반환
         """
         print("[INFO] 4.3 S3 암호화 설정 체크 중...")
-        s3 = boto3.client('s3')
+        s3 = self.session.client('s3')
         unencrypted_buckets = []
 
         try:
@@ -95,7 +95,7 @@ class S3EncryptionChecker(BaseChecker):
             return {'status': 'no_action', 'message': 'S3 암호화 조치가 필요한 버킷이 없습니다.'}
 
         unencrypted_buckets = diagnosis_result['unencrypted_buckets']
-        s3 = boto3.client('s3')
+        s3 = self.session.client('s3')
         results = []
         
         print("[FIX] 4.3 기본 암호화가 없는 S3 버킷에 대한 조치를 시작합니다.")

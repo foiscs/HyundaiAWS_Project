@@ -26,7 +26,7 @@ class EksControlPlaneLoggingChecker(BaseChecker):
         - 모든 EKS 클러스터에서 5개 로그(api, audit, authenticator, controllerManager, scheduler)가 활성화되어 있는지 점검
         """
         print("[INFO] 4.14 EKS Cluster 제어 플레인 로깅 설정 체크 중...")
-        eks = boto3.client('eks')
+        eks = self.session.client('eks')
 
         try:
             clusters = eks.list_clusters().get('clusters', [])
@@ -117,7 +117,7 @@ class EksControlPlaneLoggingChecker(BaseChecker):
             return {'status': 'no_action', 'message': 'EKS 제어 플레인 로깅 조치가 필요한 항목이 없습니다.'}
 
         non_compliant_clusters = diagnosis_result['findings']
-        eks = boto3.client('eks')
+        eks = self.session.client('eks')
         all_types = ['api', 'audit', 'authenticator', 'controllerManager', 'scheduler']
         print("[FIX] 4.14 EKS 제어 플레인 로깅 활성화 조치를 시작합니다.")
 

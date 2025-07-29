@@ -27,8 +27,8 @@ class InstanceLoggingChecker(BaseChecker):
         print("[INFO] 4.8 인스턴스 로깅 설정 체크 중...")
         
         try:
-            logs_client = boto3.client('logs')
-            ec2_client = boto3.client('ec2')
+            logs_client = self.session.client('logs')
+            ec2_client = self.session.client('ec2')
 
             # 1. 모든 CloudWatch 로그 그룹 이름 수집
             log_groups = []

@@ -76,7 +76,7 @@ class EksPodSecurityPolicyChecker(BaseChecker):
     def _get_eks_clusters(self):
         """EKS 클러스터 목록 조회"""
         try:
-            eks = boto3.client('eks')
+            eks = self.session.client('eks')
             cluster_names = eks.list_clusters()['clusters']
             
             clusters = []

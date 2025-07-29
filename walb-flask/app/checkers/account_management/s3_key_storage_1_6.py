@@ -23,7 +23,7 @@ class S3KeyStorageChecker(BaseChecker):
             if self.session:
                 s3 = self.session.client('s3')
             else:
-                s3 = boto3.client('s3')
+                s3 = self.session.client('s3')
             
             risky_key_files = []
             all_buckets = []
@@ -284,7 +284,7 @@ class S3KeyStorageChecker(BaseChecker):
             if self.session:
                 s3 = self.session.client('s3')
             else:
-                s3 = boto3.client('s3')
+                s3 = self.session.client('s3')
             
             results = []
             

@@ -23,7 +23,7 @@ class IAMGroupChecker(BaseChecker):
             if self.session:
                 iam = self.session.client('iam')
             else:
-                iam = boto3.client('iam')
+                iam = self.session.client('iam')
             
             ungrouped_users = []
             all_users = []
@@ -172,7 +172,7 @@ class IAMGroupChecker(BaseChecker):
             if self.session:
                 iam = self.session.client('iam')
             else:
-                iam = boto3.client('iam')
+                iam = self.session.client('iam')
             
             results = []
             default_group_name = 'ReadOnlyUsers'

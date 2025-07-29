@@ -26,7 +26,7 @@ class RdsSubnetAzChecker(BaseChecker):
         - 각 RDS DB 서브넷 그룹이 어떤 가용 영역(AZ)들로 구성되어 있는지 정보를 출력하여 관리자가 직접 판단하도록 안내
         """
         print("[INFO] 3.8 RDS 서브넷 가용 영역 관리 체크 중...")
-        rds = boto3.client('rds')
+        rds = self.session.client('rds')
         subnet_groups_to_review = []
         subnet_group_details = []
 

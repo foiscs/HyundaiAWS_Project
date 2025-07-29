@@ -30,7 +30,7 @@ class SecurityGroupUnnecessaryPolicyChecker(BaseChecker):
             if self.session:
                 ec2 = self.session.client('ec2')
             else:
-                ec2 = boto3.client('ec2')
+                ec2 = self.session.client('ec2')
                 
             deletable = []
 
@@ -109,7 +109,7 @@ class SecurityGroupUnnecessaryPolicyChecker(BaseChecker):
 
         # 3. RDS
         try:
-            rds = boto3.client('rds') if not self.session else self.session.client('rds')
+            rds = self.session.client('rds') if not self.session else self.session.client('rds')
             rds_instances = rds.describe_db_instances()
             for db in rds_instances['DBInstances']:
                 if any(sg['VpcSecurityGroupId'] == sg_id for sg in db.get('VpcSecurityGroups', [])):
@@ -119,7 +119,7 @@ class SecurityGroupUnnecessaryPolicyChecker(BaseChecker):
 
         # 4. ELB
         try:
-            elb = boto3.client('elbv2') if not self.session else self.session.client('elbv2')
+            elb = self.session.client('elbv2') if not self.session else self.session.client('elbv2')
             elbs = elb.describe_load_balancers()
             for lb in elbs['LoadBalancers']:
                 if sg_id in lb.get('SecurityGroups', []):
@@ -129,7 +129,7 @@ class SecurityGroupUnnecessaryPolicyChecker(BaseChecker):
 
         # 5. Lambda
         try:
-            lam = boto3.client('lambda') if not self.session else self.session.client('lambda')
+            lam = self.session.client('lambda') if not self.session else self.session.client('lambda')
             funcs = lam.list_functions()['Functions']
             for fn in funcs:
                 cfg = lam.get_function_configuration(FunctionName=fn['FunctionName'])
@@ -238,7 +238,7 @@ class SecurityGroupUnnecessaryPolicyChecker(BaseChecker):
             if self.session:
                 ec2 = self.session.client('ec2')
             else:
-                ec2 = boto3.client('ec2')
+                ec2 = self.session.client('ec2')
         except Exception as e:
             return [{
                 'item': 'connection_error',

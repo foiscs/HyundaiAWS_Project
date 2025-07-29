@@ -26,7 +26,7 @@ class RdsEncryptionChecker(BaseChecker):
         - 암호화되지 않은 RDS DB 인스턴스/클러스터를 점검하고 목록을 반환
         """
         print("[INFO] 4.2 RDS 암호화 설정 체크 중...")
-        rds = boto3.client('rds')
+        rds = self.session.client('rds')
         unencrypted_resources = []
         unencrypted_details = []
         total_resources = 0  # 전체 리소스 수 추적

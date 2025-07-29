@@ -26,7 +26,7 @@ class InternetGatewayConnectionChecker(BaseChecker):
         - 어떤 VPC에도 연결되지 않은 'detached' 상태의 인터넷 게이트웨이를 점검하고, 해당 ID 및 이름 목록 반환
         """
         print("[INFO] 3.5 인터넷 게이트웨이 연결 관리 체크 중...")
-        ec2 = boto3.client('ec2')
+        ec2 = self.session.client('ec2')
         detached_igws = []
 
         try:
@@ -88,7 +88,7 @@ class InternetGatewayConnectionChecker(BaseChecker):
             return {'status': 'no_action', 'message': '삭제할 인터넷 게이트웨이가 없습니다.'}
 
         detached_igws = diagnosis_result['detached_igws']
-        ec2 = boto3.client('ec2')
+        ec2 = self.session.client('ec2')
         results = []
         
         print("[FIX] 3.5 연결되지 않은 인터넷 게이트웨이에 대한 조치를 시작합니다.")
