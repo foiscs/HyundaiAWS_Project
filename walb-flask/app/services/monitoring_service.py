@@ -763,6 +763,8 @@ done
                 ssh_command,
                 capture_output=True,
                 text=True,
+                encoding='utf-8',
+                errors='ignore',  # 인코딩 에러 무시
                 timeout=60
             )
             
@@ -789,9 +791,24 @@ done
         from datetime import datetime, timezone
         import re
         
+        # 계정 ID 안전하게 추출
+        account_id = 'unknown'
+        try:
+            log_files_str = str(log_files.values())
+            if '/' in log_files_str:
+                path_parts = log_files_str.split('/')
+                if len(path_parts) >= 2:
+                    # /var/log/splunk/253157413163/cloudtrail.log 형태에서 계정 ID 추출
+                    for part in path_parts:
+                        if part.isdigit() and len(part) == 12:  # AWS 계정 ID는 12자리 숫자
+                            account_id = part
+                            break
+        except Exception:
+            account_id = 'unknown'
+        
         result = {
             'success': True,
-            'account_id': output.split('/')[-2] if '/' in str(log_files.values()) else 'unknown',
+            'account_id': account_id,
             'log_files': {},
             'overall_health': 0,
             'total_size': 0,

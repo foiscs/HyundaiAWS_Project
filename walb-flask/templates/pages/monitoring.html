@@ -140,7 +140,7 @@
                 <span id="serviceCardTitle">Kinesis 로그 수집 서비스</span>
             </h2>
             <div class="service-status-indicator" id="serviceStatusIndicator" style="display: none">
-                <span class="badge" id="serviceStatusBadge">확인 중...</span>
+                <span class="badge" id="serviceStatusBadgeNew">확인 중...</span>
             </div>
         </div>
 
@@ -1147,13 +1147,21 @@
 
     // Kinesis 서비스 상태 확인 및 UI 업데이트
     async function checkKinesisServiceStatus() {
-        if (!ACCOUNT_ID) return;
+        if (!ACCOUNT_ID) {
+            console.log('DEBUG: ACCOUNT_ID가 없습니다');
+            return;
+        }
+
+        console.log('DEBUG: Kinesis 서비스 상태 확인 시작, ACCOUNT_ID:', ACCOUNT_ID);
 
         try {
             const response = await fetch(`/monitoring/kinesis/service-status/${ACCOUNT_ID}`);
             const result = await response.json();
 
+            console.log('DEBUG: Kinesis 상태 응답:', result);
+
             if (result.success) {
+                console.log('DEBUG: updateKinesisServiceUI 호출, installation_complete:', result.installation_complete);
                 updateKinesisServiceUI(result);
             } else {
                 console.error('Kinesis 서비스 상태 확인 실패:', result.error);
@@ -1169,16 +1177,27 @@
 
     // Kinesis 서비스 UI 업데이트
     function updateKinesisServiceUI(serviceData) {
+        console.log('DEBUG: updateKinesisServiceUI 시작, serviceData:', serviceData);
+        
         const statusIndicator = document.getElementById('serviceStatusIndicator');
-        const statusBadge = document.getElementById('serviceStatusBadge');
+        const statusBadge = document.getElementById('serviceStatusBadgeNew');
         const cardTitle = document.getElementById('serviceCardTitle');
         const installSection = document.getElementById('serviceInstallSection');
         const manageSection = document.getElementById('serviceManageSection');
 
+        console.log('DEBUG: HTML 요소들:', {
+            statusIndicator: !!statusIndicator,
+            statusBadge: !!statusBadge,
+            cardTitle: !!cardTitle,
+            installSection: !!installSection,
+            manageSection: !!manageSection
+        });
+
         // 상태 표시기 업데이트
-        statusIndicator.style.display = 'block';
+        if (statusIndicator) statusIndicator.style.display = 'block';
 
         if (serviceData.installation_complete) {
+            console.log('DEBUG: 서비스 설치 완료 - 관리 섹션 표시');
             // 서비스가 설치된 경우
             cardTitle.textContent = 'Kinesis 로그 수집 서비스 관리';
             installSection.style.display = 'none';
