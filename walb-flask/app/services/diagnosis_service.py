@@ -36,19 +36,23 @@ class DiagnosisService:
             boto3.Session or None: AWS 세션 객체
         """
         try:
+            # 디버깅: 리전 정보 확인
+            region = getattr(account, 'primary_region', 'ap-northeast-2') or 'ap-northeast-2'
+            print(f"AWS 세션 생성 디버그: region={region}, connection_type={account.connection_type}")
+            
             if account.connection_type == 'role':
                 # Cross-Account Role 방식
                 return self.aws_handler.create_session_from_role(
                     role_arn=account.role_arn,
                     external_id=account.external_id,
-                    region=account.primary_region
+                    region=region
                 )
             else:
                 # Access Key 방식
                 return self.aws_handler.create_session_from_keys(
                     access_key_id=account.access_key_id,
                     secret_access_key=account.secret_access_key,
-                    region=account.primary_region
+                    region=region
                 )
                 
         except Exception as e:
