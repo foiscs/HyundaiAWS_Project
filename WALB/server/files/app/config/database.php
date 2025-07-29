@@ -56,19 +56,39 @@ if (($_ENV['APP_DEBUG'] ?? 'false') === 'true') {
 }
 
 try {
-    $dsn = "pgsql:host={$db_host};port={$db_port};dbname={$db_name}";
+    // 연결 시간 측정 시작
+    $connection_start = microtime(true);
+    
+    // DSN에 연결 최적화 옵션 추가
+    $dsn = "pgsql:host={$db_host};port={$db_port};dbname={$db_name};connect_timeout=10;application_name=walb_app";
+    
     $options = [
         PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
         PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
         PDO::ATTR_EMULATE_PREPARES => false,
-        PDO::ATTR_TIMEOUT => 30,
-        PDO::ATTR_PERSISTENT => true
+        PDO::ATTR_TIMEOUT => 10,  // 30초에서 10초로 단축
+        PDO::ATTR_PERSISTENT => false,  // 컨테이너 환경에서는 persistent 연결 비활성화
+        PDO::PGSQL_ATTR_DISABLE_PREPARES => true  // prepare 오버헤드 제거
     ];
     
     $pdo = new PDO($dsn, $db_user, $db_password, $options);
     
-    // 연결 테스트
+    // PostgreSQL 세션 최적화 설정
+    $pdo->exec("SET statement_timeout = '30s'");
+    $pdo->exec("SET lock_timeout = '10s'");
+    $pdo->exec("SET idle_in_transaction_session_timeout = '60s'");
+    
+    // 연결 테스트 및 시간 측정
+    $query_start = microtime(true);
     $pdo->query("SELECT 1");
+    $query_time = (microtime(true) - $query_start) * 1000;
+    
+    $connection_time = (microtime(true) - $connection_start) * 1000;
+    
+    // 디버그 정보 (개발 환경에서만)
+    if (($_ENV['APP_DEBUG'] ?? 'false') === 'true') {
+        error_log("DB Connection Time: {$connection_time}ms, Query Time: {$query_time}ms");
+    }
     
 } catch(PDOException $e) {
     // 상세한 에러 정보 로깅
