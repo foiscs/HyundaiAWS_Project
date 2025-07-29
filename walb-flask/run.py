@@ -5,7 +5,7 @@ import os
 from app import create_app
 
 # 환경 설정
-config_name = os.environ.get('FLASK_ENV', 'default')
+config_name = os.environ.get('FLASK_ENV', 'production')
 app = create_app(config_name)
 
 if __name__ == '__main__':
