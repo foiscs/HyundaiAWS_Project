@@ -10,20 +10,6 @@ on:
       - 'WALB/server2/**'
       - '.github/workflows/deploy-app2.yml'
 
-env:
-  PROJECT_NAME: ${{ vars.PROJECT_NAME }}
-  DB_NAME: ${{ vars.DB_NAME }}
-  DB_USER: ${{ vars.DB_USER }}
-  DB_PORT: ${{ vars.DB_PORT }}
-  DB_RDS_IDENTIFIER: ${{ vars.DB_RDS_IDENTIFIER }}
-  EKS_CLUSTER_NAME: ${{ vars.EKS_CLUSTER_NAME }}
-  S3_BUCKET_NAME: ${{ vars.S3_BUCKET_NAME }}
-  IAM_ROLE_NAME: ${{ vars.IAM_ROLE_NAME }}
-  BASTION_HOST_TAG: ${{ vars.BASTION_HOST_TAG }}
-  DEPLOYMENT_NAME: ${{ vars.DEPLOYMENT_NAME }}
-  IMAGE_NAME: ${{ vars.IMAGE_NAME }}
-  HEALTH_CHECK_PATH: ${{ vars.HEALTH_CHECK_PATH }}
-  AWS_REGION: ${{ vars.AWS_REGION }}
   
 jobs:
   build-and-deploy:
@@ -44,6 +30,52 @@ jobs:
     # ===============================================
     - name: Checkout code
       uses: actions/checkout@v4
+    
+    # ===============================================
+    # app2-config.yml에서 설정값 로드
+    # ===============================================
+    - name: Load config from app2-config.yml
+      run: |
+        echo "📋 app2-config.yml에서 설정값 로드 중..."
+        
+        # yq 설치
+        sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
+        sudo chmod +x /usr/local/bin/yq
+        
+        # app2-config.yml에서 값 읽기
+        PROJECT_NAME=$(yq eval '.app2_config.project_name' .github/workflows/config/app2-config.yml)
+        DB_NAME=$(yq eval '.app2_config.database.name' .github/workflows/config/app2-config.yml)
+        DB_USER=$(yq eval '.app2_config.database.user' .github/workflows/config/app2-config.yml)
+        DB_PORT=$(yq eval '.app2_config.database.port' .github/workflows/config/app2-config.yml)
+        DB_RDS_IDENTIFIER=$(yq eval '.app2_config.database.rds_identifier' .github/workflows/config/app2-config.yml)
+        EKS_CLUSTER_NAME=$(yq eval '.app2_config.eks.cluster_name' .github/workflows/config/app2-config.yml)
+        S3_BUCKET_NAME=$(yq eval '.app2_config.s3.bucket_name' .github/workflows/config/app2-config.yml)
+        IAM_ROLE_NAME=$(yq eval '.app2_config.iam.role_name' .github/workflows/config/app2-config.yml)
+        BASTION_HOST_TAG=$(yq eval '.app2_config.bastion.host_tag_name' .github/workflows/config/app2-config.yml)
+        DEPLOYMENT_NAME=$(yq eval '.app2_config.application.deployment_name' .github/workflows/config/app2-config.yml)
+        IMAGE_NAME=$(yq eval '.app2_config.application.image_name' .github/workflows/config/app2-config.yml)
+        HEALTH_CHECK_PATH=$(yq eval '.app2_config.application.health_check_path' .github/workflows/config/app2-config.yml)
+        AWS_REGION=$(yq eval '.app2_config.network.region' .github/workflows/config/app2-config.yml)
+        
+        # 환경변수로 설정
+        echo "PROJECT_NAME=$PROJECT_NAME" >> $GITHUB_ENV
+        echo "DB_NAME=$DB_NAME" >> $GITHUB_ENV
+        echo "DB_USER=$DB_USER" >> $GITHUB_ENV
+        echo "DB_PORT=$DB_PORT" >> $GITHUB_ENV
+        echo "DB_RDS_IDENTIFIER=$DB_RDS_IDENTIFIER" >> $GITHUB_ENV
+        echo "EKS_CLUSTER_NAME=$EKS_CLUSTER_NAME" >> $GITHUB_ENV
+        echo "S3_BUCKET_NAME=$S3_BUCKET_NAME" >> $GITHUB_ENV
+        echo "IAM_ROLE_NAME=$IAM_ROLE_NAME" >> $GITHUB_ENV
+        echo "BASTION_HOST_TAG=$BASTION_HOST_TAG" >> $GITHUB_ENV
+        echo "DEPLOYMENT_NAME=$DEPLOYMENT_NAME" >> $GITHUB_ENV
+        echo "IMAGE_NAME=$IMAGE_NAME" >> $GITHUB_ENV
+        echo "HEALTH_CHECK_PATH=$HEALTH_CHECK_PATH" >> $GITHUB_ENV
+        echo "AWS_REGION=$AWS_REGION" >> $GITHUB_ENV
+        
+        echo "✅ 설정값 로드 완료"
+        echo "PROJECT_NAME: $PROJECT_NAME"
+        echo "DB_NAME: $DB_NAME"
+        echo "AWS_REGION: $AWS_REGION"
     
     # ===============================================
     # Java 및 Maven 환경 설정
@@ -918,7 +950,7 @@ jobs:
             kubectl get pods -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller
             
             # Pod 상태 확인
-            local running_pods=$(kubectl get pods -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller --field-selector=status.phase=Running --no-headers | wc -l)
+            running_pods=$(kubectl get pods -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller --field-selector=status.phase=Running --no-headers | wc -l)
             if [ "$running_pods" -eq 0 ]; then
               echo "⚠️ AWS Load Balancer Controller Pod가 Running 상태가 아닙니다. 재시작 중..."
               kubectl rollout restart deployment -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller
@@ -947,7 +979,7 @@ jobs:
           sleep 10
           
           # ValidatingAdmissionWebhook 확인
-          local webhook_ready=false
+          webhook_ready=false
           for i in {1..6}; do
             if kubectl get validatingwebhookconfigurations | grep -E "(vingress|aws-load-balancer)" >/dev/null 2>&1; then
               echo "✅ ValidatingWebhookConfiguration 확인됨"
@@ -1163,7 +1195,7 @@ jobs:
             fi
             
             # Ingress finalizer 상태 확인
-            local ingress_finalizers=$(kubectl get ingress ${{ env.PROJECT_NAME }}-ingress -n ${{ env.PROJECT_NAME }} -o jsonpath='{.metadata.finalizers}' 2>/dev/null || echo "")
+            ingress_finalizers=$(kubectl get ingress ${{ env.PROJECT_NAME }}-ingress -n ${{ env.PROJECT_NAME }} -o jsonpath='{.metadata.finalizers}' 2>/dev/null || echo "")
             if [[ -z "$ingress_finalizers" ]]; then
               echo "⚠️ Ingress finalizer가 설정되지 않았습니다. AWS Load Balancer Controller 상태 확인 중..."
               kubectl describe ingress ${{ env.PROJECT_NAME }}-ingress -n ${{ env.PROJECT_NAME }} | grep -A 10 "Events:" || true
@@ -1234,7 +1266,7 @@ jobs:
               kubectl describe ingress ${{ env.PROJECT_NAME }}-ingress -n ${{ env.PROJECT_NAME }} || true
               
               echo "🔍 Ingress finalizer 상태 재확인:"
-              local final_finalizers=$(kubectl get ingress ${{ env.PROJECT_NAME }}-ingress -n ${{ env.PROJECT_NAME }} -o jsonpath='{.metadata.finalizers}' 2>/dev/null || echo "NONE")
+              final_finalizers=$(kubectl get ingress ${{ env.PROJECT_NAME }}-ingress -n ${{ env.PROJECT_NAME }} -o jsonpath='{.metadata.finalizers}' 2>/dev/null || echo "NONE")
               echo "Finalizers: $final_finalizers"
               
               if [[ "$final_finalizers" == *"ingress.k8s.aws/resources"* ]]; then
@@ -1258,7 +1290,7 @@ jobs:
               kubectl describe ingressclass alb || true
               
               echo "🔍 ValidatingWebhookConfiguration 확인:"
-              local webhook_status=$(kubectl get validatingwebhookconfigurations | grep -E "(vingress|aws-load-balancer)" || echo "웹훅 없음")
+              webhook_status=$(kubectl get validatingwebhookconfigurations | grep -E "(vingress|aws-load-balancer)" || echo "웹훅 없음")
               echo "Webhook 상태: $webhook_status"
               
               if [[ "$webhook_status" == "웹훅 없음" ]]; then

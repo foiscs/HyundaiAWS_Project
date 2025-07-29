@@ -1,17 +1,14 @@
-# .github/workflows/deploy-app.yml
-# PHP 애플리케이션 배포 워크플로우 (server 폴더 변경시만 실행)
+# .github/workflows/deploy-app1.yml
+# PHP 애플리케이션 배포 워크플로우 (server1 폴더 변경시만 실행)
 
-name: Deploy PHP Application
+name: Deploy PHP Application 1
 
 on:
   push:
     branches: [ main ]
     paths:
-      - 'WALB/server/**'
-      - '.github/workflows/deploy-app.yml'
-
-env:
-  PROJECT_NAME: "walb-app"
+      - 'WALB/server1/**'
+      - '.github/workflows/deploy-app1.yml'
   
 jobs:
   build-and-deploy:
@@ -34,6 +31,52 @@ jobs:
       uses: actions/checkout@v4
     
     # ===============================================
+    # app1-config.yml에서 설정값 로드
+    # ===============================================
+    - name: Load config from app1-config.yml
+      run: |
+        echo "📋 app1-config.yml에서 설정값 로드 중..."
+        
+        # yq 설치
+        sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
+        sudo chmod +x /usr/local/bin/yq
+        
+        # app1-config.yml에서 값 읽기
+        PROJECT_NAME=$(yq eval '.app1_config.project_name' .github/workflows/config/app1-config.yml)
+        DB_NAME=$(yq eval '.app1_config.database.name' .github/workflows/config/app1-config.yml)
+        DB_USER=$(yq eval '.app1_config.database.user' .github/workflows/config/app1-config.yml)
+        DB_PORT=$(yq eval '.app1_config.database.port' .github/workflows/config/app1-config.yml)
+        DB_RDS_IDENTIFIER=$(yq eval '.app1_config.database.rds_identifier' .github/workflows/config/app1-config.yml)
+        EKS_CLUSTER_NAME=$(yq eval '.app1_config.eks.cluster_name' .github/workflows/config/app1-config.yml)
+        S3_BUCKET_NAME=$(yq eval '.app1_config.s3.bucket_name' .github/workflows/config/app1-config.yml)
+        IAM_ROLE_NAME=$(yq eval '.app1_config.iam.role_name' .github/workflows/config/app1-config.yml)
+        BASTION_HOST_TAG=$(yq eval '.app1_config.bastion.host_tag_name' .github/workflows/config/app1-config.yml)
+        DEPLOYMENT_NAME=$(yq eval '.app1_config.application.deployment_name' .github/workflows/config/app1-config.yml)
+        IMAGE_NAME=$(yq eval '.app1_config.application.image_name' .github/workflows/config/app1-config.yml)
+        HEALTH_CHECK_PATH=$(yq eval '.app1_config.application.health_check_path' .github/workflows/config/app1-config.yml)
+        AWS_REGION=$(yq eval '.app1_config.network.region' .github/workflows/config/app1-config.yml)
+        
+        # 환경변수로 설정
+        echo "PROJECT_NAME=$PROJECT_NAME" >> $GITHUB_ENV
+        echo "DB_NAME=$DB_NAME" >> $GITHUB_ENV
+        echo "DB_USER=$DB_USER" >> $GITHUB_ENV
+        echo "DB_PORT=$DB_PORT" >> $GITHUB_ENV
+        echo "DB_RDS_IDENTIFIER=$DB_RDS_IDENTIFIER" >> $GITHUB_ENV
+        echo "EKS_CLUSTER_NAME=$EKS_CLUSTER_NAME" >> $GITHUB_ENV
+        echo "S3_BUCKET_NAME=$S3_BUCKET_NAME" >> $GITHUB_ENV
+        echo "IAM_ROLE_NAME=$IAM_ROLE_NAME" >> $GITHUB_ENV
+        echo "BASTION_HOST_TAG=$BASTION_HOST_TAG" >> $GITHUB_ENV
+        echo "DEPLOYMENT_NAME=$DEPLOYMENT_NAME" >> $GITHUB_ENV
+        echo "IMAGE_NAME=$IMAGE_NAME" >> $GITHUB_ENV
+        echo "HEALTH_CHECK_PATH=$HEALTH_CHECK_PATH" >> $GITHUB_ENV
+        echo "AWS_REGION=$AWS_REGION" >> $GITHUB_ENV
+        
+        echo "✅ 설정값 로드 완료"
+        echo "PROJECT_NAME: $PROJECT_NAME"
+        echo "DB_NAME: $DB_NAME"
+        echo "AWS_REGION: $AWS_REGION"
+    
+    # ===============================================
     # PHP 및 Composer 환경 설정
     # ===============================================
     - name: Set up PHP
@@ -46,8 +89,8 @@ jobs:
     - name: Validate Composer
       run: |
         echo "🔍 PHP 애플리케이션 검증 중..."
-        if [ -f "server/composer.json" ]; then
-          cd server
+        if [ -f "server1/composer.json" ]; then
+          cd server1
           composer validate --no-check-publish
           composer install --no-dev --optimize-autoloader --no-interaction
           echo "✅ Composer 검증 완료"
@@ -82,8 +125,8 @@ jobs:
         echo "ECR_REPOSITORY=$ECR_REPO" >> $GITHUB_ENV
         echo "✅ ECR Repository: $ECR_REPO"
         
-        # EKS 클러스터 이름 조회
-        EKS_CLUSTER=$(aws eks describe-cluster --name walb-eks-cluster --query 'cluster.name' --output text 2>/dev/null || echo "")
+        # EKS 클러스터 이름 조회  
+        EKS_CLUSTER=$(aws eks describe-cluster --name $EKS_CLUSTER_NAME --query 'cluster.name' --output text 2>/dev/null || echo "")
         if [ -z "$EKS_CLUSTER" ] || [ "$EKS_CLUSTER" == "None" ]; then
           echo "❌ EKS 클러스터를 찾을 수 없습니다: ${PROJECT_NAME}-eks"
           echo "먼저 인프라 배포가 필요합니다."
@@ -92,8 +135,8 @@ jobs:
         echo "EKS_CLUSTER_NAME=$EKS_CLUSTER" >> $GITHUB_ENV
         echo "✅ EKS Cluster: $EKS_CLUSTER"
         
-        # RDS 엔드포인트 조회 (walb-rds-database 직접 조회)
-        RDS_ENDPOINT=$(aws rds describe-db-instances --db-instance-identifier walb-rds-database --query 'DBInstances[0].Endpoint.Address' --output text 2>/dev/null || echo "")
+        # RDS 엔드포인트 조회
+        RDS_ENDPOINT=$(aws rds describe-db-instances --db-instance-identifier $DB_RDS_IDENTIFIER --query 'DBInstances[0].Endpoint.Address' --output text 2>/dev/null || echo "")
         if [ -z "$RDS_ENDPOINT" ] || [ "$RDS_ENDPOINT" == "None" ]; then
           echo "❌ RDS 인스턴스를 찾을 수 없습니다"
           echo "먼저 인프라 배포가 필요합니다."
@@ -152,7 +195,7 @@ jobs:
         # RDS 엔드포인트 조회 (walb-app 프로젝트용)
         echo "🔍 RDS 인스턴스 조회 중..."
         DB_HOST=$(aws rds describe-db-instances \
-          --db-instance-identifier walb-rds-database \
+          --db-instance-identifier $DB_RDS_IDENTIFIER \
           --query "DBInstances[0].Endpoint.Address" \
           --output text 2>/dev/null || echo "")
         
@@ -356,7 +399,7 @@ jobs:
         DB_HOST_CLEAN=$(echo "$DB_HOST" | sed 's/\*\*\*[^.]*//g' | sed 's/\.\././g')
         if [[ "$DB_HOST_CLEAN" != "$DB_HOST" ]]; then
           echo "⚠️ DB_HOST에 마스킹된 값이 포함되어 있습니다. 실제 엔드포인트로 대체합니다."
-          DB_HOST="walb-rds-database.cx02kko4cplr.ap-northeast-2.rds.amazonaws.com"
+          DB_HOST="$RDS_ENDPOINT"
         fi
         
         echo "🔍 사용할 DB 엔드포인트: $DB_HOST"
@@ -471,7 +514,7 @@ jobs:
         
         echo "✅ 데이터베이스 연결 테스트 완료"
       env:
-        PROJECT_NAME: "walb-app"
+        PROJECT_NAME: ${{ env.PROJECT_NAME }}
         
     # ===============================================
     # PostgreSQL 클라이언트 설치 및 스키마 적용
@@ -748,7 +791,7 @@ jobs:
             -p $LOCAL_PORT \
             -U "$DB_USER" \
             -d "$DB_NAME" \
-            -f server/files/schema.sql \
+            -f server1/files/schema.sql \
             -v ON_ERROR_STOP=1; then
             echo "✅ 스키마 적용 완료"
           else
@@ -804,7 +847,7 @@ jobs:
 
           # 방법 2: 특정 이름으로 조회
           if [ -z "$EKS_CLUSTER_NAME" ] || [ "$EKS_CLUSTER_NAME" == "None" ]; then
-            EKS_CLUSTER_NAME="walb-eks-cluster"
+            EKS_CLUSTER_NAME="${{ env.EKS_CLUSTER_NAME }}"
             echo "기본 클러스터 이름 사용: $EKS_CLUSTER_NAME"
           fi
 
@@ -985,7 +1028,7 @@ jobs:
             kubectl get pods -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller
             
             # Pod 상태 확인
-            local running_pods=$(kubectl get pods -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller --field-selector=status.phase=Running --no-headers | wc -l)
+            running_pods=$(kubectl get pods -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller --field-selector=status.phase=Running --no-headers | wc -l)
             if [ "$running_pods" -eq 0 ]; then
               echo "⚠️ AWS Load Balancer Controller Pod가 Running 상태가 아닙니다. 재시작 중..."
               kubectl rollout restart deployment -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller
@@ -1014,7 +1057,7 @@ jobs:
           sleep 10
           
           # ValidatingAdmissionWebhook 확인
-          local webhook_ready=false
+          webhook_ready=false
           for i in {1..6}; do
             if kubectl get validatingwebhookconfigurations | grep -E "(vingress|aws-load-balancer)" >/dev/null 2>&1; then
               echo "✅ ValidatingWebhookConfiguration 확인됨"
@@ -1067,11 +1110,11 @@ jobs:
           echo "  namespace: ${{ env.PROJECT_NAME }}" >> configmap.yaml
           echo "data:" >> configmap.yaml
           echo '  DB_HOST: "${{ env.RDS_ENDPOINT }}"' >> configmap.yaml
-          echo '  DB_PORT: "5432"' >> configmap.yaml
-          echo '  DB_NAME: "mydb"' >> configmap.yaml
-          echo '  DB_USER: "dbadmin"' >> configmap.yaml
+          echo "  DB_PORT: \"${{ env.DB_PORT }}\"" >> configmap.yaml
+          echo "  DB_NAME: \"${{ env.DB_NAME }}\"" >> configmap.yaml
+          echo "  DB_USER: \"${{ env.DB_USER }}\"" >> configmap.yaml
           echo '  AWS_REGION: "${{ secrets.AWS_REGION }}"' >> configmap.yaml
-          echo '  AWS_S3_BUCKET: "walb-app-files"' >> configmap.yaml
+          echo "  AWS_S3_BUCKET: \"${{ env.S3_BUCKET_NAME }}\"" >> configmap.yaml
           echo '  AWS_S3_REGION: "${{ secrets.AWS_REGION }}"' >> configmap.yaml
           echo '  STORAGE_TYPE: "s3"' >> configmap.yaml
           echo '  APP_ENV: "production"' >> configmap.yaml
@@ -1214,7 +1257,7 @@ jobs:
           echo "  name: ${{ env.PROJECT_NAME }}-service-account" >> serviceaccount.yaml
           echo "  namespace: ${{ env.PROJECT_NAME }}" >> serviceaccount.yaml
           echo "  annotations:" >> serviceaccount.yaml
-          echo "    eks.amazonaws.com/role-arn: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/walb-app-eks-app-role" >> serviceaccount.yaml
+          echo "    eks.amazonaws.com/role-arn: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/${{ env.IAM_ROLE_NAME }}" >> serviceaccount.yaml
 
           echo "✅ 매니페스트 파일 생성 완료"
 
@@ -1256,7 +1299,7 @@ jobs:
             fi
             
             # Ingress finalizer 상태 확인
-            local ingress_finalizers=$(kubectl get ingress ${{ env.PROJECT_NAME }}-ingress -n ${{ env.PROJECT_NAME }} -o jsonpath='{.metadata.finalizers}' 2>/dev/null || echo "")
+            ingress_finalizers=$(kubectl get ingress ${{ env.PROJECT_NAME }}-ingress -n ${{ env.PROJECT_NAME }} -o jsonpath='{.metadata.finalizers}' 2>/dev/null || echo "")
             if [[ -z "$ingress_finalizers" ]]; then
               echo "⚠️ Ingress finalizer가 설정되지 않았습니다. AWS Load Balancer Controller 상태 확인 중..."
               kubectl describe ingress ${{ env.PROJECT_NAME }}-ingress -n ${{ env.PROJECT_NAME }} | grep -A 10 "Events:" || true
@@ -1327,7 +1370,7 @@ jobs:
               kubectl describe ingress ${{ env.PROJECT_NAME }}-ingress -n ${{ env.PROJECT_NAME }} || true
               
               echo "🔍 Ingress finalizer 상태 재확인:"
-              local final_finalizers=$(kubectl get ingress ${{ env.PROJECT_NAME }}-ingress -n ${{ env.PROJECT_NAME }} -o jsonpath='{.metadata.finalizers}' 2>/dev/null || echo "NONE")
+              final_finalizers=$(kubectl get ingress ${{ env.PROJECT_NAME }}-ingress -n ${{ env.PROJECT_NAME }} -o jsonpath='{.metadata.finalizers}' 2>/dev/null || echo "NONE")
               echo "Finalizers: $final_finalizers"
               
               if [[ "$final_finalizers" == *"ingress.k8s.aws/resources"* ]]; then
@@ -1351,7 +1394,7 @@ jobs:
               kubectl describe ingressclass alb || true
               
               echo "🔍 ValidatingWebhookConfiguration 확인:"
-              local webhook_status=$(kubectl get validatingwebhookconfigurations | grep -E "(vingress|aws-load-balancer)" || echo "웹훅 없음")
+              webhook_status=$(kubectl get validatingwebhookconfigurations | grep -E "(vingress|aws-load-balancer)" || echo "웹훅 없음")
               echo "Webhook 상태: $webhook_status"
               
               if [[ "$webhook_status" == "웹훅 없음" ]]; then
@@ -1365,7 +1408,7 @@ jobs:
               kubectl get ingress -A || true
               
               echo "🔍 AWS CLI를 통한 ALB 확인:"
-              aws elbv2 describe-load-balancers --query 'LoadBalancers[?contains(LoadBalancerName, `walb-app`) || contains(LoadBalancerName, `k8s`)].{Name:LoadBalancerName,State:State.Code,DNS:DNSName}' --output table 2>/dev/null || echo "AWS CLI로 ALB 조회 실패"
+              aws elbv2 describe-load-balancers --query "LoadBalancers[?contains(LoadBalancerName, \`${{ env.PROJECT_NAME }}\`) || contains(LoadBalancerName, \`k8s\`)].{Name:LoadBalancerName,State:State.Code,DNS:DNSName}" --output table 2>/dev/null || echo "AWS CLI로 ALB 조회 실패"
               
               # ALB가 생성되었지만 프로비저닝이 완료되지 않은 경우 환경변수 설정
               if [ -n "$ALB_DNS" ] && [ "$ALB_DNS" != "null" ]; then
