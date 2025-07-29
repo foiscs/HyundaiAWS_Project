@@ -695,7 +695,7 @@
                                                 </label>
                                             `).join('')}
                                         </div>
-                                        <button class="btn btn-warning btn-fix" onclick="executeFix('${itemCode}', '${option.id}')">
+                                        <button class="btn btn-warning btn-fix" onclick="executeFix('${itemCode}', '${option.id}', this)">
                                             <span>⚡</span> ${option.title} 실행
                                         </button>
                                     </div>
@@ -791,7 +791,7 @@
 
 
                 // 자동 조치 실행
-                async function executeFix(itemCode, optionId) {
+                async function executeFix(itemCode, optionId, buttonElement) {
                     if (!selectedAccountId) {
                         alert('계정을 선택해주세요.');
                         return;
@@ -819,13 +819,21 @@
                         return;
                     }
 
-                    try {
-                        // 실행 버튼 비활성화
-                        const executeButton = event.target;
-                        const originalText = executeButton.innerHTML;
+                    // 버튼이 전달되지 않았다면 찾기
+                    let executeButton = buttonElement;
+                    if (!executeButton) {
+                        executeButton = document.querySelector(`button[onclick*="executeFix('${itemCode}', '${optionId}')"]`);
+                    }
+
+                    // 버튼 상태 저장
+                    let originalText = '';
+                    if (executeButton) {
+                        originalText = executeButton.innerHTML;
                         executeButton.disabled = true;
                         executeButton.innerHTML = '<span>⏳</span> 실행 중...';
+                    }
 
+                    try {
                         const response = await fetch('/diagnosis/api/fix', {
                             method: 'POST',
                             headers: {
@@ -868,17 +876,14 @@
                             alert(`❌ 자동 조치 실패\n${result.message}`);
                         }
 
-                        // 버튼 복구
-                        executeButton.disabled = false;
-                        executeButton.innerHTML = originalText;
-
                     } catch (error) {
                         alert(`자동 조치 실행 중 오류가 발생했습니다: ${error.message}`);
-
+                    } finally {
                         // 버튼 복구
-                        const executeButton = event.target;
-                        executeButton.disabled = false;
-                        executeButton.innerHTML = originalText;
+                        if (executeButton && originalText) {
+                            executeButton.disabled = false;
+                            executeButton.innerHTML = originalText;
+                        }
                     }
                 }
 

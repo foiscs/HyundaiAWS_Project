@@ -193,7 +193,7 @@ class VpcFlowLoggingChecker(BaseChecker):
 
         return iam.get_role(RoleName=role_name)['Role']['Arn']
 
-    def get_fix_options(self, diagnosis_result):
+    def _get_fix_options(self, diagnosis_result):
         """자동 조치 옵션 반환"""
         if not diagnosis_result.get('vpcs_without_logs'):
             return []
