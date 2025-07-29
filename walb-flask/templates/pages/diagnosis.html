@@ -978,41 +978,14 @@
                     document.getElementById('currentStatusText').textContent = message;
                 }
 
-                // 디버그 로그 추가
+                // 로그 기능 제거됨 - 빈 함수로 유지 (기존 호출 코드 호환성)
                 function addDebugLog(message) {
-                    const logContainer = document.getElementById('debugLogList');
-                    const logEntry = document.createElement('div');
-
-                    // 메시지 타입에 따라 색상 결정
-                    let colorClass = 'text-gray-300'; // 기본
-                    if (message.includes('✅') || message.includes('완료')) {
-                        colorClass = 'text-green-400';
-                    } else if (message.includes('❌') || message.includes('실패')) {
-                        colorClass = 'text-red-400';
-                    } else if (message.includes('📋') || message.includes('시작')) {
-                        colorClass = 'text-blue-400';
-                    } else if (message.includes('🎉')) {
-                        colorClass = 'text-yellow-400';
-                    }
-
-                    logEntry.className = `${colorClass} font-mono mb-1 text-xs`;
-                    logEntry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
-                    logContainer.appendChild(logEntry);
-
-                    // 스크롤을 맨 아래로
-                    logContainer.scrollTop = logContainer.scrollHeight;
-
-                    // 로그 항목이 너무 많으면 오래된 것 제거
-                    const logEntries = logContainer.children;
-                    if (logEntries.length > 20) {
-                        logContainer.removeChild(logEntries[0]);
-                    }
+                    // 로그 기능 제거됨
                 }
 
-                // 디버그 로그 초기화
+                // 로그 기능 제거됨 - 빈 함수로 유지 (기존 호출 코드 호환성)
                 function clearDebugLog() {
-                    const logContainer = document.getElementById('debugLogList');
-                    logContainer.innerHTML = '<div class="text-green-400 font-mono">진단 시작 준비 중...</div>';
+                    // 로그 기능 제거됨
                 }
 
                 // 항목 상태 설정
