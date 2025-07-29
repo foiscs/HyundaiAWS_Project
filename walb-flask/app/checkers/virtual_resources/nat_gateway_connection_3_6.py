@@ -28,7 +28,7 @@ class NatGatewayConnectionChecker(BaseChecker):
         """
         print("[INFO] 3.6 NAT 게이트웨이 연결 현황 점검 중...")
         print("[ⓘ MANUAL] NAT 게이트웨이에 연결된 리소스가 외부 통신 필요 목적이 분명한지 판단할 수 없음")
-        ec2 = boto3.client('ec2')
+        ec2 = self.session.client('ec2')
         unused_nat_ids = []
         nat_details = []
 
@@ -134,7 +134,7 @@ class NatGatewayConnectionChecker(BaseChecker):
             return {'status': 'no_action', 'message': '삭제할 NAT 게이트웨이가 없습니다.'}
 
         unused_nat_ids = diagnosis_result['unused_nat_ids']
-        ec2 = boto3.client('ec2')
+        ec2 = self.session.client('ec2')
         results = []
         
         print("\n[FIX] 사용되지 않는 NAT 게이트웨이에 대한 조치를 시작합니다.")

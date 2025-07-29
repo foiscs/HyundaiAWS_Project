@@ -87,7 +87,7 @@ class S3BucketLoggingChecker(BaseChecker):
 
     def _check_cloudtrail_s3_buckets(self):
         """CloudTrail이 사용하는 S3 버킷 목록 반환"""
-        ct = boto3.client('cloudtrail')
+        ct = self.session.client('cloudtrail')
         try:
             trails = ct.describe_trails()['trailList']
             return list(set([t['S3BucketName'] for t in trails if 'S3BucketName' in t]))
@@ -97,7 +97,7 @@ class S3BucketLoggingChecker(BaseChecker):
 
     def _check_logging_enabled(self, bucket_name):
         """S3 버킷의 서버 액세스 로깅 활성화 여부 확인"""
-        s3 = boto3.client('s3')
+        s3 = self.session.client('s3')
         try:
             response = s3.get_bucket_logging(Bucket=bucket_name)
             return 'LoggingEnabled' in response
@@ -178,7 +178,7 @@ class S3BucketLoggingChecker(BaseChecker):
 
     def _create_log_bucket(self, region):
         """로그 저장용 S3 버킷 생성"""
-        s3 = boto3.client('s3')
+        s3 = self.session.client('s3')
         timestamp = time.strftime('%Y%m%d%H%M%S')
         bucket_name = f'cloudtrail-access-logs-{timestamp}'
         
@@ -198,7 +198,7 @@ class S3BucketLoggingChecker(BaseChecker):
 
     def _enable_access_logging(self, source_bucket, target_bucket):
         """S3 버킷에 서버 액세스 로깅 활성화"""
-        s3 = boto3.client('s3')
+        s3 = self.session.client('s3')
         s3.put_bucket_logging(
             Bucket=source_bucket,
             BucketLoggingStatus={

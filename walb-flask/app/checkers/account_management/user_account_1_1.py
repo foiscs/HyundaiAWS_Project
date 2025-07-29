@@ -29,7 +29,7 @@ class UserAccountChecker(BaseChecker):
             if self.session:
                 iam = self.session.client('iam')
             else:
-                iam = boto3.client('iam')
+                iam = self.session.client('iam')
             
             now = datetime.now(timezone.utc)
             admin_users = set()
@@ -171,7 +171,7 @@ class UserAccountChecker(BaseChecker):
             if self.session:
                 iam = self.session.client('iam')
             else:
-                iam = boto3.client('iam')
+                iam = self.session.client('iam')
             
             results = []
             

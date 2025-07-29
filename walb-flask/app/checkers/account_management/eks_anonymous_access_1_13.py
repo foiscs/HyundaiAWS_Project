@@ -23,7 +23,7 @@ class EKSAnonymousAccessChecker(BaseChecker):
             if self.session:
                 eks = self.session.client('eks')
             else:
-                eks = boto3.client('eks')
+                eks = self.session.client('eks')
             
             # EKS 클러스터 목록 조회
             clusters = []
@@ -356,7 +356,7 @@ class EKSAnonymousAccessChecker(BaseChecker):
                 eks = self.session.client('eks')
             else:
                 import boto3
-                eks = boto3.client('eks')
+                eks = self.session.client('eks')
                 
             # EKS 클러스터 정보 조회
             cluster_info = eks.describe_cluster(name=cluster_name)['cluster']

@@ -24,7 +24,7 @@ class RootAccountUsageChecker(BaseChecker):
             if self.session:
                 cloudtrail = self.session.client('cloudtrail')
             else:
-                cloudtrail = boto3.client('cloudtrail')
+                cloudtrail = self.session.client('cloudtrail')
             
             # 원본 로직: 최근 90일 간 Root 계정 활동 내역 조회
             lookback_days = 90

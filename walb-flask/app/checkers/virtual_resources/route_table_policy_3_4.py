@@ -26,7 +26,7 @@ class RouteTablePolicyChecker(BaseChecker):
         - 서브넷이 퍼블릭이 아님에도 0.0.0.0/0 경로(ANY 정책)가 라우팅 테이블에 존재하는 경우 취약
         """
         print("[INFO] 3.4 라우팅 테이블 정책 관리 체크 중...")
-        ec2 = boto3.client('ec2')
+        ec2 = self.session.client('ec2')
         misconfigured_routes = []
 
         try:

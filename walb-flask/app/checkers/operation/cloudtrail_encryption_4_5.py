@@ -27,7 +27,7 @@ class CloudtrailEncryptionChecker(BaseChecker):
         - CloudTrail 로그 파일 암호화에 SSE-KMS가 사용되는지 점검하고, 미적용된 Trail 목록 반환
         """
         print("[INFO] 4.5 CloudTrail 암호화 설정 체크 중...")
-        cloudtrail = boto3.client('cloudtrail')
+        cloudtrail = self.session.client('cloudtrail')
         not_kms_encrypted_trails = []
         trail_details = []
 
@@ -106,14 +106,14 @@ class CloudtrailEncryptionChecker(BaseChecker):
             return {'status': 'no_action', 'message': 'CloudTrail 암호화 조치가 필요한 항목이 없습니다.'}
 
         not_kms_encrypted_trails = diagnosis_result['not_kms_encrypted_trails']
-        cloudtrail = boto3.client('cloudtrail')
-        kms = boto3.client('kms')
+        cloudtrail = self.session.client('cloudtrail')
+        kms = self.session.client('kms')
         results = []
         
         print("[FIX] 4.5 CloudTrail SSE-KMS 암호화 조치를 시작합니다.")
 
         try:
-            account_id = boto3.client('sts').get_caller_identity()['Account']
+            account_id = self.session.client('sts').get_caller_identity()['Account']
             region = boto3.session.Session().region_name
             alias_name = "alias/cloudtrail-autokey"
             key_arn = None

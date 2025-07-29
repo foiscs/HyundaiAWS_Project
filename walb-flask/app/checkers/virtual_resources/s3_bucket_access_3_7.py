@@ -27,9 +27,9 @@ class S3BucketAccessChecker(BaseChecker):
         - 2단계: 계정 차단이 비활성화된 경우, 개별 버킷/객체 ACL 상세 점검
         """
         print("[INFO] 3.7 S3 버킷/객체 접근 관리 체크 중...")
-        s3_control = boto3.client('s3control')
-        s3 = boto3.client('s3')
-        sts = boto3.client('sts')
+        s3_control = self.session.client('s3control')
+        s3 = self.session.client('s3')
+        sts = self.session.client('sts')
         findings = {
             'account_block_off': False, 
             'bucket_acl_issues': [],

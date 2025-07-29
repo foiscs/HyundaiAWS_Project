@@ -29,10 +29,10 @@ class EbsEncryptionChecker(BaseChecker):
         findings = {'non_default_regions': [], 'unencrypted_volumes': []}
         
         try:
-            ec2_regions = [r['RegionName'] for r in boto3.client('ec2').describe_regions()['Regions']]
+            ec2_regions = [r['RegionName'] for r in self.session.client('ec2').describe_regions()['Regions']]
             for region in ec2_regions:
                 try:
-                    ec2 = boto3.client('ec2', region_name=region)
+                    ec2 = self.session.client('ec2', region_name=region)
                     if not ec2.get_ebs_encryption_by_default()['EbsEncryptionByDefault']:
                         findings['non_default_regions'].append(region)
                     
@@ -106,7 +106,7 @@ class EbsEncryptionChecker(BaseChecker):
                 # 선택된 항목인지 확인
                 if any(region in str(item) for item in selected_items.values() for item in item):
                     try:
-                        boto3.client('ec2', region_name=region).enable_ebs_encryption_by_default()
+                        self.session.client('ec2', region_name=region).enable_ebs_encryption_by_default()
                         print(f"     [SUCCESS] 리전 '{region}'의 기본 암호화를 활성화했습니다.")
                         results.append({
                             'status': 'success',

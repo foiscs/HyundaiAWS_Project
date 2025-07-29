@@ -24,7 +24,7 @@ class AccessKeyManagementChecker(BaseChecker):
             if self.session:
                 iam = self.session.client('iam')
             else:
-                iam = boto3.client('iam')
+                iam = self.session.client('iam')
             
             old_access_keys = []
             all_access_keys = []
@@ -134,7 +134,7 @@ class AccessKeyManagementChecker(BaseChecker):
             if self.session:
                 iam = self.session.client('iam')
             else:
-                iam = boto3.client('iam')
+                iam = self.session.client('iam')
             
             results = []
             

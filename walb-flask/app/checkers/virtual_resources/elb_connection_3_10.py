@@ -27,9 +27,9 @@ class ElbConnectionChecker(BaseChecker):
         """
         print("[INFO] 3.10 ELB 제어 정책 점검을 시작합니다...")
         findings = []
-        elbv2 = boto3.client('elbv2')
-        elb = boto3.client('elb')
-        wafv2 = boto3.client('wafv2')
+        elbv2 = self.session.client('elbv2')
+        elb = self.session.client('elb')
+        wafv2 = self.session.client('wafv2')
 
         # ----------- ELBv2 (ALB, NLB) 점검 -----------
         try:

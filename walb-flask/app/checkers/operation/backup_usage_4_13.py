@@ -29,7 +29,7 @@ class BackupUsageChecker(BaseChecker):
         findings = {'no_backup_plan': True, 'rds_no_backup': [], 'rds_checked': False}
         
         try:
-            if boto3.client('backup').list_backup_plans()['BackupPlansList']:
+            if self.session.client('backup').list_backup_plans()['BackupPlansList']:
                 findings['no_backup_plan'] = False
                 print("[✓ COMPLIANT] 4.13 AWS Backup 플랜이 존재합니다.")
             else:
@@ -38,7 +38,7 @@ class BackupUsageChecker(BaseChecker):
             print(f"[ERROR] AWS Backup 점검 중 오류: {e}")
         
         try:
-            rds_client = boto3.client('rds')
+            rds_client = self.session.client('rds')
             dbs = rds_client.describe_db_instances()['DBInstances']
             if not dbs:
                 print("[INFO] RDS 인스턴스가 존재하지 않습니다.")
@@ -94,7 +94,7 @@ class BackupUsageChecker(BaseChecker):
             print("  └─ AWS Backup 콘솔에서 [백업 플랜 생성]을 통해 EBS, EFS, DynamoDB 등 중요 리소스에 대한 백업을 구성하세요.")
 
         if findings['rds_checked'] and findings['rds_no_backup']:
-            rds = boto3.client('rds')
+            rds = self.session.client('rds')
             print("[FIX] 4.13 RDS 자동 백업 설정 조치를 시작합니다.")
             
             for name in findings['rds_no_backup']:

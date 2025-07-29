@@ -26,7 +26,7 @@ class NaclTrafficPolicyChecker(BaseChecker):
         - 모든 트래픽을 허용하는 광범위 규칙이 있는지 점검 (프로토콜 -1, 포트 전체, CIDR 0.0.0.0/0, Allow)
         """
         print("[INFO] 3.3 네트워크 ACL 트래픽 정책 관리 체크 중...")
-        ec2 = boto3.client('ec2')
+        ec2 = self.session.client('ec2')
         vulnerable_nacls = []
 
         try:
@@ -103,7 +103,7 @@ class NaclTrafficPolicyChecker(BaseChecker):
             return {'status': 'no_action', 'message': '조치할 위험한 NACL 규칙이 없습니다.'}
 
         vulnerable_nacls = diagnosis_result['vulnerable_nacls']
-        ec2 = boto3.client('ec2')
+        ec2 = self.session.client('ec2')
         results = []
         
         print("[FIX] 3.3 광범위한 NACL 규칙에 대한 조치를 시작합니다.")
