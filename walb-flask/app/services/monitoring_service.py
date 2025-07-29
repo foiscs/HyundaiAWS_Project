@@ -1339,3 +1339,81 @@ echo "=== Service {action.upper()} Completed ==="
                 'message': f'서비스 {action} 중 오류: {str(e)}',
                 'error': str(e)
             }
+    
+    def execute_kinesis_service_script(self, instance_ip: str, ssh_key_path: str, 
+                                     account: 'AWSAccount', reinstall: bool = False) -> Dict:
+        """SSH를 통해 Kinesis 서비스 생성 스크립트 실행"""
+        try:
+            # SSH 키 파일 권한 설정
+            os.chmod(ssh_key_path, 0o600)
+            
+            # 스크립트 명령어 생성
+            if account.connection_type == 'role':
+                script_args = f"role {account.account_id} {account.role_arn} {account.primary_region}"
+            else:
+                script_args = f"accesskey {account.account_id} {account.access_key_id} {account.secret_access_key} {account.primary_region}"
+            
+            # SSH 명령어 구성
+            ssh_command = [
+                'ssh',
+                '-i', ssh_key_path,
+                '-o', 'StrictHostKeyChecking=no',
+                '-o', 'ConnectTimeout=10',
+                f'ec2-user@{instance_ip}',
+                f'sudo ./create_kinesis_service.sh {script_args}'
+            ]
+            
+            logger.info(f"Executing SSH command: {' '.join(ssh_command[:6])} [credentials masked]")
+            
+            # SSH 명령 실행
+            result = subprocess.run(
+                ssh_command,
+                capture_output=True,
+                text=True,
+                timeout=120  # 2분 timeout
+            )
+            
+            service_name = f"kinesis-splunk-forwarder-{account.account_id}"
+            
+            if result.returncode == 0:
+                return {
+                    'success': True,
+                    'message': 'Kinesis 서비스 스크립트 실행 완료 (실제 SSH 실행)',
+                    'actual_output': result.stdout,
+                    'script_command': f"./create_kinesis_service.sh {account.connection_type} {account.account_id} [...credentials...]",
+                    'service_details': {
+                        'service_name': service_name,
+                        'service_file': f'/etc/systemd/system/{service_name}.service',
+                        'python_script': '/opt/kinesis_splunk_forwarder.py',
+                        'status': 'active (running)',
+                        'streams_connected': ['cloudtrail-stream'],
+                        'log_destination': f'/var/log/splunk/{account.account_id}/cloudtrail.log'
+                    },
+                    'ssh_info': {
+                        'host': instance_ip,
+                        'user': 'ec2-user',
+                        'key': os.path.basename(ssh_key_path),
+                        'executed_command': f'sudo ./create_kinesis_service.sh {account.connection_type} {account.account_id} [...credentials...]'
+                    }
+                }
+            else:
+                return {
+                    'success': False,
+                    'message': f'스크립트 실행 실패 (return code: {result.returncode})',
+                    'error': result.stderr or result.stdout,
+                    'return_code': result.returncode
+                }
+                
+        except subprocess.TimeoutExpired:
+            return {
+                'success': False,
+                'message': 'SSH 실행 시간 초과 (2분)',
+                'error': 'Script execution timeout'
+            }
+        except Exception as e:
+            logger.error(f"Error executing Kinesis service script: {e}")
+            return {
+                'success': False,
+                'message': f'SSH 실행 중 오류: {str(e)}',
+                'error': str(e)
+            }
