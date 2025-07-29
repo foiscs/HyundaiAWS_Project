@@ -275,9 +275,9 @@
                 AWS 서비스 상태 모니터링
             </h2>
             <div class="overall-health-badge">
-                {% if comprehensive_status.overall_health == 'healthy' %}
+                {% if comprehensive_status and comprehensive_status.overall_health == 'healthy' %}
                 <span class="badge badge-success">🟢 정상</span>
-                {% elif comprehensive_status.overall_health == 'degraded' %}
+                {% elif comprehensive_status and comprehensive_status.overall_health == 'degraded' %}
                 <span class="badge badge-warning">🟡 주의</span>
                 {% else %}
                 <span class="badge badge-error">🔴 오류</span>
@@ -292,7 +292,7 @@
                     <span class="service-icon">📊</span>
                     <h3 class="service-name">CloudWatch</h3>
                     <div class="service-badge">
-                        {% if comprehensive_status.services.cloudwatch.active %}
+                        {% if comprehensive_status and comprehensive_status.services and comprehensive_status.services.cloudwatch and comprehensive_status.services.cloudwatch.active %}
                         <span class="badge badge-success">Active</span>
                         {% else %}
                         <span class="badge badge-error">Inactive</span>
@@ -302,7 +302,7 @@
                 <div class="service-details">
                     <div class="stat-item">
                         <span class="stat-label">로그 그룹</span>
-                        <span class="stat-value">{{ comprehensive_status.services.cloudwatch.log_groups|length if comprehensive_status.services.cloudwatch.log_groups else 0 }}개</span>
+                        <span class="stat-value">{{ comprehensive_status.services.cloudwatch.log_groups|length if comprehensive_status and comprehensive_status.services and comprehensive_status.services.cloudwatch and comprehensive_status.services.cloudwatch.log_groups else 0 }}개</span>
                     </div>
                     <div class="stat-item">
                         <span class="stat-label">파일 수집</span>
@@ -330,7 +330,7 @@
                     <span class="service-icon">🔍</span>
                     <h3 class="service-name">CloudTrail</h3>
                     <div class="service-badge">
-                        {% if comprehensive_status.services.cloudtrail.active %}
+                        {% if comprehensive_status and comprehensive_status.services and comprehensive_status.services.cloudtrail and comprehensive_status.services.cloudtrail.active %}
                         <span class="badge badge-success">Active</span>
                         {% else %}
                         <span class="badge badge-error">Inactive</span>
@@ -340,7 +340,7 @@
                 <div class="service-details">
                     <div class="stat-item">
                         <span class="stat-label">Trail 수</span>
-                        <span class="stat-value">{{ comprehensive_status.services.cloudtrail.total_trails or 0 }}개</span>
+                        <span class="stat-value">{{ comprehensive_status.services.cloudtrail.total_trails if comprehensive_status and comprehensive_status.services and comprehensive_status.services.cloudtrail and comprehensive_status.services.cloudtrail.total_trails else 0 }}개</span>
                     </div>
                     <div class="stat-item">
                         <span class="stat-label">파일 수집</span>
@@ -368,7 +368,7 @@
                     <span class="service-icon">🛡️</span>
                     <h3 class="service-name">GuardDuty</h3>
                     <div class="service-badge">
-                        {% if comprehensive_status.services.guardduty.active %}
+                        {% if comprehensive_status and comprehensive_status.services and comprehensive_status.services.guardduty and comprehensive_status.services.guardduty.active %}
                         <span class="badge badge-success">Active</span>
                         {% else %}
                         <span class="badge badge-error">Inactive</span>
@@ -378,7 +378,7 @@
                 <div class="service-details">
                     <div class="stat-item">
                         <span class="stat-label">탐지기</span>
-                        <span class="stat-value">{{ comprehensive_status.services.guardduty.detectors|length if comprehensive_status.services.guardduty.detectors else 0 }}개</span>
+                        <span class="stat-value">{{ comprehensive_status.services.guardduty.detectors|length if comprehensive_status and comprehensive_status.services and comprehensive_status.services.guardduty and comprehensive_status.services.guardduty.detectors else 0 }}개</span>
                     </div>
                     <div class="stat-item">
                         <span class="stat-label">파일 수집</span>
