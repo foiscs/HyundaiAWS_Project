@@ -532,7 +532,88 @@ jobs:
         echo "  DB 이름: $DB_NAME"
         echo "  DB 사용자: $DB_USER"
         
-        # 보안 그룹 설정 함수 재사용 (이미 test 단계에서 설정되었지만 확인 차 재실행)
+        # 보안 그룹 설정 함수 정의
+        setup_security_groups() {
+          echo "🔧 보안 그룹 규칙 자동 설정 중..."
+          
+          # Bastion Host 정보 조회
+          BASTION_INSTANCE_ID=$(aws ec2 describe-instances \
+            --filters "Name=ip-address,Values=$BASTION_IP" "Name=instance-state-name,Values=running" \
+            --query "Reservations[0].Instances[0].InstanceId" \
+            --output text 2>/dev/null || echo "")
+          
+          if [ -n "$BASTION_INSTANCE_ID" ] && [ "$BASTION_INSTANCE_ID" != "None" ]; then
+            # Bastion Host의 보안 그룹 조회
+            BASTION_SG=$(aws ec2 describe-instances \
+              --instance-ids $BASTION_INSTANCE_ID \
+              --query "Reservations[0].Instances[0].SecurityGroups[0].GroupId" \
+              --output text 2>/dev/null || echo "")
+            
+            echo "Bastion Security Group: $BASTION_SG"
+          fi
+          
+          # RDS 정보 조회
+          RDS_INSTANCE_ID=$(aws rds describe-db-instances \
+            --query "DBInstances[?Endpoint.Address=='$DB_HOST'].DBInstanceIdentifier" \
+            --output text 2>/dev/null || echo "")
+          
+          if [ -n "$RDS_INSTANCE_ID" ] && [ "$RDS_INSTANCE_ID" != "None" ]; then
+            # RDS의 보안 그룹 조회
+            RDS_SG=$(aws rds describe-db-instances \
+              --db-instance-identifier $RDS_INSTANCE_ID \
+              --query "DBInstances[0].VpcSecurityGroups[0].VpcSecurityGroupId" \
+              --output text 2>/dev/null || echo "")
+            
+            echo "RDS Security Group: $RDS_SG"
+            
+            # RDS 보안 그룹에 Bastion 접근 규칙 추가
+            if [ -n "$BASTION_SG" ] && [ -n "$RDS_SG" ]; then
+              echo "🔧 RDS 보안 그룹에 Bastion 접근 규칙 추가 중..."
+              
+              # 기존 규칙 확인
+              EXISTING_RULE=$(aws ec2 describe-security-groups \
+                --group-ids $RDS_SG \
+                --query "SecurityGroups[0].IpPermissions[?FromPort==\`${{ env.DB_PORT }}\` && UserIdGroupPairs[?GroupId==\`$BASTION_SG\`]]" \
+                --output text 2>/dev/null || echo "")
+              
+              if [ -z "$EXISTING_RULE" ]; then
+                aws ec2 authorize-security-group-ingress \
+                  --group-id $RDS_SG \
+                  --protocol tcp \
+                  --port ${{ env.DB_PORT }} \
+                  --source-group $BASTION_SG \
+                  --no-cli-pager 2>/dev/null && echo "✅ RDS 인바운드 규칙 추가 완료" || echo "⚠️ RDS 규칙 추가 실패 (이미 존재할 수 있음)"
+              else
+                echo "✅ RDS 인바운드 규칙이 이미 존재합니다"
+              fi
+            fi
+          fi
+          
+          # Bastion 보안 그룹에 아웃바운드 규칙 확인/추가
+          if [ -n "$BASTION_SG" ]; then
+            echo "🔧 Bastion 보안 그룹 아웃바운드 규칙 확인 중..."
+            
+            # MySQL 아웃바운드 규칙 확인
+            EXISTING_OUTBOUND=$(aws ec2 describe-security-groups \
+              --group-ids $BASTION_SG \
+              --query "SecurityGroups[0].IpPermissionsEgress[?FromPort==\`${{ env.DB_PORT }}\` || IpProtocol==\`-1\`]" \
+              --output text 2>/dev/null || echo "")
+            
+            if [ -z "$EXISTING_OUTBOUND" ]; then
+              echo "🔧 Bastion 아웃바운드 규칙 추가 중..."
+              aws ec2 authorize-security-group-egress \
+                --group-id $BASTION_SG \
+                --protocol tcp \
+                --port ${{ env.DB_PORT }} \
+                --cidr 0.0.0.0/0 \
+                --no-cli-pager 2>/dev/null && echo "✅ Bastion 아웃바운드 규칙 추가 완료" || echo "⚠️ Bastion 규칙 추가 실패 (이미 존재할 수 있음)"
+            else
+              echo "✅ Bastion 아웃바운드 규칙이 이미 존재합니다"
+            fi
+          fi
+        }
+        
+        # 보안 그룹 설정 함수 호출
         setup_security_groups
         
         # SSH 키를 Parameter Store에서 가져오기
