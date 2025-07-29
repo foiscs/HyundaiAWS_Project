@@ -11,13 +11,19 @@ on:
       - '.github/workflows/deploy-app2.yml'
 
 env:
-  PROJECT_NAME: ${{ vars.PROJECT_NAME || 'walb2-app' }}
-  DB_NAME: ${{ vars.DB_NAME || 'mydb' }}
-  DB_USER: ${{ vars.DB_USER || 'dbadmin' }}
-  EKS_CLUSTER_NAME: ${{ vars.EKS_CLUSTER_NAME || 'walb2-eks-cluster' }}  # walb2 프로젝트용 클러스터
-  S3_BUCKET_NAME: ${{ vars.S3_BUCKET_NAME || 'walb2-app-artifacts-walb-3b3127e6' }}
-  IAM_ROLE_NAME: ${{ vars.IAM_ROLE_NAME || 'walb2-app-eks-app-role' }}
-  DEPLOYMENT_NAME: ${{ vars.DEPLOYMENT_NAME || 'music1-deployment' }}  # 기존 deploy.yml과 일치
+  PROJECT_NAME: ${{ vars.PROJECT_NAME }}
+  DB_NAME: ${{ vars.DB_NAME }}
+  DB_USER: ${{ vars.DB_USER }}
+  DB_PORT: ${{ vars.DB_PORT }}
+  DB_RDS_IDENTIFIER: ${{ vars.DB_RDS_IDENTIFIER }}
+  EKS_CLUSTER_NAME: ${{ vars.EKS_CLUSTER_NAME }}
+  S3_BUCKET_NAME: ${{ vars.S3_BUCKET_NAME }}
+  IAM_ROLE_NAME: ${{ vars.IAM_ROLE_NAME }}
+  BASTION_HOST_TAG: ${{ vars.BASTION_HOST_TAG }}
+  DEPLOYMENT_NAME: ${{ vars.DEPLOYMENT_NAME }}
+  IMAGE_NAME: ${{ vars.IMAGE_NAME }}
+  HEALTH_CHECK_PATH: ${{ vars.HEALTH_CHECK_PATH }}
+  AWS_REGION: ${{ vars.AWS_REGION }}
   
 jobs:
   build-and-deploy:
@@ -102,20 +108,15 @@ jobs:
         
         # RDS 엔드포인트 조회 (walb2-app 프로젝트용)
         RDS_ENDPOINT=$(aws rds describe-db-instances \
-          --db-instance-identifier walb2-rds-database \
+          --db-instance-identifier ${{ env.DB_RDS_IDENTIFIER }} \
           --query "DBInstances[0].Endpoint.Address" \
           --output text 2>/dev/null || echo "")
         
         if [ -z "$RDS_ENDPOINT" ] || [ "$RDS_ENDPOINT" == "None" ]; then
-          # 대체 방법: DB 이름으로 조회
-          RDS_ENDPOINT=$(aws rds describe-db-instances --query "DBInstances[?DBName==\`${{ env.DB_NAME }}\`].Endpoint.Address" --output text 2>/dev/null || echo "")
-          
-          if [ -z "$RDS_ENDPOINT" ] || [ "$RDS_ENDPOINT" == "None" ]; then
-            echo "❌ RDS 인스턴스를 찾을 수 없습니다: walb2-rds-database"
-            echo "사용 가능한 RDS 인스턴스:"
-            aws rds describe-db-instances --query "DBInstances[*].[DBInstanceIdentifier,Endpoint.Address,DBName]" --output table
-            exit 1
-          fi
+          echo "❌ RDS 인스턴스를 찾을 수 없습니다: ${{ env.DB_RDS_IDENTIFIER }}"
+          echo "사용 가능한 RDS 인스턴스:"
+          aws rds describe-db-instances --query "DBInstances[*].[DBInstanceIdentifier,Endpoint.Address,DBName]" --output table
+          exit 1
         fi
         echo "RDS_ENDPOINT=$RDS_ENDPOINT" >> $GITHUB_ENV
         echo "✅ RDS Endpoint: $RDS_ENDPOINT"
@@ -171,16 +172,17 @@ jobs:
           --output text 2>/dev/null || echo "")
         
         if [ -z "$DB_HOST" ]; then
-          # 태그 조회가 안 되면 DB 이름으로 조회
+          # 태그 조회가 안 되면 직접 식별자로 조회
           DB_HOST=$(aws rds describe-db-instances \
-            --query "DBInstances[?DBName=='${{ env.DB_NAME }}'].Endpoint.Address" \
+            --db-instance-identifier ${{ env.DB_RDS_IDENTIFIER }} \
+            --query "DBInstances[0].Endpoint.Address" \
             --output text 2>/dev/null || echo "")
         fi
         
         # Bastion Host IP 조회 (태그 기반)
         echo "🔍 Bastion Host 조회 중..."
         BASTION_IP=$(aws ec2 describe-instances \
-          --filters "Name=tag:Name,Values=walb2-app-bastion-host" "Name=instance-state-name,Values=running" \
+          --filters "Name=tag:Name,Values=${{ env.BASTION_HOST_TAG }}" "Name=instance-state-name,Values=running" \
           --query "Reservations[0].Instances[0].PublicIpAddress" \
           --output text 2>/dev/null || echo "")
         
@@ -272,14 +274,14 @@ jobs:
             # 기존 규칙 확인
             EXISTING_RULE=$(aws ec2 describe-security-groups \
               --group-ids $RDS_SG \
-              --query "SecurityGroups[0].IpPermissions[?FromPort==\`3306\` && UserIdGroupPairs[?GroupId==\`$BASTION_SG\`]]" \
+              --query "SecurityGroups[0].IpPermissions[?FromPort==\`${{ env.DB_PORT }}\` && UserIdGroupPairs[?GroupId==\`$BASTION_SG\`]]" \
               --output text 2>/dev/null || echo "")
             
             if [ -z "$EXISTING_RULE" ]; then
               aws ec2 authorize-security-group-ingress \
                 --group-id $RDS_SG \
                 --protocol tcp \
-                --port 3306 \
+                --port ${{ env.DB_PORT }} \
                 --source-group $BASTION_SG \
                 --no-cli-pager 2>/dev/null && echo "✅ RDS 인바운드 규칙 추가 완료" || echo "⚠️ RDS 규칙 추가 실패 (이미 존재할 수 있음)"
             else
@@ -295,7 +297,7 @@ jobs:
           # MySQL 아웃바운드 규칙 확인
           EXISTING_OUTBOUND=$(aws ec2 describe-security-groups \
             --group-ids $BASTION_SG \
-            --query "SecurityGroups[0].IpPermissionsEgress[?FromPort==\`3306\` || IpProtocol==\`-1\`]" \
+            --query "SecurityGroups[0].IpPermissionsEgress[?FromPort==\`${{ env.DB_PORT }}\` || IpProtocol==\`-1\`]" \
             --output text 2>/dev/null || echo "")
           
           if [ -z "$EXISTING_OUTBOUND" ]; then
@@ -303,7 +305,7 @@ jobs:
             aws ec2 authorize-security-group-egress \
               --group-id $BASTION_SG \
               --protocol tcp \
-              --port 3306 \
+              --port ${{ env.DB_PORT }} \
               --cidr 0.0.0.0/0 \
               --no-cli-pager 2>/dev/null && echo "✅ Bastion 아웃바운드 규칙 추가 완료" || echo "⚠️ Bastion 규칙 추가 실패 (이미 존재할 수 있음)"
           else
@@ -340,11 +342,11 @@ jobs:
         fi
         
         # 로컬 포트가 사용 중인지 확인
-        if netstat -tuln | grep -q ":3306 "; then
-          echo "⚠️ 포트 3306이 이미 사용 중입니다. 다른 포트를 사용합니다."
-          LOCAL_PORT=3307
+        if netstat -tuln | grep -q ":${{ env.DB_PORT }} "; then
+          echo "⚠️ 포트 ${{ env.DB_PORT }}이 이미 사용 중입니다. 다른 포트를 사용합니다."
+          LOCAL_PORT=$(({{ env.DB_PORT }} + 1))
         else
-          LOCAL_PORT=3306
+          LOCAL_PORT=${{ env.DB_PORT }}
         fi
         
         echo "🔗 SSH 터널 생성 중... (로컬 포트: $LOCAL_PORT)"
@@ -356,7 +358,7 @@ jobs:
             -o ServerAliveInterval=60 \
             -o ServerAliveCountMax=3 \
             -o ConnectTimeout=30 \
-            -L $LOCAL_PORT:$DB_HOST:3306 \
+            -L $LOCAL_PORT:$DB_HOST:${{ env.DB_PORT }} \
             ec2-user@$BASTION_IP \
             -N &
         SSH_PID=$!
@@ -402,12 +404,12 @@ jobs:
           
           # DB 연결 테스트
           echo '🔍 Bastion에서 RDS 직접 연결 테스트...'
-          if mysql -h $DB_HOST -P 3306 -u $DB_USER -p'$DB_PASSWORD' $DB_NAME -e 'SELECT VERSION();' 2>/dev/null; then
+          if mysql -h $DB_HOST -P ${{ env.DB_PORT }} -u $DB_USER -p'$DB_PASSWORD' $DB_NAME -e 'SELECT VERSION();' 2>/dev/null; then
             echo '✅ Bastion에서 RDS 직접 연결 성공'
           else
             echo '❌ Bastion에서 RDS 직접 연결 실패'
             echo '🔍 네트워크 연결 확인:'
-            telnet $DB_HOST 3306 < /dev/null 2>&1 | head -5
+            telnet $DB_HOST ${{ env.DB_PORT }} < /dev/null 2>&1 | head -5
             echo '🔍 보안 그룹 확인이 필요합니다.'
             exit 1
           fi
@@ -478,7 +480,7 @@ jobs:
         
         # Bastion Host IP 조회
         BASTION_IP=$(aws ec2 describe-instances \
-          --filters "Name=tag:Name,Values=walb2-app-bastion-host" "Name=instance-state-name,Values=running" \
+          --filters "Name=tag:Name,Values=${{ env.BASTION_HOST_TAG }}" "Name=instance-state-name,Values=running" \
           --query "Reservations[0].Instances[0].PublicIpAddress" \
           --output text 2>/dev/null || echo "")
         
@@ -530,11 +532,11 @@ jobs:
           if [ -n "$BASTION_SG" ] && [ -n "$RDS_SG" ]; then
             echo "🔧 RDS 보안 그룹에 Bastion 접근 규칙 추가 중..."
             
-            if ! aws ec2 describe-security-groups --group-ids $RDS_SG --query "SecurityGroups[0].IpPermissions[?FromPort==\`3306\` && ToPort==\`3306\` && UserIdGroupPairs[?GroupId==\`$BASTION_SG\`]]" --output text | grep -q "3306"; then
+            if ! aws ec2 describe-security-groups --group-ids $RDS_SG --query "SecurityGroups[0].IpPermissions[?FromPort==\`${{ env.DB_PORT }}\` && ToPort==\`${{ env.DB_PORT }}\` && UserIdGroupPairs[?GroupId==\`$BASTION_SG\`]]" --output text | grep -q "${{ env.DB_PORT }}"; then
               aws ec2 authorize-security-group-ingress \
                 --group-id $RDS_SG \
                 --protocol tcp \
-                --port 3306 \
+                --port ${{ env.DB_PORT }} \
                 --source-group $BASTION_SG \
                 --no-cli-pager && echo "✅ RDS 인바운드 규칙 추가 완료"
             else
@@ -547,11 +549,11 @@ jobs:
         if [ -n "$BASTION_SG" ]; then
           echo "🔧 Bastion 보안 그룹 아웃바운드 규칙 추가 중..."
           
-          if ! aws ec2 describe-security-groups --group-ids $BASTION_SG --query "SecurityGroups[0].IpPermissionsEgress[?FromPort==\`3306\` && ToPort==\`3306\` && IpRanges[?CidrIp==\`0.0.0.0/0\`]]" --output text | grep -q "3306"; then
+          if ! aws ec2 describe-security-groups --group-ids $BASTION_SG --query "SecurityGroups[0].IpPermissionsEgress[?FromPort==\`${{ env.DB_PORT }}\` && ToPort==\`${{ env.DB_PORT }}\` && IpRanges[?CidrIp==\`0.0.0.0/0\`]]" --output text | grep -q "${{ env.DB_PORT }}"; then
             aws ec2 authorize-security-group-egress \
               --group-id $BASTION_SG \
               --protocol tcp \
-              --port 3306 \
+              --port ${{ env.DB_PORT }} \
               --cidr 0.0.0.0/0 \
               --no-cli-pager && echo "✅ Bastion 아웃바운드 규칙 추가 완료"
           else
@@ -569,11 +571,11 @@ jobs:
         chmod 600 bastion_key.pem
         
         # 로컬 포트가 사용 중인지 확인
-        if netstat -tuln | grep -q ":3306 "; then
-          echo "⚠️ 포트 3306이 이미 사용 중입니다. 다른 포트를 사용합니다."
-          LOCAL_PORT=3307
+        if netstat -tuln | grep -q ":${{ env.DB_PORT }} "; then
+          echo "⚠️ 포트 ${{ env.DB_PORT }}이 이미 사용 중입니다. 다른 포트를 사용합니다."
+          LOCAL_PORT=$(({{ env.DB_PORT }} + 1))
         else
-          LOCAL_PORT=3306
+          LOCAL_PORT=${{ env.DB_PORT }}
         fi
         
         # SSH 터널 생성 (백그라운드에서 실행)
@@ -585,7 +587,7 @@ jobs:
             -o ServerAliveInterval=60 \
             -o ServerAliveCountMax=3 \
             -o ConnectTimeout=30 \
-            -L $LOCAL_PORT:$DB_HOST:3306 \
+            -L $LOCAL_PORT:$DB_HOST:${{ env.DB_PORT }} \
             ec2-user@$BASTION_IP \
             -N &
         SSH_PID=$!
@@ -633,12 +635,12 @@ jobs:
           
           # DB 연결 테스트
           echo '🔍 Bastion에서 RDS 직접 연결 테스트...'
-          if mysql -h $DB_HOST -P 3306 -u $DB_USER -p'${{ secrets.DB_PASSWORD }}' $DB_NAME -e 'SELECT VERSION();' 2>/dev/null; then
+          if mysql -h $DB_HOST -P ${{ env.DB_PORT }} -u $DB_USER -p'${{ secrets.DB_PASSWORD }}' $DB_NAME -e 'SELECT VERSION();' 2>/dev/null; then
             echo '✅ Bastion에서 RDS 직접 연결 성공'
           else
             echo '❌ Bastion에서 RDS 직접 연결 실패'
             echo '🔍 네트워크 연결 확인:'
-            nc -zv $DB_HOST 3306 2>&1 || telnet $DB_HOST 3306 < /dev/null 2>&1 | head -5
+            nc -zv $DB_HOST ${{ env.DB_PORT }} 2>&1 || telnet $DB_HOST ${{ env.DB_PORT }} < /dev/null 2>&1 | head -5
             echo '🔍 보안 그룹 확인이 필요합니다.'
             exit 1
           fi
@@ -994,10 +996,10 @@ jobs:
           sed -i "s/music1-namespace/${{ env.PROJECT_NAME }}/g" deployment.yml
           sed -i "s/music1-app/${{ env.PROJECT_NAME }}-app/g" deployment.yml
           sed -i "s/music1-service/${{ env.PROJECT_NAME }}-service/g" deployment.yml
-          sed -i "s|YOUR_ECR_URI/music1-app:latest|${{ steps.build-image.outputs.image }}|g" deployment.yml
+          sed -i "s|YOUR_ECR_URI/${{ env.IMAGE_NAME }}:latest|${{ steps.build-image.outputs.image }}|g" deployment.yml
           
           # Spring Boot Actuator 헬스체크로 변경
-          sed -i "s|path: /api/music|path: /actuator/health|g" deployment.yml
+          sed -i "s|path: /api/music|path: ${{ env.HEALTH_CHECK_PATH }}|g" deployment.yml
           
           # Service를 ClusterIP로 변경 (Ingress 사용을 위해)
           sed -i "s/type: LoadBalancer/type: ClusterIP/g" deployment.yml
@@ -1048,7 +1050,7 @@ jobs:
           echo "  namespace: ${{ env.PROJECT_NAME }}" >> configmap.yaml
           echo "data:" >> configmap.yaml
           echo '  DB_HOST: "${{ env.RDS_ENDPOINT }}"' >> configmap.yaml
-          echo '  DB_PORT: "3306"' >> configmap.yaml
+          echo '  DB_PORT: "${{ env.DB_PORT }}"' >> configmap.yaml
           echo '  DB_NAME: "${{ env.DB_NAME }}"' >> configmap.yaml
           echo '  DB_USER: "${{ env.DB_USER }}"' >> configmap.yaml
           echo '  AWS_REGION: "${{ secrets.AWS_REGION }}"' >> configmap.yaml
@@ -1086,7 +1088,7 @@ jobs:
           echo "    alb.ingress.kubernetes.io/subnets: ${{ env.PUBLIC_SUBNETS }}" >> ingress.yaml
           echo "    " >> ingress.yaml
           echo "    # Health Check 설정 (Spring Boot 애플리케이션)" >> ingress.yaml
-          echo "    alb.ingress.kubernetes.io/healthcheck-path: /actuator/health" >> ingress.yaml
+          echo "    alb.ingress.kubernetes.io/healthcheck-path: ${{ env.HEALTH_CHECK_PATH }}" >> ingress.yaml
           echo "    alb.ingress.kubernetes.io/healthcheck-interval-seconds: '30'" >> ingress.yaml
           echo "    alb.ingress.kubernetes.io/healthcheck-timeout-seconds: '10'" >> ingress.yaml
           echo "    alb.ingress.kubernetes.io/healthy-threshold-count: '2'" >> ingress.yaml
@@ -1189,7 +1191,7 @@ jobs:
                 fi
                 
                 # ALB가 실제로 응답하는지 확인
-                if curl -s --connect-timeout 5 --max-time 10 -o /dev/null -w "%{http_code}" "http://$ALB_DNS/actuator/health" | grep -E "^(200|404)$" >/dev/null; then
+                if curl -s --connect-timeout 5 --max-time 10 -o /dev/null -w "%{http_code}" "http://$ALB_DNS${{ env.HEALTH_CHECK_PATH }}" | grep -E "^(200|404)$" >/dev/null; then
                   echo "✅ ALB 프로비저닝 완료 및 연결 가능: $ALB_DNS"
                   echo "ALB_HOSTNAME=$ALB_DNS" >> $GITHUB_ENV
                   echo "DEPLOYMENT_METHOD=Ingress" >> $GITHUB_ENV
@@ -1369,7 +1371,7 @@ jobs:
             
             # 실제 연결 테스트
             echo "🔍 ALB 연결 테스트 중..."
-            if curl -s --connect-timeout 10 --max-time 15 -o /dev/null -w "%{http_code}" "http://${ALB_HOSTNAME}/actuator/health" | grep -E "^(200|404)$" >/dev/null; then
+            if curl -s --connect-timeout 10 --max-time 15 -o /dev/null -w "%{http_code}" "http://${ALB_HOSTNAME}${{ env.HEALTH_CHECK_PATH }}" | grep -E "^(200|404)$" >/dev/null; then
               echo "✅ ALB 연결 성공 - 애플리케이션 접속 가능"
             else
               echo "⚠️ ALB 연결 실패 - 헬스체크 문제일 수 있습니다"
@@ -1385,7 +1387,7 @@ jobs:
             echo "ℹ️ 5-10분 후 접속이 가능할 예정입니다."
             
             echo "🔍 현재 ALB 연결 상태:"
-            curl -s --connect-timeout 5 --max-time 10 -w "HTTP 상태코드: %{http_code}, 응답시간: %{time_total}s\n" "http://${ALB_HOSTNAME}/actuator/health" || echo "아직 연결 불가"
+            curl -s --connect-timeout 5 --max-time 10 -w "HTTP 상태코드: %{http_code}, 응답시간: %{time_total}s\n" "http://${ALB_HOSTNAME}${{ env.HEALTH_CHECK_PATH }}" || echo "아직 연결 불가"
             
             echo "🔍 Ingress 상태:"
             kubectl describe ingress ${{ env.PROJECT_NAME }}-ingress -n ${{ env.PROJECT_NAME }}

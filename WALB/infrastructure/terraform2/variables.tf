@@ -85,7 +85,7 @@ variable "db_name" {
 variable "db_username" {
   description = "데이터베이스 사용자명"
   type        = string
-  default     = "dbadmin"
+  default     = "msadmin"
 }
 
 variable "db_password" {
@@ -557,7 +557,7 @@ variable "availability_zones" {
 variable "db_user" {
   description = "데이터베이스 사용자명"
   type        = string
-  default     = "dbadmin"
+  default     = "msadmin"
 }
 
 # GitHub Repository 설정
