@@ -112,12 +112,12 @@ class DiagnosisService:
                     'message': f'진단 항목을 찾을 수 없습니다: {item_code}'
                 }
                 if enable_logging:
-
+                    pass  # 로깅 제거됨
                 return result
             
             # 진단 시작 로그
             if enable_logging:
-
+                pass  # 로깅 제거됨
             
             # AWS 세션 생성
             aws_session = self.create_aws_session(account)
@@ -127,7 +127,7 @@ class DiagnosisService:
                     'message': 'AWS 세션 생성에 실패했습니다.'
                 }
                 if enable_logging:
-
+                    pass  # 로깅 제거됨
                 return result
             
             # 체커 인스턴스 생성 및 진단 실행
@@ -138,7 +138,7 @@ class DiagnosisService:
                     'message': f'진단 체커를 찾을 수 없습니다: {item_code}'
                 }
                 if enable_logging:
-
+                    pass  # 로깅 제거됨
                 return result
             
             # 진단 실행
@@ -161,7 +161,7 @@ class DiagnosisService:
             
             # 진단 결과 로그
             if enable_logging:
-
+                pass  # 로깅 제거됨
             
             return result
             
@@ -203,7 +203,7 @@ class DiagnosisService:
             if enable_logging:
                 account_id = getattr(account, 'account_id', 'Unknown')
                 account_name = getattr(account, 'cloud_name', None)
-
+                pass  # 로깅 제거됨
             
             # AWS 세션 생성
             aws_session = self.create_aws_session(account)
@@ -213,8 +213,7 @@ class DiagnosisService:
                     'message': 'AWS 세션 생성에 실패했습니다.'
                 }
                 if enable_logging:
-
-
+                    pass  # 로깅 제거됨
                 return result
             
             # 각 항목별 진단 실행
@@ -234,9 +233,7 @@ class DiagnosisService:
             # 세션 요약 로그
             log_file_path = None
             if enable_logging:
-
-
-
+                pass  # 로깅 제거됨
             
             result = {
                 'status': 'success',
@@ -256,7 +253,7 @@ class DiagnosisService:
             
         except Exception as e:
             if enable_logging and session_id:
-
+                pass  # 로깅 제거됨
             return {
                 'status': 'error',
                 'message': f'일괄 진단 실행 중 오류 발생: {str(e)}'
