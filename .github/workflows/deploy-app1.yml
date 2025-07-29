@@ -172,8 +172,8 @@ jobs:
         IMAGE_TAG=${{ github.sha }}
         IMAGE_URI=${{ env.ECR_REPOSITORY }}:$IMAGE_TAG
         
-        # server 폴더로 이동해서 Docker 빌드
-        cd server
+        # server1 폴더로 이동해서 Docker 빌드
+        cd server1
         docker build -t $IMAGE_URI .
         docker tag $IMAGE_URI ${{ env.ECR_REPOSITORY }}:latest
         
