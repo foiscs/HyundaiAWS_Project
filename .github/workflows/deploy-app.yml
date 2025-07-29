@@ -272,7 +272,7 @@ jobs:
           
           # RDS 보안 그룹에 Bastion 접근 규칙 추가
           if [ -n "$BASTION_SG" ] && [ -n "$RDS_SG" ]; then
-            echo "🔧 RDS 보안 그룹에 Bastion 접근 규칙 추가 중..."
+            echo "🔧 RDS 보안 그룹에 Bastion 접근 규칙 추가 중.."
             
             # 기존 규칙 확인
             EXISTING_RULE=$(aws ec2 describe-security-groups \
