@@ -4,6 +4,11 @@ Flask 애플리케이션 팩토리
 from flask import Flask
 import sys
 import os
+from dotenv import load_dotenv
+
+# .env 파일 로드 (있는 경우)
+load_dotenv()
+
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config import config
 
