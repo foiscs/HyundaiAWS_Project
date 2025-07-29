@@ -131,18 +131,15 @@ class EbsEncryptionChecker(BaseChecker):
             print("  └─ 3. 암호화된 스냅샷으로부터 새 볼륨을 생성합니다.")
             print("  └─ 4. EC2 인스턴스에서 기존 볼륨을 분리(detach)하고 새로 생성한 암호화된 볼륨을 연결(attach)합니다.")
             
-            return {
-                'status': 'partial_success',
-                'results': results,
-                'message': f"기본 암호화 설정 {len(results)}건 완료. 미암호화 볼륨은 수동 조치가 필요합니다.",
-                'manual_guide': self._get_manual_guide()
-            }
+            # 수동 조치 안내를 results에 추가
+            results.append({
+                'item': 'manual_guide',
+                'status': 'info',
+                'message': f"기본 암호화 설정 {len([r for r in results if r['item'] != 'manual_guide'])}건 완료. 미암호화 볼륨은 수동 조치가 필요합니다."
+            })
+            return results
 
-        return {
-            'status': 'success',
-            'results': results,
-            'message': f"{len(results)}개 항목에 대한 조치가 완료되었습니다."
-        }
+        return results
 
     def _get_manual_guide(self):
         """미암호화 볼륨 수동 조치 가이드 반환"""

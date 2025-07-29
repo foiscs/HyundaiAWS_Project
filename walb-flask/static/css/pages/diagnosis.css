@@ -1986,3 +1986,55 @@
         max-width: 180px;
     }
 }
+
+/* 진단 안내문구 스타일 */
+.diagnosis-guide {
+    margin-top: 1.5rem;
+    background: linear-gradient(135deg, #eff6ff 0%, #f0f9ff 100%);
+    border: 1px solid #e0e7ff;
+    border-radius: 12px;
+    padding: 0;
+    overflow: hidden;
+    box-shadow: 0 2px 8px rgba(59, 130, 246, 0.1);
+}
+
+.guide-content {
+    display: flex;
+    align-items: flex-start;
+    gap: 1rem;
+    padding: 1rem 1.25rem;
+}
+
+.guide-icon {
+    font-size: 1.25rem;
+    margin-top: 0.125rem;
+    flex-shrink: 0;
+}
+
+.guide-text {
+    flex: 1;
+    font-size: 0.875rem;
+    line-height: 1.5;
+    color: #1e40af;
+}
+
+.guide-text strong {
+    color: #1e3a8a;
+    font-weight: 600;
+}
+
+/* 반응형 처리 */
+@media (max-width: 768px) {
+    .guide-content {
+        padding: 0.875rem 1rem;
+        gap: 0.75rem;
+    }
+    
+    .guide-icon {
+        font-size: 1.125rem;
+    }
+    
+    .guide-text {
+        font-size: 0.8125rem;
+    }
+}
