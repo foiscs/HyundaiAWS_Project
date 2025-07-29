@@ -9,16 +9,11 @@ on:
     paths:
       - 'WALB/server2/**'
       - '.github/workflows/deploy-app2.yml'
-  pull_request:
-    branches: [ main ]
-    paths:
-      - 'WALB/server2/**'
-      - '.github/workflows/deploy-app2.yml'
 
 env:
   PROJECT_NAME: ${{ vars.PROJECT_NAME || 'walb2-app' }}
-  DB_NAME: ${{ vars.DB_NAME || 'mydb' }}
-  DB_USER: ${{ vars.DB_USER || 'dbadmin' }}
+  DB_NAME: ${{ vars.DB_NAME || 'mydb2' }}
+  DB_USER: ${{ vars.DB_USER || 'dbadmin2' }}
   EKS_CLUSTER_NAME: ${{ vars.EKS_CLUSTER_NAME || 'walb2-eks-cluster' }}  # walb2 프로젝트용 클러스터
   S3_BUCKET_NAME: ${{ vars.S3_BUCKET_NAME || 'walb2-app-files' }}
   IAM_ROLE_NAME: ${{ vars.IAM_ROLE_NAME || 'walb2-app-eks-app-role' }}
