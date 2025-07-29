@@ -152,7 +152,7 @@ jobs:
         # RDS 엔드포인트 조회 (walb-app 프로젝트용)
         echo "🔍 RDS 인스턴스 조회 중..."
         DB_HOST=$(aws rds describe-db-instances \
-          --db-instance-identifier walb-rds-database \
+          --db-instance-identifier walb2-rds-database \
           --query "DBInstances[0].Endpoint.Address" \
           --output text 2>/dev/null || echo "")
         
@@ -277,14 +277,14 @@ jobs:
             # 기존 규칙 확인
             EXISTING_RULE=$(aws ec2 describe-security-groups \
               --group-ids $RDS_SG \
-              --query "SecurityGroups[0].IpPermissions[?FromPort==\`5432\` && UserIdGroupPairs[?GroupId==\`$BASTION_SG\`]]" \
+              --query "SecurityGroups[0].IpPermissions[?FromPort==\`3306\` && UserIdGroupPairs[?GroupId==\`$BASTION_SG\`]]" \
               --output text 2>/dev/null || echo "")
             
             if [ -z "$EXISTING_RULE" ]; then
               aws ec2 authorize-security-group-ingress \
                 --group-id $RDS_SG \
                 --protocol tcp \
-                --port 5432 \
+                --port 3306 \
                 --source-group $BASTION_SG \
                 --no-cli-pager 2>/dev/null && echo "✅ RDS 인바운드 규칙 추가 완료" || echo "⚠️ RDS 규칙 추가 실패 (이미 존재할 수 있음)"
             else
@@ -297,10 +297,10 @@ jobs:
         if [ -n "$BASTION_SG" ]; then
           echo "🔧 Bastion 보안 그룹 아웃바운드 규칙 확인 중..."
           
-          # PostgreSQL 아웃바운드 규칙 확인
+          # MySQL 아웃바운드 규칙 확인
           EXISTING_OUTBOUND=$(aws ec2 describe-security-groups \
             --group-ids $BASTION_SG \
-            --query "SecurityGroups[0].IpPermissionsEgress[?FromPort==\`5432\` || IpProtocol==\`-1\`]" \
+            --query "SecurityGroups[0].IpPermissionsEgress[?FromPort==\`3306\` || IpProtocol==\`-1\`]" \
             --output text 2>/dev/null || echo "")
           
           if [ -z "$EXISTING_OUTBOUND" ]; then
@@ -308,7 +308,7 @@ jobs:
             aws ec2 authorize-security-group-egress \
               --group-id $BASTION_SG \
               --protocol tcp \
-              --port 5432 \
+              --port 3306 \
               --cidr 0.0.0.0/0 \
               --no-cli-pager 2>/dev/null && echo "✅ Bastion 아웃바운드 규칙 추가 완료" || echo "⚠️ Bastion 규칙 추가 실패 (이미 존재할 수 있음)"
           else
@@ -336,27 +336,27 @@ jobs:
           exit 1
         fi
         
-        echo "🔗 SSH 터널을 통한 PostgreSQL 연결 테스트 중..."
+        echo "🔗 SSH 터널을 통한 MySQL 연결 테스트 중..."
         
-        # PostgreSQL 클라이언트 설치 (먼저 설치)
-        if ! command -v psql &> /dev/null; then
-          echo "📦 PostgreSQL 클라이언트 설치 중..."
-          sudo apt-get update -qq && sudo apt-get install -y postgresql-client
+        # MySQL 클라이언트 설치 (먼저 설치)
+        if ! command -v mysql &> /dev/null; then
+          echo "📦 MySQL 클라이언트 설치 중..."
+          sudo apt-get update -qq && sudo apt-get install -y mysql-client
         fi
         
         # 로컬 포트가 사용 중인지 확인
-        if netstat -tuln | grep -q ":5432 "; then
-          echo "⚠️ 포트 5432가 이미 사용 중입니다. 다른 포트를 사용합니다."
-          LOCAL_PORT=5433
+        if netstat -tuln | grep -q ":3306 "; then
+          echo "⚠️ 포트 3306이 이미 사용 중입니다. 다른 포트를 사용합니다."
+          LOCAL_PORT=3307
         else
-          LOCAL_PORT=5432
+          LOCAL_PORT=3306
         fi
         
         # DB_HOST에서 와일드카드 제거 (보안상 마스킹된 부분 처리)
         DB_HOST_CLEAN=$(echo "$DB_HOST" | sed 's/\*\*\*[^.]*//g' | sed 's/\.\././g')
         if [[ "$DB_HOST_CLEAN" != "$DB_HOST" ]]; then
           echo "⚠️ DB_HOST에 마스킹된 값이 포함되어 있습니다. 실제 엔드포인트로 대체합니다."
-          DB_HOST="walb-rds-database.cx02kko4cplr.ap-northeast-2.rds.amazonaws.com"
+          DB_HOST="walb2-rds-database.cx02kko4cplr.ap-northeast-2.rds.amazonaws.com"
         fi
         
         echo "🔍 사용할 DB 엔드포인트: $DB_HOST"
@@ -370,7 +370,7 @@ jobs:
             -o ServerAliveInterval=60 \
             -o ServerAliveCountMax=3 \
             -o ConnectTimeout=30 \
-            -L $LOCAL_PORT:$DB_HOST:5432 \
+            -L $LOCAL_PORT:$DB_HOST:3306 \
             ec2-user@$BASTION_IP \
             -N &
         SSH_PID=$!
@@ -407,21 +407,21 @@ jobs:
         # Bastion Host에서 직접 DB 연결 테스트
         echo "🔍 Bastion Host에서 DB 직접 연결 테스트 중..."
         ssh -i bastion_key.pem -o StrictHostKeyChecking=no ec2-user@$BASTION_IP "
-          # PostgreSQL 클라이언트 설치 확인
-          if ! command -v psql &> /dev/null; then
-            echo '📦 Bastion에 PostgreSQL 클라이언트 설치 중...'
+          # MySQL 클라이언트 설치 확인
+          if ! command -v mysql &> /dev/null; then
+            echo '📦 Bastion에 MySQL 클라이언트 설치 중...'
             sudo yum update -y
-            sudo yum install -y postgresql15
+            sudo yum install -y mysql
           fi
           
           # DB 연결 테스트
           echo '🔍 Bastion에서 RDS 직접 연결 테스트...'
-          if PGPASSWORD='$DB_PASSWORD' psql -h $DB_HOST -p 5432 -U $DB_USER -d $DB_NAME -c 'SELECT version();' 2>/dev/null; then
+          if mysql -h $DB_HOST -P 3306 -u $DB_USER -p$DB_PASSWORD $DB_NAME -e 'SELECT version();' 2>/dev/null; then
             echo '✅ Bastion에서 RDS 직접 연결 성공'
           else
             echo '❌ Bastion에서 RDS 직접 연결 실패'
             echo '🔍 네트워크 연결 확인:'
-            telnet $DB_HOST 5432 < /dev/null 2>&1 | head -5
+            telnet $DB_HOST 3306 < /dev/null 2>&1 | head -5
             echo '🔍 보안 그룹 확인이 필요합니다.'
             exit 1
           fi
@@ -431,7 +431,7 @@ jobs:
         echo "🔍 SSH 터널을 통한 데이터베이스 연결 테스트 중..."
         DB_CONNECTED=false
         for i in {1..5}; do
-          if PGPASSWORD=$DB_PASSWORD psql -h localhost -p $LOCAL_PORT -U $DB_USER -d $DB_NAME -c "SELECT 1;" 2>/dev/null; then
+          if mysql -h localhost -P $LOCAL_PORT -u $DB_USER -p$DB_PASSWORD $DB_NAME -e "SELECT 1;" 2>/dev/null; then
             echo "✅ 데이터베이스 연결 성공 (시도 $i/5)"
             DB_CONNECTED=true
             break
@@ -439,7 +439,7 @@ jobs:
             echo "⚠️ 데이터베이스 연결 실패 (시도 $i/5)"
             # 자세한 오류 정보 출력
             echo "🔍 상세 오류 정보:"
-            PGPASSWORD=$DB_PASSWORD psql -h localhost -p $LOCAL_PORT -U $DB_USER -d $DB_NAME -c "SELECT 1;" 2>&1 || true
+            mysql -h localhost -P $LOCAL_PORT -u $DB_USER -p$DB_PASSWORD $DB_NAME -e "SELECT 1;" 2>&1 || true
             
             if [ $i -lt 5 ]; then
               echo "3초 후 재시도..."
@@ -474,15 +474,15 @@ jobs:
         PROJECT_NAME: "walb-app"
         
     # ===============================================
-    # PostgreSQL 클라이언트 설치 및 스키마 적용
+    # MySQL 클라이언트 설치 및 스키마 적용
     # ===============================================
     - name: Apply Database Schema
       if: ${{ github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/terraform') }}
       run: |
         echo "🗄️ 데이터베이스 스키마 적용 중..."
         
-        # PostgreSQL 클라이언트 설치
-        sudo apt-get update && sudo apt-get install -y postgresql-client
+        # MySQL 클라이언트 설치
+        sudo apt-get update && sudo apt-get install -y mysql-client
         
         # 환경 변수 설정
         PROJECT_NAME="${{ env.PROJECT_NAME }}"
@@ -571,11 +571,11 @@ jobs:
           if [ -n "$BASTION_SG" ] && [ -n "$RDS_SG" ]; then
             echo "🔧 RDS 보안 그룹에 Bastion 접근 규칙 추가 중..."
             
-            if ! aws ec2 describe-security-groups --group-ids $RDS_SG --query "SecurityGroups[0].IpPermissions[?FromPort==\`5432\` && ToPort==\`5432\` && UserIdGroupPairs[?GroupId==\`$BASTION_SG\`]]" --output text | grep -q "5432"; then
+            if ! aws ec2 describe-security-groups --group-ids $RDS_SG --query "SecurityGroups[0].IpPermissions[?FromPort==\`3306\` && ToPort==\`3306\` && UserIdGroupPairs[?GroupId==\`$BASTION_SG\`]]" --output text | grep -q "3306"; then
               aws ec2 authorize-security-group-ingress \
                 --group-id $RDS_SG \
                 --protocol tcp \
-                --port 5432 \
+                --port 3306 \
                 --source-group $BASTION_SG \
                 --no-cli-pager && echo "✅ RDS 인바운드 규칙 추가 완료"
             else
@@ -588,11 +588,11 @@ jobs:
         if [ -n "$BASTION_SG" ]; then
           echo "🔧 Bastion 보안 그룹 아웃바운드 규칙 추가 중..."
           
-          if ! aws ec2 describe-security-groups --group-ids $BASTION_SG --query "SecurityGroups[0].IpPermissionsEgress[?FromPort==\`5432\` && ToPort==\`5432\` && IpRanges[?CidrIp==\`0.0.0.0/0\`]]" --output text | grep -q "5432"; then
+          if ! aws ec2 describe-security-groups --group-ids $BASTION_SG --query "SecurityGroups[0].IpPermissionsEgress[?FromPort==\`3306\` && ToPort==\`3306\` && IpRanges[?CidrIp==\`0.0.0.0/0\`]]" --output text | grep -q "3306"; then
             aws ec2 authorize-security-group-egress \
               --group-id $BASTION_SG \
               --protocol tcp \
-              --port 5432 \
+              --port 3306 \
               --cidr 0.0.0.0/0 \
               --no-cli-pager && echo "✅ Bastion 아웃바운드 규칙 추가 완료"
           else
@@ -610,11 +610,11 @@ jobs:
         chmod 600 bastion_key.pem
         
         # 로컬 포트가 사용 중인지 확인
-        if netstat -tuln | grep -q ":5432 "; then
-          echo "⚠️ 포트 5432가 이미 사용 중입니다. 다른 포트를 사용합니다."
-          LOCAL_PORT=5433
+        if netstat -tuln | grep -q ":3306 "; then
+          echo "⚠️ 포트 3306이 이미 사용 중입니다. 다른 포트를 사용합니다."
+          LOCAL_PORT=3307
         else
-          LOCAL_PORT=5432
+          LOCAL_PORT=3306
         fi
         
         # SSH 터널 생성 (백그라운드에서 실행)
@@ -626,7 +626,7 @@ jobs:
             -o ServerAliveInterval=60 \
             -o ServerAliveCountMax=3 \
             -o ConnectTimeout=30 \
-            -L $LOCAL_PORT:$DB_HOST:5432 \
+            -L $LOCAL_PORT:$DB_HOST:3306 \
             ec2-user@$BASTION_IP \
             -N &
         SSH_PID=$!
@@ -665,21 +665,21 @@ jobs:
         # Bastion Host에서 직접 DB 연결 테스트
         echo "🔍 Bastion Host에서 DB 직접 연결 테스트 중..."
         ssh -i bastion_key.pem -o StrictHostKeyChecking=no ec2-user@$BASTION_IP "
-          # PostgreSQL 클라이언트 설치 확인
-          if ! command -v psql &> /dev/null; then
-            echo '📦 Bastion에 PostgreSQL 클라이언트 설치 중...'
+          # MySQL 클라이언트 설치 확인
+          if ! command -v mysql &> /dev/null; then
+            echo '📦 Bastion에 MySQL 클라이언트 설치 중...'
             sudo yum update -y
-            sudo yum install -y postgresql15
+            sudo yum install -y mysql
           fi
           
           # DB 연결 테스트
           echo '🔍 Bastion에서 RDS 직접 연결 테스트...'
-          if PGPASSWORD='${{ secrets.DB_PASSWORD }}' psql -h $DB_HOST -p 5432 -U $DB_USER -d $DB_NAME -c 'SELECT version();' 2>/dev/null; then
+          if mysql -h $DB_HOST -P 3306 -u $DB_USER -p'${{ secrets.DB_PASSWORD }}' $DB_NAME -e 'SELECT version();' 2>/dev/null; then
             echo '✅ Bastion에서 RDS 직접 연결 성공'
           else
             echo '❌ Bastion에서 RDS 직접 연결 실패'
             echo '🔍 네트워크 연결 확인:'
-            nc -zv $DB_HOST 5432 2>&1 || telnet $DB_HOST 5432 < /dev/null 2>&1 | head -5
+            nc -zv $DB_HOST 3306 2>&1 || telnet $DB_HOST 3306 < /dev/null 2>&1 | head -5
             echo '🔍 보안 그룹 확인이 필요합니다.'
             exit 1
           fi
@@ -689,13 +689,13 @@ jobs:
         echo "🔍 SSH 터널을 통한 데이터베이스 연결 테스트 중..."
         DB_CONNECTED=false
         for i in {1..5}; do
-          if PGPASSWORD="${{ secrets.DB_PASSWORD }}" psql \
+          if mysql \
             -h localhost \
-            -p $LOCAL_PORT \
-            -U "$DB_USER" \
-            -d "$DB_NAME" \
-            -c "SELECT version();" \
-            -v ON_ERROR_STOP=1 2>/dev/null; then
+            -P $LOCAL_PORT \
+            -u "$DB_USER" \
+            -p"${{ secrets.DB_PASSWORD }}" \
+            "$DB_NAME" \
+            -e "SELECT version();" 2>/dev/null; then
             echo "✅ 데이터베이스 연결 성공 (시도 $i/5)"
             DB_CONNECTED=true
             break
@@ -703,12 +703,13 @@ jobs:
             echo "⚠️ 데이터베이스 연결 실패 (시도 $i/5)"
             # 자세한 오류 정보 출력
             echo "🔍 상세 오류 정보:"
-            PGPASSWORD="${{ secrets.DB_PASSWORD }}" psql \
+            mysql \
               -h localhost \
-              -p $LOCAL_PORT \
-              -U "$DB_USER" \
-              -d "$DB_NAME" \
-              -c "SELECT version();" 2>&1 || true
+              -P $LOCAL_PORT \
+              -u "$DB_USER" \
+              -p"${{ secrets.DB_PASSWORD }}" \
+              "$DB_NAME" \
+              -e "SELECT version();" 2>&1 || true
             
             if [ $i -lt 5 ]; then
               echo "3초 후 재시도..."
@@ -731,25 +732,25 @@ jobs:
         
         # 기존 테이블 확인
         echo "🔍 기존 테이블 확인 중..."
-        EXISTING_TABLES=$(PGPASSWORD="${{ secrets.DB_PASSWORD }}" psql \
+        EXISTING_TABLES=$(mysql \
           -h localhost \
-          -p $LOCAL_PORT \
-          -U "$DB_USER" \
-          -d "$DB_NAME" \
-          -t -c "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_name IN ('users', 'posts', 'images', 'files');" \
-          -v ON_ERROR_STOP=1 | tr -d ' ')
+          -P $LOCAL_PORT \
+          -u "$DB_USER" \
+          -p"${{ secrets.DB_PASSWORD }}" \
+          "$DB_NAME" \
+          -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = '$DB_NAME' AND table_name IN ('users', 'posts', 'images', 'files');" -s -N 2>/dev/null | tr -d ' ')
         
         echo "📊 기존 테이블 개수: $EXISTING_TABLES/4"
         
         if [ "$EXISTING_TABLES" -lt "4" ]; then
           echo "📝 스키마 파일 적용 중..."
-          if PGPASSWORD="${{ secrets.DB_PASSWORD }}" psql \
+          if mysql \
             -h localhost \
-            -p $LOCAL_PORT \
-            -U "$DB_USER" \
-            -d "$DB_NAME" \
-            -f server/files/schema.sql \
-            -v ON_ERROR_STOP=1; then
+            -P $LOCAL_PORT \
+            -u "$DB_USER" \
+            -p"${{ secrets.DB_PASSWORD }}" \
+            "$DB_NAME" \
+            < server/files/schema.sql; then
             echo "✅ 스키마 적용 완료"
           else
             echo "❌ 스키마 적용 실패"
@@ -1067,7 +1068,7 @@ jobs:
           echo "  namespace: ${{ env.PROJECT_NAME }}" >> configmap.yaml
           echo "data:" >> configmap.yaml
           echo '  DB_HOST: "${{ env.RDS_ENDPOINT }}"' >> configmap.yaml
-          echo '  DB_PORT: "5432"' >> configmap.yaml
+          echo '  DB_PORT: "3306"' >> configmap.yaml
           echo '  DB_NAME: "mydb"' >> configmap.yaml
           echo '  DB_USER: "dbadmin"' >> configmap.yaml
           echo '  AWS_REGION: "${{ secrets.AWS_REGION }}"' >> configmap.yaml
