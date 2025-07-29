@@ -1,0 +1,42 @@
+# App2 서버 배포를 위한 설정 파일
+# GitHub Repository Variables로 설정하거나 이 파일을 참고하여 직접 설정하세요
+
+app2_config:
+  # 프로젝트 기본 정보
+  project_name: "walb-app2"  # walb-app에서 walb-app2로 변경
+  
+  # 데이터베이스 설정
+  database:
+    name: "mydb2"        # mydb에서 mydb2로 변경
+    user: "dbadmin2"     # dbadmin에서 dbadmin2로 변경
+    port: "5432"
+  
+  # EKS 클러스터 설정
+  eks:
+    cluster_name: "walb-eks-cluster2"  # walb-eks-cluster에서 walb-eks-cluster2로 변경
+  
+  # S3 버킷 설정
+  s3:
+    bucket_name: "walb-app2-files"     # walb-app-files에서 walb-app2-files로 변경
+    region: "ap-northeast-2"
+  
+  # IAM 역할 설정
+  iam:
+    role_name: "walb-app2-eks-app-role"  # walb-app-eks-app-role에서 walb-app2-eks-app-role로 변경
+  
+  # 네트워크 설정
+  network:
+    # 서브넷은 동적으로 조회하지만, 필요시 수동 설정 가능
+    # public_subnets: "subnet-xxx,subnet-yyy"
+
+# GitHub Repository Variables 설정 방법:
+# GitHub 리포지토리 설정 > Secrets and variables > Actions > Variables 탭에서 다음 변수들을 설정:
+#
+# PROJECT_NAME: walb-app2
+# DB_NAME: mydb2  
+# DB_USER: dbadmin2
+# EKS_CLUSTER_NAME: walb-eks-cluster2
+# S3_BUCKET_NAME: walb-app2-files
+# IAM_ROLE_NAME: walb-app2-eks-app-role
+#
+# 이렇게 설정하면 deploy-app2.yml에서 해당 값들을 자동으로 사용합니다.
