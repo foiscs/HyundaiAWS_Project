@@ -1,22 +1,28 @@
-# .github/workflows/deploy-app.yml
-# PHP 애플리케이션 배포 워크플로우 (server 폴더 변경시만 실행)
+# .github/workflows/deploy-app2.yml
+# Java Spring Boot 애플리케이션 배포 워크플로우 (server2 폴더 변경시만 실행)
 
-name: Deploy PHP Application
+name: Deploy Java Spring Boot Application
 
 on:
   push:
     branches: [ main ]
     paths:
-      - 'WALB/server/**'
-      - '.github/workflows/deploy-app.yml'
+      - 'WALB/server2/**'
+      - '.github/workflows/deploy-app2.yml'
   pull_request:
     branches: [ main ]
     paths:
-      - 'WALB/server/**'
-      - '.github/workflows/deploy-app.yml'
+      - 'WALB/server2/**'
+      - '.github/workflows/deploy-app2.yml'
 
 env:
-  PROJECT_NAME: "walb-app"
+  PROJECT_NAME: ${{ vars.PROJECT_NAME || 'walb2-app' }}
+  DB_NAME: ${{ vars.DB_NAME || 'mydb' }}
+  DB_USER: ${{ vars.DB_USER || 'dbadmin' }}
+  EKS_CLUSTER_NAME: ${{ vars.EKS_CLUSTER_NAME || 'm-cluster' }}  # 기존 deploy.yml과 일치
+  S3_BUCKET_NAME: ${{ vars.S3_BUCKET_NAME || 'walb2-app-files' }}
+  IAM_ROLE_NAME: ${{ vars.IAM_ROLE_NAME || 'walb2-app-eks-app-role' }}
+  DEPLOYMENT_NAME: ${{ vars.DEPLOYMENT_NAME || 'music1-deployment' }}  # 기존 deploy.yml과 일치
   
 jobs:
   build-and-deploy:
@@ -39,25 +45,27 @@ jobs:
       uses: actions/checkout@v4
     
     # ===============================================
-    # PHP 및 Composer 환경 설정
+    # Java 및 Maven 환경 설정
     # ===============================================
-    - name: Set up PHP
-      uses: shivammathur/setup-php@v2
+    - name: Set up JDK 17
+      uses: actions/setup-java@v4
       with:
-        php-version: '8.1'
-        extensions: pdo, pdo_pgsql, mbstring, xml, zip, gd
-        coverage: none
+        java-version: '17'
+        distribution: 'temurin'
+        cache: maven
     
-    - name: Validate Composer
+    - name: Validate and Build Maven Project
       run: |
-        echo "🔍 PHP 애플리케이션 검증 중..."
-        if [ -f "server/composer.json" ]; then
-          cd server
-          composer validate --no-check-publish
-          composer install --no-dev --optimize-autoloader --no-interaction
-          echo "✅ Composer 검증 완료"
+        echo "🔍 Java Spring Boot 애플리케이션 검증 중..."
+        if [ -f "server2/pom.xml" ]; then
+          cd server2
+          echo "📦 Maven 의존성 검증 및 빌드 중..."
+          mvn clean compile test package -DskipTests=false
+          echo "✅ Maven 빌드 완료"
+          ls -la target/
         else
-          echo "ℹ️ Composer 파일이 없습니다. Docker 빌드만 실행합니다."
+          echo "❌ pom.xml 파일이 없습니다."
+          exit 1
         fi
     
     # ===============================================
@@ -88,7 +96,7 @@ jobs:
         echo "✅ ECR Repository: $ECR_REPO"
         
         # EKS 클러스터 이름 조회
-        EKS_CLUSTER=$(aws eks describe-cluster --name walb-eks-cluster --query 'cluster.name' --output text 2>/dev/null || echo "")
+        EKS_CLUSTER=$(aws eks describe-cluster --name ${{ env.EKS_CLUSTER_NAME }} --query 'cluster.name' --output text 2>/dev/null || echo "")
         if [ -z "$EKS_CLUSTER" ] || [ "$EKS_CLUSTER" == "None" ]; then
           echo "❌ EKS 클러스터를 찾을 수 없습니다: ${PROJECT_NAME}-eks"
           echo "먼저 인프라 배포가 필요합니다."
@@ -98,7 +106,7 @@ jobs:
         echo "✅ EKS Cluster: $EKS_CLUSTER"
         
         # RDS 엔드포인트 조회
-        RDS_ENDPOINT=$(aws rds describe-db-instances --query 'DBInstances[?DBName==`mydb`].Endpoint.Address' --output text 2>/dev/null || echo "")
+        RDS_ENDPOINT=$(aws rds describe-db-instances --query "DBInstances[?DBName==\`${{ env.DB_NAME }}\`].Endpoint.Address" --output text 2>/dev/null || echo "")
         if [ -z "$RDS_ENDPOINT" ] || [ "$RDS_ENDPOINT" == "None" ]; then
           echo "❌ RDS 인스턴스를 찾을 수 없습니다"
           echo "먼저 인프라 배포가 필요합니다."
@@ -134,8 +142,8 @@ jobs:
         IMAGE_TAG=${{ github.sha }}
         IMAGE_URI=${{ env.ECR_REPOSITORY }}:$IMAGE_TAG
         
-        # server 폴더로 이동해서 Docker 빌드
-        cd server
+        # server2 폴더로 이동해서 Docker 빌드
+        cd server2
         docker build -t $IMAGE_URI .
         docker tag $IMAGE_URI ${{ env.ECR_REPOSITORY }}:latest
         
@@ -149,7 +157,7 @@ jobs:
     - name: Test Database Connection via Bastion
       run: |
         # AWS CLI를 사용해서 리소스 정보 직접 조회
-        PROJECT_NAME="walb-app"
+        PROJECT_NAME="${{ env.PROJECT_NAME }}"
         
         # RDS 엔드포인트 조회 (태그 기반)
         echo "🔍 RDS 인스턴스 조회 중..."
@@ -160,7 +168,7 @@ jobs:
         if [ -z "$DB_HOST" ]; then
           # 태그 조회가 안 되면 DB 이름으로 조회
           DB_HOST=$(aws rds describe-db-instances \
-            --query "DBInstances[?DBName=='mydb'].Endpoint.Address" \
+            --query "DBInstances[?DBName=='${{ env.DB_NAME }}'].Endpoint.Address" \
             --output text 2>/dev/null || echo "")
         fi
         
@@ -179,9 +187,9 @@ jobs:
             --output text 2>/dev/null || echo "")
         fi
         
-        # DB 사용자명과 DB 이름 (하드코딩된 값 사용)
-        DB_NAME="mydb"
-        DB_USER="dbadmin"
+        # DB 사용자명과 DB 이름 (환경변수 사용)
+        DB_NAME="${{ env.DB_NAME }}"
+        DB_USER="${{ env.DB_USER }}"
         
         # Parameter Store에서 DB 패스워드 조회
         echo "🔍 DB 패스워드 조회 중..."
@@ -259,14 +267,14 @@ jobs:
             # 기존 규칙 확인
             EXISTING_RULE=$(aws ec2 describe-security-groups \
               --group-ids $RDS_SG \
-              --query "SecurityGroups[0].IpPermissions[?FromPort==\`5432\` && UserIdGroupPairs[?GroupId==\`$BASTION_SG\`]]" \
+              --query "SecurityGroups[0].IpPermissions[?FromPort==\`3306\` && UserIdGroupPairs[?GroupId==\`$BASTION_SG\`]]" \
               --output text 2>/dev/null || echo "")
             
             if [ -z "$EXISTING_RULE" ]; then
               aws ec2 authorize-security-group-ingress \
                 --group-id $RDS_SG \
                 --protocol tcp \
-                --port 5432 \
+                --port 3306 \
                 --source-group $BASTION_SG \
                 --no-cli-pager 2>/dev/null && echo "✅ RDS 인바운드 규칙 추가 완료" || echo "⚠️ RDS 규칙 추가 실패 (이미 존재할 수 있음)"
             else
@@ -279,10 +287,10 @@ jobs:
         if [ -n "$BASTION_SG" ]; then
           echo "🔧 Bastion 보안 그룹 아웃바운드 규칙 확인 중..."
           
-          # PostgreSQL 아웃바운드 규칙 확인
+          # MySQL 아웃바운드 규칙 확인
           EXISTING_OUTBOUND=$(aws ec2 describe-security-groups \
             --group-ids $BASTION_SG \
-            --query "SecurityGroups[0].IpPermissionsEgress[?FromPort==\`5432\` || IpProtocol==\`-1\`]" \
+            --query "SecurityGroups[0].IpPermissionsEgress[?FromPort==\`3306\` || IpProtocol==\`-1\`]" \
             --output text 2>/dev/null || echo "")
           
           if [ -z "$EXISTING_OUTBOUND" ]; then
@@ -290,7 +298,7 @@ jobs:
             aws ec2 authorize-security-group-egress \
               --group-id $BASTION_SG \
               --protocol tcp \
-              --port 5432 \
+              --port 3306 \
               --cidr 0.0.0.0/0 \
               --no-cli-pager 2>/dev/null && echo "✅ Bastion 아웃바운드 규칙 추가 완료" || echo "⚠️ Bastion 규칙 추가 실패 (이미 존재할 수 있음)"
           else
@@ -318,20 +326,20 @@ jobs:
           exit 1
         fi
         
-        echo "🔗 SSH 터널을 통한 PostgreSQL 연결 테스트 중..."
+        echo "🔗 SSH 터널을 통한 MySQL 연결 테스트 중..."
         
-        # PostgreSQL 클라이언트 설치 (먼저 설치)
-        if ! command -v psql &> /dev/null; then
-          echo "📦 PostgreSQL 클라이언트 설치 중..."
-          sudo apt-get update -qq && sudo apt-get install -y postgresql-client
+        # MySQL 클라이언트 설치 (먼저 설치)
+        if ! command -v mysql &> /dev/null; then
+          echo "📦 MySQL 클라이언트 설치 중..."
+          sudo apt-get update -qq && sudo apt-get install -y mysql-client
         fi
         
         # 로컬 포트가 사용 중인지 확인
-        if netstat -tuln | grep -q ":5432 "; then
-          echo "⚠️ 포트 5432가 이미 사용 중입니다. 다른 포트를 사용합니다."
-          LOCAL_PORT=5433
+        if netstat -tuln | grep -q ":3306 "; then
+          echo "⚠️ 포트 3306이 이미 사용 중입니다. 다른 포트를 사용합니다."
+          LOCAL_PORT=3307
         else
-          LOCAL_PORT=5432
+          LOCAL_PORT=3306
         fi
         
         echo "🔗 SSH 터널 생성 중... (로컬 포트: $LOCAL_PORT)"
@@ -343,7 +351,7 @@ jobs:
             -o ServerAliveInterval=60 \
             -o ServerAliveCountMax=3 \
             -o ConnectTimeout=30 \
-            -L $LOCAL_PORT:$DB_HOST:5432 \
+            -L $LOCAL_PORT:$DB_HOST:3306 \
             ec2-user@$BASTION_IP \
             -N &
         SSH_PID=$!
@@ -380,21 +388,21 @@ jobs:
         # Bastion Host에서 직접 DB 연결 테스트
         echo "🔍 Bastion Host에서 DB 직접 연결 테스트 중..."
         ssh -i bastion_key.pem -o StrictHostKeyChecking=no ec2-user@$BASTION_IP "
-          # PostgreSQL 클라이언트 설치 확인
-          if ! command -v psql &> /dev/null; then
-            echo '📦 Bastion에 PostgreSQL 클라이언트 설치 중...'
+          # MySQL 클라이언트 설치 확인
+          if ! command -v mysql &> /dev/null; then
+            echo '📦 Bastion에 MySQL 클라이언트 설치 중...'
             sudo yum update -y
-            sudo yum install -y postgresql15
+            sudo yum install -y mysql
           fi
           
           # DB 연결 테스트
           echo '🔍 Bastion에서 RDS 직접 연결 테스트...'
-          if PGPASSWORD='$DB_PASSWORD' psql -h $DB_HOST -p 5432 -U $DB_USER -d $DB_NAME -c 'SELECT version();' 2>/dev/null; then
+          if mysql -h $DB_HOST -P 3306 -u $DB_USER -p'$DB_PASSWORD' $DB_NAME -e 'SELECT VERSION();' 2>/dev/null; then
             echo '✅ Bastion에서 RDS 직접 연결 성공'
           else
             echo '❌ Bastion에서 RDS 직접 연결 실패'
             echo '🔍 네트워크 연결 확인:'
-            telnet $DB_HOST 5432 < /dev/null 2>&1 | head -5
+            telnet $DB_HOST 3306 < /dev/null 2>&1 | head -5
             echo '🔍 보안 그룹 확인이 필요합니다.'
             exit 1
           fi
@@ -404,7 +412,7 @@ jobs:
         echo "🔍 SSH 터널을 통한 데이터베이스 연결 테스트 중..."
         DB_CONNECTED=false
         for i in {1..5}; do
-          if PGPASSWORD=$DB_PASSWORD psql -h localhost -p $LOCAL_PORT -U $DB_USER -d $DB_NAME -c "SELECT 1;" 2>/dev/null; then
+          if mysql -h localhost -P $LOCAL_PORT -u $DB_USER -p$DB_PASSWORD $DB_NAME -e "SELECT 1;" 2>/dev/null; then
             echo "✅ 데이터베이스 연결 성공 (시도 $i/5)"
             DB_CONNECTED=true
             break
@@ -412,7 +420,7 @@ jobs:
             echo "⚠️ 데이터베이스 연결 실패 (시도 $i/5)"
             # 자세한 오류 정보 출력
             echo "🔍 상세 오류 정보:"
-            PGPASSWORD=$DB_PASSWORD psql -h localhost -p $LOCAL_PORT -U $DB_USER -d $DB_NAME -c "SELECT 1;" 2>&1 || true
+            mysql -h localhost -P $LOCAL_PORT -u $DB_USER -p$DB_PASSWORD $DB_NAME -e "SELECT 1;" 2>&1 || true
             
             if [ $i -lt 5 ]; then
               echo "3초 후 재시도..."
@@ -444,24 +452,24 @@ jobs:
         
         echo "✅ 데이터베이스 연결 테스트 완료"
       env:
-        PROJECT_NAME: "walb-app"
+        PROJECT_NAME: ${{ env.PROJECT_NAME }}
         
     # ===============================================
-    # PostgreSQL 클라이언트 설치 및 스키마 적용
+    # MySQL 클라이언트 설치 및 스키마 적용
     # ===============================================
     - name: Apply Database Schema
       if: ${{ github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/terraform') }}
       run: |
         echo "🗄️ 데이터베이스 스키마 적용 중..."
         
-        # PostgreSQL 클라이언트 설치
-        sudo apt-get update && sudo apt-get install -y postgresql-client
+        # MySQL 클라이언트 설치
+        sudo apt-get update && sudo apt-get install -y mysql-client
         
         # 환경 변수 설정
-        PROJECT_NAME="walb-app"
+        PROJECT_NAME="${{ env.PROJECT_NAME }}"
         DB_HOST="${{ env.RDS_ENDPOINT }}"
-        DB_NAME="mydb"
-        DB_USER="dbadmin"
+        DB_NAME="${{ env.DB_NAME }}"
+        DB_USER="${{ env.DB_USER }}"
         
         # Bastion Host IP 조회
         BASTION_IP=$(aws ec2 describe-instances \
@@ -517,11 +525,11 @@ jobs:
           if [ -n "$BASTION_SG" ] && [ -n "$RDS_SG" ]; then
             echo "🔧 RDS 보안 그룹에 Bastion 접근 규칙 추가 중..."
             
-            if ! aws ec2 describe-security-groups --group-ids $RDS_SG --query "SecurityGroups[0].IpPermissions[?FromPort==\`5432\` && ToPort==\`5432\` && UserIdGroupPairs[?GroupId==\`$BASTION_SG\`]]" --output text | grep -q "5432"; then
+            if ! aws ec2 describe-security-groups --group-ids $RDS_SG --query "SecurityGroups[0].IpPermissions[?FromPort==\`3306\` && ToPort==\`3306\` && UserIdGroupPairs[?GroupId==\`$BASTION_SG\`]]" --output text | grep -q "3306"; then
               aws ec2 authorize-security-group-ingress \
                 --group-id $RDS_SG \
                 --protocol tcp \
-                --port 5432 \
+                --port 3306 \
                 --source-group $BASTION_SG \
                 --no-cli-pager && echo "✅ RDS 인바운드 규칙 추가 완료"
             else
@@ -534,11 +542,11 @@ jobs:
         if [ -n "$BASTION_SG" ]; then
           echo "🔧 Bastion 보안 그룹 아웃바운드 규칙 추가 중..."
           
-          if ! aws ec2 describe-security-groups --group-ids $BASTION_SG --query "SecurityGroups[0].IpPermissionsEgress[?FromPort==\`5432\` && ToPort==\`5432\` && IpRanges[?CidrIp==\`0.0.0.0/0\`]]" --output text | grep -q "5432"; then
+          if ! aws ec2 describe-security-groups --group-ids $BASTION_SG --query "SecurityGroups[0].IpPermissionsEgress[?FromPort==\`3306\` && ToPort==\`3306\` && IpRanges[?CidrIp==\`0.0.0.0/0\`]]" --output text | grep -q "3306"; then
             aws ec2 authorize-security-group-egress \
               --group-id $BASTION_SG \
               --protocol tcp \
-              --port 5432 \
+              --port 3306 \
               --cidr 0.0.0.0/0 \
               --no-cli-pager && echo "✅ Bastion 아웃바운드 규칙 추가 완료"
           else
@@ -556,11 +564,11 @@ jobs:
         chmod 600 bastion_key.pem
         
         # 로컬 포트가 사용 중인지 확인
-        if netstat -tuln | grep -q ":5432 "; then
-          echo "⚠️ 포트 5432가 이미 사용 중입니다. 다른 포트를 사용합니다."
-          LOCAL_PORT=5433
+        if netstat -tuln | grep -q ":3306 "; then
+          echo "⚠️ 포트 3306이 이미 사용 중입니다. 다른 포트를 사용합니다."
+          LOCAL_PORT=3307
         else
-          LOCAL_PORT=5432
+          LOCAL_PORT=3306
         fi
         
         # SSH 터널 생성 (백그라운드에서 실행)
@@ -572,7 +580,7 @@ jobs:
             -o ServerAliveInterval=60 \
             -o ServerAliveCountMax=3 \
             -o ConnectTimeout=30 \
-            -L $LOCAL_PORT:$DB_HOST:5432 \
+            -L $LOCAL_PORT:$DB_HOST:3306 \
             ec2-user@$BASTION_IP \
             -N &
         SSH_PID=$!
@@ -611,21 +619,21 @@ jobs:
         # Bastion Host에서 직접 DB 연결 테스트
         echo "🔍 Bastion Host에서 DB 직접 연결 테스트 중..."
         ssh -i bastion_key.pem -o StrictHostKeyChecking=no ec2-user@$BASTION_IP "
-          # PostgreSQL 클라이언트 설치 확인
-          if ! command -v psql &> /dev/null; then
-            echo '📦 Bastion에 PostgreSQL 클라이언트 설치 중...'
+          # MySQL 클라이언트 설치 확인
+          if ! command -v mysql &> /dev/null; then
+            echo '📦 Bastion에 MySQL 클라이언트 설치 중...'
             sudo yum update -y
-            sudo yum install -y postgresql15
+            sudo yum install -y mysql
           fi
           
           # DB 연결 테스트
           echo '🔍 Bastion에서 RDS 직접 연결 테스트...'
-          if PGPASSWORD='${{ secrets.DB_PASSWORD }}' psql -h $DB_HOST -p 5432 -U $DB_USER -d $DB_NAME -c 'SELECT version();' 2>/dev/null; then
+          if mysql -h $DB_HOST -P 3306 -u $DB_USER -p'${{ secrets.DB_PASSWORD }}' $DB_NAME -e 'SELECT VERSION();' 2>/dev/null; then
             echo '✅ Bastion에서 RDS 직접 연결 성공'
           else
             echo '❌ Bastion에서 RDS 직접 연결 실패'
             echo '🔍 네트워크 연결 확인:'
-            nc -zv $DB_HOST 5432 2>&1 || telnet $DB_HOST 5432 < /dev/null 2>&1 | head -5
+            nc -zv $DB_HOST 3306 2>&1 || telnet $DB_HOST 3306 < /dev/null 2>&1 | head -5
             echo '🔍 보안 그룹 확인이 필요합니다.'
             exit 1
           fi
@@ -635,13 +643,13 @@ jobs:
         echo "🔍 SSH 터널을 통한 데이터베이스 연결 테스트 중..."
         DB_CONNECTED=false
         for i in {1..5}; do
-          if PGPASSWORD="${{ secrets.DB_PASSWORD }}" psql \
+          if mysql \
             -h localhost \
-            -p $LOCAL_PORT \
-            -U "$DB_USER" \
-            -d "$DB_NAME" \
-            -c "SELECT version();" \
-            -v ON_ERROR_STOP=1 2>/dev/null; then
+            -P $LOCAL_PORT \
+            -u "$DB_USER" \
+            -p"${{ secrets.DB_PASSWORD }}" \
+            "$DB_NAME" \
+            -e "SELECT VERSION();" 2>/dev/null; then
             echo "✅ 데이터베이스 연결 성공 (시도 $i/5)"
             DB_CONNECTED=true
             break
@@ -649,12 +657,13 @@ jobs:
             echo "⚠️ 데이터베이스 연결 실패 (시도 $i/5)"
             # 자세한 오류 정보 출력
             echo "🔍 상세 오류 정보:"
-            PGPASSWORD="${{ secrets.DB_PASSWORD }}" psql \
+            mysql \
               -h localhost \
-              -p $LOCAL_PORT \
-              -U "$DB_USER" \
-              -d "$DB_NAME" \
-              -c "SELECT version();" 2>&1 || true
+              -P $LOCAL_PORT \
+              -u "$DB_USER" \
+              -p"${{ secrets.DB_PASSWORD }}" \
+              "$DB_NAME" \
+              -e "SELECT VERSION();" 2>&1 || true
             
             if [ $i -lt 5 ]; then
               echo "3초 후 재시도..."
@@ -675,38 +684,9 @@ jobs:
           exit 1
         fi
         
-        # 기존 테이블 확인
-        echo "🔍 기존 테이블 확인 중..."
-        EXISTING_TABLES=$(PGPASSWORD="${{ secrets.DB_PASSWORD }}" psql \
-          -h localhost \
-          -p $LOCAL_PORT \
-          -U "$DB_USER" \
-          -d "$DB_NAME" \
-          -t -c "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_name IN ('users', 'posts', 'images', 'files');" \
-          -v ON_ERROR_STOP=1 | tr -d ' ')
-        
-        echo "📊 기존 테이블 개수: $EXISTING_TABLES/4"
-        
-        if [ "$EXISTING_TABLES" -lt "4" ]; then
-          echo "📝 스키마 파일 적용 중..."
-          if PGPASSWORD="${{ secrets.DB_PASSWORD }}" psql \
-            -h localhost \
-            -p $LOCAL_PORT \
-            -U "$DB_USER" \
-            -d "$DB_NAME" \
-            -f server/files/schema.sql \
-            -v ON_ERROR_STOP=1; then
-            echo "✅ 스키마 적용 완료"
-          else
-            echo "❌ 스키마 적용 실패"
-            kill $SSH_PID 2>/dev/null
-            rm -f bastion_key.pem
-            exit 1
-          fi
-
-        else
-          echo "ℹ️ 모든 테이블이 이미 존재합니다 ($EXISTING_TABLES/4). 스키마 적용을 건너뜁니다."
-        fi
+        # 기본 연결 테스트만 수행 (Java 애플리케이션은 자체적으로 DB 연결 관리)
+        echo "🔍 데이터베이스 연결 확인 완료"
+        echo "ℹ️ Java Spring Boot 애플리케이션은 자체적으로 데이터베이스 연결을 설정합니다."
 
         # 정리 작업
         echo "🧹 정리 작업 중..."
@@ -750,7 +730,7 @@ jobs:
 
           # 방법 2: 특정 이름으로 조회
           if [ -z "$EKS_CLUSTER_NAME" ] || [ "$EKS_CLUSTER_NAME" == "None" ]; then
-            EKS_CLUSTER_NAME="walb-eks-cluster"
+            EKS_CLUSTER_NAME="${{ env.EKS_CLUSTER_NAME }}"
             echo "기본 클러스터 이름 사용: $EKS_CLUSTER_NAME"
           fi
 
@@ -993,17 +973,67 @@ jobs:
           echo "✅ AWS Load Balancer Controller 확인 완료 - Ingress 기반 ALB 생성 준비됨"
 
       # ===============================================
-      # Kubernetes 매니페스트 파일 생성
+      # 기존 k8s 매니페스트 업데이트 및 사용
       # ===============================================
-    - name: Generate Kubernetes manifests
+    - name: Update existing Kubernetes manifests
       run: |
-          echo "📝 Kubernetes 매니페스트 생성 중..."
+          echo "🔧 기존 k8s 매니페스트 파일 업데이트 중..."
+          cd server2
+          cd k8s
+          
+          # namespace.yml 업데이트 (프로젝트명 사용)
+          sed -i "s/music1-namespace/${{ env.PROJECT_NAME }}/g" namespace.yml
+          
+          # deployment.yml 업데이트
+          sed -i "s/music1-deployment/${{ env.PROJECT_NAME }}-app/g" deployment.yml
+          sed -i "s/music1-namespace/${{ env.PROJECT_NAME }}/g" deployment.yml
+          sed -i "s/music1-app/${{ env.PROJECT_NAME }}-app/g" deployment.yml
+          sed -i "s/music1-service/${{ env.PROJECT_NAME }}-service/g" deployment.yml
+          sed -i "s|YOUR_ECR_URI/music1-app:latest|${{ steps.build-image.outputs.image }}|g" deployment.yml
+          
+          # Spring Boot Actuator 헬스체크로 변경
+          sed -i "s|path: /api/music|path: /actuator/health|g" deployment.yml
+          
+          # Service를 ClusterIP로 변경 (Ingress 사용을 위해)
+          sed -i "s/type: LoadBalancer/type: ClusterIP/g" deployment.yml
+          
+          # ServiceAccount 추가
+          sed -i "/spec:/a\\      serviceAccountName: ${{ env.PROJECT_NAME }}-service-account" deployment.yml
+          
+          # envFrom 설정 추가 (환경변수 주입)
+          sed -i "/- name: SPRING_PROFILES_ACTIVE/i\\        envFrom:\n        - configMapRef:\n            name: ${{ env.PROJECT_NAME }}-config\n        - secretRef:\n            name: ${{ env.PROJECT_NAME }}-secret" deployment.yml
+          
+          echo "✅ 기존 k8s 매니페스트 업데이트 완료"
+          
+          # 업데이트된 파일 확인
+          echo "📋 업데이트된 namespace.yml:"
+          cat namespace.yml
+          echo "📋 업데이트된 deployment.yml:"
+          cat deployment.yml
 
-          # Namespace 생성
-          echo "apiVersion: v1" > namespace.yaml
-          echo "kind: Namespace" >> namespace.yaml
-          echo "metadata:" >> namespace.yaml
-          echo "  name: ${{ env.PROJECT_NAME }}" >> namespace.yaml
+    - name: Get Subnet Information
+      run: |
+          echo "🔍 서브넷 정보 조회 중..."
+          
+          # 퍼블릭 서브넷 조회 (ALB용)
+          PUBLIC_SUBNETS=$(aws ec2 describe-subnets \
+            --filters "Name=tag:Type,Values=public" "Name=state,Values=available" \
+            --query "Subnets[*].SubnetId" \
+            --output text | tr '\t' ',' | sed 's/,$//')
+          
+          if [ -z "$PUBLIC_SUBNETS" ]; then
+            # 태그로 못 찾으면 기본값 사용
+            PUBLIC_SUBNETS="subnet-0c3b7ce8248681101,subnet-057589a6494b65a9c"
+            echo "⚠️ 퍼블릭 서브넷 태그를 찾을 수 없어 기본값 사용: $PUBLIC_SUBNETS"
+          else
+            echo "✅ 퍼블릭 서브넷 발견: $PUBLIC_SUBNETS"
+          fi
+          
+          echo "PUBLIC_SUBNETS=$PUBLIC_SUBNETS" >> $GITHUB_ENV
+
+    - name: Generate additional Kubernetes manifests
+      run: |
+          echo "📝 추가 Kubernetes 매니페스트 생성 중..."
           
           # ConfigMap 생성 (환경변수)
           echo "apiVersion: v1" > configmap.yaml
@@ -1013,20 +1043,18 @@ jobs:
           echo "  namespace: ${{ env.PROJECT_NAME }}" >> configmap.yaml
           echo "data:" >> configmap.yaml
           echo '  DB_HOST: "${{ env.RDS_ENDPOINT }}"' >> configmap.yaml
-          echo '  DB_PORT: "5432"' >> configmap.yaml
-          echo '  DB_NAME: "mydb"' >> configmap.yaml
-          echo '  DB_USER: "dbadmin"' >> configmap.yaml
+          echo '  DB_PORT: "3306"' >> configmap.yaml
+          echo '  DB_NAME: "${{ env.DB_NAME }}"' >> configmap.yaml
+          echo '  DB_USER: "${{ env.DB_USER }}"' >> configmap.yaml
           echo '  AWS_REGION: "${{ secrets.AWS_REGION }}"' >> configmap.yaml
-          echo '  AWS_S3_BUCKET: "walb-app-files"' >> configmap.yaml
+          echo '  AWS_S3_BUCKET: "${{ env.S3_BUCKET_NAME }}"' >> configmap.yaml
           echo '  AWS_S3_REGION: "${{ secrets.AWS_REGION }}"' >> configmap.yaml
           echo '  STORAGE_TYPE: "s3"' >> configmap.yaml
-          echo '  APP_ENV: "production"' >> configmap.yaml
-          echo '  APP_DEBUG: "false"' >> configmap.yaml
-          echo '  PHP_MEMORY_LIMIT: "256M"' >> configmap.yaml
-          echo '  PHP_MAX_EXECUTION_TIME: "30"' >> configmap.yaml
-          echo '  PHP_TIMEZONE: "Asia/Seoul"' >> configmap.yaml
-          echo '  UPLOAD_MAX_SIZE: "10M"' >> configmap.yaml
-          echo '  SESSION_LIFETIME: "7200"' >> configmap.yaml
+          echo '  SPRING_PROFILES_ACTIVE: "production"' >> configmap.yaml
+          echo '  JAVA_OPTS: "-Xmx512m -Xms256m"' >> configmap.yaml
+          echo '  TZ: "Asia/Seoul"' >> configmap.yaml
+          echo '  SERVER_PORT: "8080"' >> configmap.yaml
+          echo '  MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE: "health,info,prometheus"' >> configmap.yaml
         
           # Secret 생성 (DB 패스워드)
           echo "apiVersion: v1" > secret.yaml
@@ -1037,80 +1065,6 @@ jobs:
           echo "type: Opaque" >> secret.yaml
           echo "data:" >> secret.yaml
           echo "  DB_PASSWORD: $(echo -n '${{ secrets.DB_PASSWORD }}' | base64)" >> secret.yaml
-          
-          # Deployment 생성
-          echo "apiVersion: apps/v1" > deployment.yaml
-          echo "kind: Deployment" >> deployment.yaml
-          echo "metadata:" >> deployment.yaml
-          echo "  name: ${{ env.PROJECT_NAME }}-app" >> deployment.yaml
-          echo "  namespace: ${{ env.PROJECT_NAME }}" >> deployment.yaml
-          echo "  labels:" >> deployment.yaml
-          echo "    app: ${{ env.PROJECT_NAME }}-app" >> deployment.yaml
-          echo "spec:" >> deployment.yaml
-          echo "  replicas: 2" >> deployment.yaml
-          echo "  selector:" >> deployment.yaml
-          echo "    matchLabels:" >> deployment.yaml
-          echo "      app: ${{ env.PROJECT_NAME }}-app" >> deployment.yaml
-          echo "  template:" >> deployment.yaml
-          echo "    metadata:" >> deployment.yaml
-          echo "      labels:" >> deployment.yaml
-          echo "        app: ${{ env.PROJECT_NAME }}-app" >> deployment.yaml
-          echo "    spec:" >> deployment.yaml
-          echo "      serviceAccountName: ${{ env.PROJECT_NAME }}-service-account" >> deployment.yaml
-          echo "      containers:" >> deployment.yaml
-          echo "      - name: php-app" >> deployment.yaml
-          echo "        image: ${{ steps.build-image.outputs.image }}" >> deployment.yaml
-          echo "        ports:" >> deployment.yaml
-          echo "        - containerPort: 80" >> deployment.yaml  
-          echo "          name: http" >> deployment.yaml
-          echo "        envFrom:" >> deployment.yaml
-          echo "        - configMapRef:" >> deployment.yaml
-          echo "            name: ${{ env.PROJECT_NAME }}-config" >> deployment.yaml
-          echo "        - secretRef:" >> deployment.yaml
-          echo "            name: ${{ env.PROJECT_NAME }}-secret" >> deployment.yaml
-          echo "        livenessProbe:" >> deployment.yaml
-          echo "          httpGet:" >> deployment.yaml
-          echo "            path: /healthcheck.php" >> deployment.yaml
-          echo "            port: 80" >> deployment.yaml
-          echo "          initialDelaySeconds: 60" >> deployment.yaml
-          echo "          periodSeconds: 30" >> deployment.yaml
-          echo "          timeoutSeconds: 10" >> deployment.yaml
-          echo "        readinessProbe:" >> deployment.yaml
-          echo "          httpGet:" >> deployment.yaml
-          echo "            path: /healthcheck.php" >> deployment.yaml
-          echo "            port: 80" >> deployment.yaml
-          echo "          initialDelaySeconds: 30" >> deployment.yaml
-          echo "          periodSeconds: 10" >> deployment.yaml
-          echo "          timeoutSeconds: 5" >> deployment.yaml
-          echo "        resources:" >> deployment.yaml
-          echo "          requests:" >> deployment.yaml
-          echo '            memory: "256Mi"' >> deployment.yaml
-          echo '            cpu: "250m"' >> deployment.yaml
-          echo "          limits:" >> deployment.yaml
-          echo '            memory: "512Mi"' >> deployment.yaml
-          echo '            cpu: "500m"' >> deployment.yaml
-          echo "        securityContext:" >> deployment.yaml
-          echo "          runAsNonRoot: false" >> deployment.yaml
-          echo "          allowPrivilegeEscalation: false" >> deployment.yaml
-          echo "          readOnlyRootFilesystem: false" >> deployment.yaml
-
-          # Service 생성 (Ingress 기반이므로 ClusterIP 사용)
-          echo "apiVersion: v1" > service.yaml
-          echo "kind: Service" >> service.yaml
-          echo "metadata:" >> service.yaml
-          echo "  name: ${{ env.PROJECT_NAME }}-service" >> service.yaml
-          echo "  namespace: ${{ env.PROJECT_NAME }}" >> service.yaml
-          echo "  labels:" >> service.yaml
-          echo "    app: ${{ env.PROJECT_NAME }}-app" >> service.yaml
-          echo "spec:" >> service.yaml
-          echo "  type: ClusterIP" >> service.yaml
-          echo "  ports:" >> service.yaml
-          echo "  - port: 80" >> service.yaml
-          echo "    targetPort: 80" >> service.yaml
-          echo "    protocol: TCP" >> service.yaml
-          echo "    name: http" >> service.yaml
-          echo "  selector:" >> service.yaml
-          echo "    app: ${{ env.PROJECT_NAME }}-app" >> service.yaml
 
           # Ingress 생성 (AWS Load Balancer Controller 사용)
           echo "apiVersion: networking.k8s.io/v1" > ingress.yaml
@@ -1124,16 +1078,16 @@ jobs:
           echo "    alb.ingress.kubernetes.io/scheme: internet-facing" >> ingress.yaml
           echo "    alb.ingress.kubernetes.io/target-type: ip" >> ingress.yaml
           echo '    alb.ingress.kubernetes.io/listen-ports: '"'"'[{"HTTP": 80}]'"'"'' >> ingress.yaml
-          echo "    alb.ingress.kubernetes.io/subnets: subnet-0c3b7ce8248681101,subnet-057589a6494b65a9c" >> ingress.yaml
+          echo "    alb.ingress.kubernetes.io/subnets: ${{ env.PUBLIC_SUBNETS }}" >> ingress.yaml
           echo "    " >> ingress.yaml
-          echo "    # Health Check 설정 (PHP 애플리케이션)" >> ingress.yaml
-          echo "    alb.ingress.kubernetes.io/healthcheck-path: /healthcheck.php" >> ingress.yaml
+          echo "    # Health Check 설정 (Spring Boot 애플리케이션)" >> ingress.yaml
+          echo "    alb.ingress.kubernetes.io/healthcheck-path: /actuator/health" >> ingress.yaml
           echo "    alb.ingress.kubernetes.io/healthcheck-interval-seconds: '30'" >> ingress.yaml
           echo "    alb.ingress.kubernetes.io/healthcheck-timeout-seconds: '10'" >> ingress.yaml
           echo "    alb.ingress.kubernetes.io/healthy-threshold-count: '2'" >> ingress.yaml
           echo "    alb.ingress.kubernetes.io/unhealthy-threshold-count: '3'" >> ingress.yaml
           echo "    alb.ingress.kubernetes.io/healthcheck-protocol: HTTP" >> ingress.yaml
-          echo "    alb.ingress.kubernetes.io/healthcheck-port: '80'" >> ingress.yaml
+          echo "    alb.ingress.kubernetes.io/healthcheck-port: '8080'" >> ingress.yaml
           echo "    " >> ingress.yaml
           echo "    # Load Balancer 설정" >> ingress.yaml
           echo "    alb.ingress.kubernetes.io/load-balancer-name: ${{ env.PROJECT_NAME }}-ingress-alb" >> ingress.yaml
@@ -1149,7 +1103,7 @@ jobs:
           echo "          service:" >> ingress.yaml
           echo "            name: ${{ env.PROJECT_NAME }}-service" >> ingress.yaml
           echo "            port:" >> ingress.yaml
-          echo "              number: 80" >> ingress.yaml
+          echo "              number: 8080" >> ingress.yaml
 
           echo "✅ Ingress 기반 매니페스트 생성 완료"
 
@@ -1160,7 +1114,7 @@ jobs:
           echo "  name: ${{ env.PROJECT_NAME }}-service-account" >> serviceaccount.yaml
           echo "  namespace: ${{ env.PROJECT_NAME }}" >> serviceaccount.yaml
           echo "  annotations:" >> serviceaccount.yaml
-          echo "    eks.amazonaws.com/role-arn: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/walb-app-eks-app-role" >> serviceaccount.yaml
+          echo "    eks.amazonaws.com/role-arn: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/${{ env.IAM_ROLE_NAME }}" >> serviceaccount.yaml
 
           echo "✅ 매니페스트 파일 생성 완료"
 
@@ -1172,15 +1126,15 @@ jobs:
       run: |
           echo "🚀 EKS에 애플리케이션 배포 중..."
 
-          # Namespace 먼저 생성
-          kubectl apply -f namespace.yaml
+          # 기존 k8s 매니페스트 적용
+          echo "📦 기존 k8s 리소스 배포 중..."
+          kubectl apply -f server2/k8s/namespace.yml
+          kubectl apply -f server2/k8s/deployment.yml
 
-          # 나머지 리소스 배포
+          # 추가 리소스 배포  
           kubectl apply -f serviceaccount.yaml
           kubectl apply -f configmap.yaml
           kubectl apply -f secret.yaml
-          kubectl apply -f deployment.yaml
-          kubectl apply -f service.yaml
 
           # Ingress 배포 (AWS Load Balancer Controller로 ALB 생성)
           echo "🔗 Ingress 리소스 배포 중..."
@@ -1230,7 +1184,7 @@ jobs:
                 fi
                 
                 # ALB가 실제로 응답하는지 확인
-                if curl -s --connect-timeout 5 --max-time 10 -o /dev/null -w "%{http_code}" "http://$ALB_DNS/healthcheck.php" | grep -E "^(200|404)$" >/dev/null; then
+                if curl -s --connect-timeout 5 --max-time 10 -o /dev/null -w "%{http_code}" "http://$ALB_DNS/actuator/health" | grep -E "^(200|404)$" >/dev/null; then
                   echo "✅ ALB 프로비저닝 완료 및 연결 가능: $ALB_DNS"
                   echo "ALB_HOSTNAME=$ALB_DNS" >> $GITHUB_ENV
                   echo "DEPLOYMENT_METHOD=Ingress" >> $GITHUB_ENV
@@ -1311,7 +1265,7 @@ jobs:
               kubectl get ingress -A || true
               
               echo "🔍 AWS CLI를 통한 ALB 확인:"
-              aws elbv2 describe-load-balancers --query 'LoadBalancers[?contains(LoadBalancerName, `walb-app`) || contains(LoadBalancerName, `k8s`)].{Name:LoadBalancerName,State:State.Code,DNS:DNSName}' --output table 2>/dev/null || echo "AWS CLI로 ALB 조회 실패"
+              aws elbv2 describe-load-balancers --query "LoadBalancers[?contains(LoadBalancerName, \`${{ env.PROJECT_NAME }}\`) || contains(LoadBalancerName, \`k8s\`)].{Name:LoadBalancerName,State:State.Code,DNS:DNSName}" --output table 2>/dev/null || echo "AWS CLI로 ALB 조회 실패"
               
               # ALB가 생성되었지만 프로비저닝이 완료되지 않은 경우 환경변수 설정
               if [ -n "$ALB_DNS" ] && [ "$ALB_DNS" != "null" ]; then
@@ -1410,7 +1364,7 @@ jobs:
             
             # 실제 연결 테스트
             echo "🔍 ALB 연결 테스트 중..."
-            if curl -s --connect-timeout 10 --max-time 15 -o /dev/null -w "%{http_code}" "http://${ALB_HOSTNAME}/healthcheck.php" | grep -E "^(200|404)$" >/dev/null; then
+            if curl -s --connect-timeout 10 --max-time 15 -o /dev/null -w "%{http_code}" "http://${ALB_HOSTNAME}/actuator/health" | grep -E "^(200|404)$" >/dev/null; then
               echo "✅ ALB 연결 성공 - 애플리케이션 접속 가능"
             else
               echo "⚠️ ALB 연결 실패 - 헬스체크 문제일 수 있습니다"
@@ -1426,7 +1380,7 @@ jobs:
             echo "ℹ️ 5-10분 후 접속이 가능할 예정입니다."
             
             echo "🔍 현재 ALB 연결 상태:"
-            curl -s --connect-timeout 5 --max-time 10 -w "HTTP 상태코드: %{http_code}, 응답시간: %{time_total}s\n" "http://${ALB_HOSTNAME}/healthcheck.php" || echo "아직 연결 불가"
+            curl -s --connect-timeout 5 --max-time 10 -w "HTTP 상태코드: %{http_code}, 응답시간: %{time_total}s\n" "http://${ALB_HOSTNAME}/actuator/health" || echo "아직 연결 불가"
             
             echo "🔍 Ingress 상태:"
             kubectl describe ingress ${{ env.PROJECT_NAME }}-ingress -n ${{ env.PROJECT_NAME }}
@@ -1480,7 +1434,7 @@ jobs:
     - name: Application Deployment Notification
       if: success() && ${{ github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/terraform') }}
       run: |
-          echo "🎉 PHP 애플리케이션 배포 완료!"
+          echo "🎉 Java Spring Boot 애플리케이션 배포 완료!"
           echo "프로젝트: ${{ env.PROJECT_NAME }}"
           echo "이미지: ${{ steps.build-image.outputs.image }}"
           echo "클러스터: ${{ env.EKS_CLUSTER_NAME }}"

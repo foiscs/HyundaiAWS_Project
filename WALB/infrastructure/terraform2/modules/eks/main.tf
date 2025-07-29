@@ -827,14 +827,6 @@ resource "helm_release" "aws_load_balancer_controller" {
   # 설치 전 대기
   wait = true
   wait_for_jobs = true
-  
-  # 강제 업데이트 설정 (webhook config 문제 해결)
-  force_update = true
-  recreate_pods = true
-  
-  # 설치 후 검증
-  atomic = true
-  cleanup_on_fail = true
 }
 
 # =========================================
