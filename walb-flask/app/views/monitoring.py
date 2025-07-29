@@ -8,12 +8,18 @@ from app.models.account import AWSAccount
 from app.services.kinesis_service import KinesisServiceManager
 from app.services.splunk_service import SplunkService
 from app.services.monitoring_service import MonitoringService
+from app.config.ssh_config import SSHConfig
 import logging
 from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
 bp = Blueprint('monitoring', __name__, url_prefix='/monitoring')
+
+# SSH 설정 가져오기
+def get_ssh_config():
+    """환경에 맞는 SSH 설정 반환"""
+    return SSHConfig.get_splunk_forwarder_config()
 
 # 서비스 인스턴스 초기화
 kinesis_manager = KinesisServiceManager()
@@ -217,11 +223,12 @@ def execute_kinesis_script():
         else:
             script_command = f"./create_kinesis_service.sh accesskey {account.account_id} {account.access_key_id} [SECRET] {account.primary_region}"
         
-        # 실제 SSH 실행 (로컬 테스트 활성화)
+        # 실제 SSH 실행 (환경별 설정 사용)
         try:
+            ssh_config = get_ssh_config()
             ssh_result = monitoring_service.execute_kinesis_service_script(
-                instance_ip="3.35.197.218",
-                ssh_key_path=r"C:\Users\User\SplunkEc2.pem",  # 로컬 SSH 키 경로
+                instance_ip=ssh_config['host'],
+                ssh_key_path=ssh_config['key_path'],
                 account=account
             )
             
@@ -238,6 +245,7 @@ def execute_kinesis_script():
         # 실제 SSH 실행 결과를 반영한 시뮬레이션 결과
         service_name = f"kinesis-splunk-forwarder-{account.account_id}"
         current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        ssh_config = get_ssh_config()  # 시뮬레이션 결과용 SSH 설정
         
         simulation_result = {
             "success": True,
@@ -282,9 +290,9 @@ Region: {account.primary_region}
                 "log_destination": f"/var/log/splunk/{account.account_id}/cloudtrail.log"
             },
             "ssh_info": {
-                "host": "3.35.197.218",
-                "user": "ec2-user",
-                "key": "SplunkEc2.pem",
+                "host": ssh_config['host'],
+                "user": ssh_config['user'],
+                "key": ssh_config['key_path'].split('/')[-1],  # 파일명만 표시
                 "executed_command": f"sudo ./create_kinesis_service.sh {account.connection_type} {account.account_id} ..."
             }
         }
@@ -307,12 +315,13 @@ def get_script_command(account_id):
         return jsonify({"error": "계정을 찾을 수 없습니다"}), 404
     
     try:
+        ssh_config = get_ssh_config()
         if account.connection_type == 'role':
             script_command = f"./create_kinesis_service.sh role {account.account_id} {account.role_arn} {account.primary_region}"
-            full_command = f"ssh -i SplunkEc2.pem ec2-user@3.35.197.218\n{script_command}"
+            full_command = f"ssh -i {ssh_config['key_path'].split('/')[-1]} {ssh_config['user']}@{ssh_config['host']}\n{script_command}"
         else:
             script_command = f"./create_kinesis_service.sh accesskey {account.account_id} {account.access_key_id} {account.secret_access_key} {account.primary_region}"
-            full_command = f"ssh -i SplunkEc2.pem ec2-user@3.35.197.218\n{script_command}"
+            full_command = f"ssh -i {ssh_config['key_path'].split('/')[-1]} {ssh_config['user']}@{ssh_config['host']}\n{script_command}"
         
         return jsonify({
             "success": True,
@@ -375,9 +384,10 @@ def get_log_files_status(account_id):
     
     try:
         # SSH를 통해 실제 로그 파일 상태 확인
+        ssh_config = get_ssh_config()
         log_status = monitoring_service.check_log_files_status(
-            instance_ip="3.35.197.218",
-            ssh_key_path=r"C:\Users\User\SplunkEc2.pem",
+            instance_ip=ssh_config['host'],
+            ssh_key_path=ssh_config['key_path'],
             account_id=account_id
         )
         return jsonify(log_status)
@@ -397,9 +407,10 @@ def get_log_preview(account_id, log_type):
     
     try:
         # SSH로 로그 파일의 최근 내용 가져오기
+        ssh_config = get_ssh_config()
         result = monitoring_service.get_log_file_preview(
-            instance_ip="3.35.197.218",
-            ssh_key_path=r"C:\Users\User\SplunkEc2.pem",
+            instance_ip=ssh_config['host'],
+            ssh_key_path=ssh_config['key_path'],
             account_id=account_id,
             log_type=log_type,
             lines=50  # 최근 50줄
@@ -418,9 +429,10 @@ def check_kinesis_service_status(account_id):
     
     try:
         # SSH를 통해 Kinesis 서비스 상태 확인
+        ssh_config = get_ssh_config()
         result = monitoring_service.check_kinesis_service_exists(
-            instance_ip="3.35.197.218",
-            ssh_key_path=r"C:\Users\User\SplunkEc2.pem",
+            instance_ip=ssh_config['host'],
+            ssh_key_path=ssh_config['key_path'],
             account_id=account_id
         )
         return jsonify(result)
@@ -448,9 +460,10 @@ def reinstall_kinesis_service():
     
     try:
         # 재설치 모드로 스크립트 실행 (기존 서비스 제거 후 설치)
+        ssh_config = get_ssh_config()
         result = monitoring_service.execute_kinesis_service_script(
-            instance_ip="3.35.197.218",
-            ssh_key_path=r"C:\Users\User\SplunkEc2.pem",
+            instance_ip=ssh_config['host'],
+            ssh_key_path=ssh_config['key_path'],
             account=account,
             reinstall=True  # 재설치 모드
         )
@@ -514,9 +527,10 @@ def manage_kinesis_service():
     
     try:
         # SSH를 통해 서비스 관리
+        ssh_config = get_ssh_config()
         result = monitoring_service.manage_kinesis_service(
-            instance_ip="3.35.197.218",
-            ssh_key_path=r"C:\Users\User\SplunkEc2.pem",
+            instance_ip=ssh_config['host'],
+            ssh_key_path=ssh_config['key_path'],
             account_id=account_id,
             action=action
         )
