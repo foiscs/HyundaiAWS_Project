@@ -37,8 +37,25 @@ try {
     $stmt = $pdo->query("SELECT version(), current_database(), current_user");
     $db_info = $stmt->fetch();
     
+    // 테이블 존재 확인
+    $tables_check = [];
+    $required_tables = ['users', 'posts', 'images', 'files'];
+    
+    foreach ($required_tables as $table) {
+        $stmt = $pdo->prepare("
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables 
+                WHERE table_schema = 'public' 
+                AND table_name = ?
+            )
+        ");
+        $stmt->execute([$table]);
+        $tables_check[$table] = $stmt->fetchColumn();
+    }
+    
     $result['connection_test'] = 'SUCCESS';
     $result['database_info'] = $db_info;
+    $result['tables_check'] = $tables_check;
     
 } catch(PDOException $e) {
     $result['connection_test'] = 'FAILED';
