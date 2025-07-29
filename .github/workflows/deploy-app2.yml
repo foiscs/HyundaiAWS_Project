@@ -451,7 +451,7 @@ jobs:
         echo "🔍 SSH 터널을 통한 데이터베이스 연결 테스트 중..."
         DB_CONNECTED=false
         for i in {1..5}; do
-          if mysql -h localhost -P $LOCAL_PORT -u $DB_USER -p$DB_PASSWORD $DB_NAME -e "SELECT 1;" 2>/dev/null; then
+          if mysql --protocol=TCP -h 127.0.0.1 -P $LOCAL_PORT -u $DB_USER -p$DB_PASSWORD $DB_NAME -e "SELECT 1;" 2>/dev/null; then
             echo "✅ 데이터베이스 연결 성공 (시도 $i/5)"
             DB_CONNECTED=true
             break
@@ -459,7 +459,7 @@ jobs:
             echo "⚠️ 데이터베이스 연결 실패 (시도 $i/5)"
             # 자세한 오류 정보 출력
             echo "🔍 상세 오류 정보:"
-            mysql -h localhost -P $LOCAL_PORT -u $DB_USER -p$DB_PASSWORD $DB_NAME -e "SELECT 1;" 2>&1 || true
+            mysql --protocol=TCP -h 127.0.0.1 -P $LOCAL_PORT -u $DB_USER -p$DB_PASSWORD $DB_NAME -e "SELECT 1;" 2>&1 || true
             
             if [ $i -lt 5 ]; then
               echo "3초 후 재시도..."

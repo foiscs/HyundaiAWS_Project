@@ -88,7 +88,7 @@ jobs:
     
     - name: Validate Composer
       run: |
-        echo "🔍 PHP 애플리케이션 검증 중..."
+        echo "🔍 PHP 애플리케이션 검증 중.."
         if [ -f "server1/composer.json" ]; then
           cd server1
           composer validate --no-check-publish
