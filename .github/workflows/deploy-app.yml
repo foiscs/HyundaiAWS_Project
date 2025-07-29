@@ -151,23 +151,24 @@ jobs:
         # AWS CLI를 사용해서 리소스 정보 직접 조회
         PROJECT_NAME="walb-app"
         
-        # RDS 엔드포인트 조회 (태그 기반)
+        # RDS 엔드포인트 조회 (walb-app 프로젝트용)
         echo "🔍 RDS 인스턴스 조회 중..."
         DB_HOST=$(aws rds describe-db-instances \
-          --query "DBInstances[?contains(keys(TagList[?Key=='Project']), 'Project') && TagList[?Key=='Project'].Value[0]=='${PROJECT_NAME}'].Endpoint.Address" \
+          --db-instance-identifier walb-rds-database \
+          --query "DBInstances[0].Endpoint.Address" \
           --output text 2>/dev/null || echo "")
         
-        if [ -z "$DB_HOST" ]; then
-          # 태그 조회가 안 되면 DB 이름으로 조회
+        if [ -z "$DB_HOST" ] || [ "$DB_HOST" == "None" ]; then
+          # 직접 식별자로 안 되면 태그 기반으로 조회
           DB_HOST=$(aws rds describe-db-instances \
-            --query "DBInstances[?DBName=='mydb'].Endpoint.Address" \
+            --query "DBInstances[?contains(keys(TagList[?Key=='Project']), 'Project') && TagList[?Key=='Project'].Value[0]=='${PROJECT_NAME}'].Endpoint.Address" \
             --output text 2>/dev/null || echo "")
         fi
         
         # Bastion Host IP 조회 (태그 기반)
         echo "🔍 Bastion Host 조회 중..."
         BASTION_IP=$(aws ec2 describe-instances \
-          --filters "Name=tag:Name,Values=${PROJECT_NAME}-bastion-host" "Name=instance-state-name,Values=running" \
+          --filters "Name=tag:Name,Values=walb-bastion-host" "Name=instance-state-name,Values=running" \
           --query "Reservations[0].Instances[0].PublicIpAddress" \
           --output text 2>/dev/null || echo "")
         
@@ -334,6 +335,15 @@ jobs:
           LOCAL_PORT=5432
         fi
         
+        # DB_HOST에서 와일드카드 제거 (보안상 마스킹된 부분 처리)
+        DB_HOST_CLEAN=$(echo "$DB_HOST" | sed 's/\*\*\*[^.]*//g' | sed 's/\.\././g')
+        if [[ "$DB_HOST_CLEAN" != "$DB_HOST" ]]; then
+          echo "⚠️ DB_HOST에 마스킹된 값이 포함되어 있습니다. 실제 엔드포인트로 대체합니다."
+          DB_HOST="walb-rds-database.cx02kko4cplr.ap-northeast-2.rds.amazonaws.com"
+        fi
+        
+        echo "🔍 사용할 DB 엔드포인트: $DB_HOST"
+        
         echo "🔗 SSH 터널 생성 중... (로컬 포트: $LOCAL_PORT)"
         # SSH 터널 생성 with 더 많은 옵션
         ssh -i bastion_key.pem \
@@ -465,7 +475,7 @@ jobs:
         
         # Bastion Host IP 조회
         BASTION_IP=$(aws ec2 describe-instances \
-          --filters "Name=tag:Name,Values=${PROJECT_NAME}-bastion-host" "Name=instance-state-name,Values=running" \
+          --filters "Name=tag:Name,Values=walb-bastion-host" "Name=instance-state-name,Values=running" \
           --query "Reservations[0].Instances[0].PublicIpAddress" \
           --output text 2>/dev/null || echo "")
         
