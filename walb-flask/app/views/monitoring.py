@@ -3,6 +3,7 @@
 """
 
 from flask import Blueprint, render_template, request, jsonify, redirect, url_for
+from flask import Blueprint, render_template, request, jsonify, redirect, url_for
 from app.models.account import AWSAccount
 from app.services.kinesis_service import KinesisServiceManager
 from app.services.splunk_service import SplunkService
@@ -13,6 +14,11 @@ from datetime import datetime
 logger = logging.getLogger(__name__)
 
 bp = Blueprint('monitoring', __name__, url_prefix='/monitoring')
+
+# 서비스 인스턴스 초기화
+kinesis_manager = KinesisServiceManager()
+splunk_service = SplunkService()
+monitoring_service = MonitoringService()
 
 # 서비스 인스턴스 초기화
 kinesis_manager = KinesisServiceManager()
@@ -33,8 +39,18 @@ def index():
     service_status = None
     monitoring_status = None
     
+    service_status = None
+    monitoring_status = None
+    
     if account_id:
         selected_account = AWSAccount.find_by_id(account_id)
+        if selected_account:
+            # Kinesis 서비스 상태 확인
+            service_status = kinesis_manager.get_service_status(account_id)
+            # Splunk 모니터링 상태 확인
+            monitoring_status = splunk_service.get_account_monitoring_status(account_id)
+            # 종합 모니터링 상태 확인
+            comprehensive_status = monitoring_service.get_comprehensive_monitoring_status(selected_account)
         if selected_account:
             # Kinesis 서비스 상태 확인
             service_status = kinesis_manager.get_service_status(account_id)

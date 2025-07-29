@@ -85,7 +85,7 @@ jobs:
         # EKS 클러스터 이름 조회
         EKS_CLUSTER=$(aws eks describe-cluster --name walb-eks-cluster --query 'cluster.name' --output text 2>/dev/null || echo "")
         if [ -z "$EKS_CLUSTER" ] || [ "$EKS_CLUSTER" == "None" ]; then
-          echo "❌ EKS 클러스터를 찾을 수 없습니다: ${PROJECT_NAME}-eks"
+          echo "❌ EKS 클러스터를 찾을 수 없습니다: ${{ env.EKS_CLUSTER_NAME }}"
           echo "먼저 인프라 배포가 필요합니다."
           exit 1
         fi
@@ -168,7 +168,7 @@ jobs:
         
         # 방법 1: 정확한 태그 이름으로 조회
         BASTION_IP=$(aws ec2 describe-instances \
-          --filters "Name=tag:Name,Values=${PROJECT_NAME}-bastion-host" "Name=instance-state-name,Values=running" \
+          --filters "Name=tag:Name,Values=walb2-app-bastion-host" "Name=instance-state-name,Values=running" \
           --query "Reservations[0].Instances[0].PublicIpAddress" \
           --output text 2>/dev/null || echo "")
         
@@ -499,7 +499,7 @@ jobs:
         
         # 방법 1: 정확한 태그 이름으로 조회
         BASTION_IP=$(aws ec2 describe-instances \
-          --filters "Name=tag:Name,Values=${PROJECT_NAME}-bastion-host" "Name=instance-state-name,Values=running" \
+          --filters "Name=tag:Name,Values=walb2-app-bastion-host" "Name=instance-state-name,Values=running" \
           --query "Reservations[0].Instances[0].PublicIpAddress" \
           --output text 2>/dev/null || echo "")
         

@@ -1,3 +1,8 @@
 config.py
 __pycache__/
 data/
+<<<<<<< HEAD
+.env
+=======
+SplunkEc2.pem
+>>>>>>> 1fb01a47559cdace4cdb96ec5256b5dc650fd470
