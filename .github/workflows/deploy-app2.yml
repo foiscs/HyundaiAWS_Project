@@ -19,7 +19,7 @@ env:
   PROJECT_NAME: ${{ vars.PROJECT_NAME || 'walb2-app' }}
   DB_NAME: ${{ vars.DB_NAME || 'mydb' }}
   DB_USER: ${{ vars.DB_USER || 'dbadmin' }}
-  EKS_CLUSTER_NAME: ${{ vars.EKS_CLUSTER_NAME || 'm-cluster' }}  # 기존 deploy.yml과 일치
+  EKS_CLUSTER_NAME: ${{ vars.EKS_CLUSTER_NAME || 'walb2-eks-cluster' }}  # walb2 프로젝트용 클러스터
   S3_BUCKET_NAME: ${{ vars.S3_BUCKET_NAME || 'walb2-app-files' }}
   IAM_ROLE_NAME: ${{ vars.IAM_ROLE_NAME || 'walb2-app-eks-app-role' }}
   DEPLOYMENT_NAME: ${{ vars.DEPLOYMENT_NAME || 'music1-deployment' }}  # 기존 deploy.yml과 일치
@@ -98,7 +98,7 @@ jobs:
         # EKS 클러스터 이름 조회
         EKS_CLUSTER=$(aws eks describe-cluster --name ${{ env.EKS_CLUSTER_NAME }} --query 'cluster.name' --output text 2>/dev/null || echo "")
         if [ -z "$EKS_CLUSTER" ] || [ "$EKS_CLUSTER" == "None" ]; then
-          echo "❌ EKS 클러스터를 찾을 수 없습니다: ${PROJECT_NAME}-eks"
+          echo "❌ EKS 클러스터를 찾을 수 없습니다: ${{ env.EKS_CLUSTER_NAME }}"
           echo "먼저 인프라 배포가 필요합니다."
           exit 1
         fi
