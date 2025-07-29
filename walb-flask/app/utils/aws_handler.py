@@ -372,12 +372,14 @@ class AWSConnectionHandler:
         try:
             # EC2 인스턴스의 Role 자격증명을 자동으로 사용
             sts_client = boto3.client('sts', region_name=region)
+            print(f"AssumeRole 시도: role_arn={role_arn}, external_id={external_id}")
             response = sts_client.assume_role(
                 RoleArn=role_arn,
                 RoleSessionName='walb-diagnosis-session',
                 ExternalId=external_id,
                 DurationSeconds=3600
             )
+            print(f"AssumeRole 성공: {response['AssumedRoleUser']['Arn']}")
             
             credentials = response['Credentials']
             return boto3.Session(
