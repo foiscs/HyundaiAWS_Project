@@ -38,6 +38,12 @@ try {
         ");
         $stmt->execute([$_SESSION['user_id']]); // 매개변수 있음
     }
+    $my_recent_posts = $stmt->fetchAll();
+    
+    // 성능 최적화: 배치로 이미지와 파일 정보 가져오기
+    $post_ids = array_column($my_recent_posts, 'id');
+    $all_images = !empty($post_ids) ? getBatchPostImages($pdo, $post_ids) : [];
+    $all_files = !empty($post_ids) ? getBatchPostFiles($pdo, $post_ids) : [];
     
 } catch(PDOException $e) {
     $my_posts_count = 0;
@@ -180,9 +186,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_post'])) {
                 <?php else: ?>
                     <?php foreach ($my_recent_posts as $post): ?>
                         <?php
-                        // 각 게시글의 파일 정보 가져오기
-                        $post_images = getPostImages($pdo, $post['id']);
-                        $post_attachments = getPostFiles($pdo, $post['id']);
+                        // 배치로 가져온 데이터에서 해당 게시글의 파일 정보 찾기
+                        $post_images = $all_images[$post['id']] ?? [];
+                        $post_attachments = $all_files[$post['id']] ?? [];
                         ?>
                         <div class="post-item">
                             <h3 class="post-title">

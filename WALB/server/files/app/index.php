@@ -13,6 +13,11 @@ try {
     ");
     $stmt->execute();
     $posts = $stmt->fetchAll();
+    
+    // 성능 최적화: 배치로 이미지와 파일 정보 가져오기
+    $post_ids = array_column($posts, 'id');
+    $all_images = !empty($post_ids) ? getBatchPostImages($pdo, $post_ids) : [];
+    $all_files = !empty($post_ids) ? getBatchPostFiles($pdo, $post_ids) : [];
 } catch(PDOException $e) {
     $posts = [];
     setErrorMessage("게시글을 불러오는 중 오류가 발생했습니다.");
@@ -152,9 +157,9 @@ try {
                 <?php else: ?>
                     <?php foreach ($posts as $post): ?>
                         <?php
-                        // 게시글의 이미지와 첨부파일 가져오기
-                        $post_images = getPostImages($pdo, $post['id']);
-                        $post_files = getPostFiles($pdo, $post['id']);
+                        // 배치로 가져온 데이터에서 해당 게시글의 파일 정보 찾기
+                        $post_images = $all_images[$post['id']] ?? [];
+                        $post_files = $all_files[$post['id']] ?? [];
                         ?>
                         <div class="post-item">
                             <h3 class="post-title">

@@ -253,6 +253,36 @@ function getPostFiles($pdo, $post_id) {
     return $stmt->fetchAll();
 }
 
+// 여러 게시글의 이미지들을 한번에 가져오기 (성능 최적화)
+function getBatchPostImages($pdo, $post_ids) {
+    if (empty($post_ids)) return [];
+    
+    $placeholders = str_repeat('?,', count($post_ids) - 1) . '?';
+    $stmt = $pdo->prepare("SELECT * FROM images WHERE post_id IN ($placeholders) ORDER BY post_id, id");
+    $stmt->execute($post_ids);
+    
+    $images_by_post = [];
+    while ($row = $stmt->fetch()) {
+        $images_by_post[$row['post_id']][] = $row;
+    }
+    return $images_by_post;
+}
+
+// 여러 게시글의 파일들을 한번에 가져오기 (성능 최적화)
+function getBatchPostFiles($pdo, $post_ids) {
+    if (empty($post_ids)) return [];
+    
+    $placeholders = str_repeat('?,', count($post_ids) - 1) . '?';
+    $stmt = $pdo->prepare("SELECT * FROM files WHERE post_id IN ($placeholders) ORDER BY post_id, id");
+    $stmt->execute($post_ids);
+    
+    $files_by_post = [];
+    while ($row = $stmt->fetch()) {
+        $files_by_post[$row['post_id']][] = $row;
+    }
+    return $files_by_post;
+}
+
 // 파일 크기 포맷
 function formatFileSize($bytes) {
     if ($bytes >= 1073741824) {
