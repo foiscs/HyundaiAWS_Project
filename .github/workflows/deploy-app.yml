@@ -9,11 +9,6 @@ on:
     paths:
       - 'WALB/server/**'
       - '.github/workflows/deploy-app.yml'
-  pull_request:
-    branches: [ main ]
-    paths:
-      - 'WALB/server/**'
-      - '.github/workflows/deploy-app.yml'
 
 env:
   PROJECT_NAME: "walb-app"
