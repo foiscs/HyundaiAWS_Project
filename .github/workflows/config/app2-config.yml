@@ -7,8 +7,8 @@ app2_config:
   
   # 데이터베이스 설정
   database:
-    name: "mydb2"        # mydb에서 mydb2로 변경
-    user: "dbadmin2"     # dbadmin에서 dbadmin2로 변경
+    name: "mydb"        # mydb에서 mydb2로 변경
+    user: "dbadmin"     # dbadmin에서 dbadmin2로 변경
     port: "3306"
   
   # EKS 클러스터 설정
