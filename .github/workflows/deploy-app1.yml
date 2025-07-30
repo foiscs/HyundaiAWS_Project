@@ -1135,6 +1135,53 @@ jobs:
           echo "✅ AWS Load Balancer Controller 확인 완료 - Ingress 기반 ALB 생성 준비됨"
 
       # ===============================================
+      # 퍼블릭 서브넷 정보 조회
+      # ===============================================
+    - name: Get Subnet Information
+      run: |
+          echo "🔍 서브넷 정보 조회 중..."
+          
+          # 퍼블릭 서브넷 조회 (ALB용) - 여러 방법으로 시도
+          echo "🔍 퍼블릭 서브넷 조회 중..."
+          
+          # 방법 1: Type=public 태그로 조회
+          PUBLIC_SUBNETS=$(aws ec2 describe-subnets \
+            --filters "Name=tag:Type,Values=public" "Name=state,Values=available" \
+            --query "Subnets[*].SubnetId" \
+            --output text | tr '\t' ',' | sed 's/,$//')
+          
+          if [ -z "$PUBLIC_SUBNETS" ]; then
+            # 방법 2: kubernetes.io/role/elb 태그로 조회
+            echo "⚠️ Type=public 태그로 찾지 못함. kubernetes.io/role/elb 태그로 재시도..."
+            PUBLIC_SUBNETS=$(aws ec2 describe-subnets \
+              --filters "Name=tag:kubernetes.io/role/elb,Values=1" "Name=state,Values=available" \
+              --query "Subnets[*].SubnetId" \
+              --output text | tr '\t' ',' | sed 's/,$//')
+          fi
+          
+          if [ -z "$PUBLIC_SUBNETS" ]; then
+            # 방법 3: 라우트 테이블을 통해 인터넷 게이트웨이가 있는 서브넷 찾기
+            echo "⚠️ 태그로 찾지 못함. 라우트 테이블 분석으로 퍼블릭 서브넷 찾는 중..."
+            PUBLIC_SUBNETS=$(aws ec2 describe-route-tables \
+              --filters "Name=route.gateway-id,Values=igw-*" \
+              --query "RouteTables[*].Associations[?SubnetId!=null].SubnetId" \
+              --output text | tr '\t' ',' | sed 's/,$//')
+          fi
+          
+          if [ -z "$PUBLIC_SUBNETS" ]; then
+            # 방법 4: 기본값 사용
+            PUBLIC_SUBNETS="subnet-0c3b7ce8248681101,subnet-057589a6494b65a9c"
+            echo "⚠️ 퍼블릭 서브넷을 자동으로 찾을 수 없어 기본값 사용: $PUBLIC_SUBNETS"
+            echo "ℹ️ 인프라 배포 시 서브넷에 다음 태그 중 하나를 추가하세요:"
+            echo "   - Type=public 또는"
+            echo "   - kubernetes.io/role/elb=1"
+          else
+            echo "✅ 퍼블릭 서브넷 발견: $PUBLIC_SUBNETS"
+          fi
+          
+          echo "PUBLIC_SUBNETS=$PUBLIC_SUBNETS" >> $GITHUB_ENV
+
+      # ===============================================
       # Kubernetes 매니페스트 파일 생성
       # ===============================================
     - name: Generate Kubernetes manifests
@@ -1266,7 +1313,7 @@ jobs:
           echo "    alb.ingress.kubernetes.io/scheme: internet-facing" >> ingress.yaml
           echo "    alb.ingress.kubernetes.io/target-type: ip" >> ingress.yaml
           echo '    alb.ingress.kubernetes.io/listen-ports: '"'"'[{"HTTP": 80}]'"'"'' >> ingress.yaml
-          echo "    alb.ingress.kubernetes.io/subnets: subnet-0c3b7ce8248681101,subnet-057589a6494b65a9c" >> ingress.yaml
+          echo "    alb.ingress.kubernetes.io/subnets: ${{ env.PUBLIC_SUBNETS }}" >> ingress.yaml
           echo "    " >> ingress.yaml
           echo "    # Health Check 설정 (PHP 애플리케이션)" >> ingress.yaml
           echo "    alb.ingress.kubernetes.io/healthcheck-path: /healthcheck.php" >> ingress.yaml

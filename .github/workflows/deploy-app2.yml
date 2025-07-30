@@ -1034,17 +1034,39 @@ jobs:
           if [ "$webhook_ready" != "true" ]; then
             echo "⚠️ ValidatingWebhookConfiguration을 찾을 수 없습니다."
             echo "AWS Load Balancer Controller가 아직 완전히 준비되지 않았을 수 있습니다."
+            
+            # 기존 webhook 정리
+            echo "🧹 기존 webhook 정리 중..."
+            kubectl delete validatingwebhookconfigurations aws-load-balancer-webhook --ignore-not-found=true
+            kubectl delete mutatingwebhookconfigurations aws-load-balancer-webhook --ignore-not-found=true
+            
             echo "🔧 Controller 강제 재시작 중..."
             kubectl rollout restart deployment -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller
-            kubectl rollout status deployment -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller --timeout=120s
+            kubectl rollout status deployment -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller --timeout=180s
             
-            # 재시작 후 다시 확인
-            echo "⏳ 재시작 후 webhook 재확인..."
-            sleep 15
-            if kubectl get validatingwebhookconfigurations | grep -E "(vingress|aws-load-balancer)" >/dev/null 2>&1; then
-              echo "✅ ValidatingWebhookConfiguration 재확인 성공"
-            else
-              echo "❌ ValidatingWebhookConfiguration 재확인 실패. 수동 점검 필요"
+            # 재시작 후 더 긴 대기
+            echo "⏳ 재시작 후 webhook 재생성 대기..."
+            sleep 30
+            
+            # 더 긴 시간 동안 webhook 재확인
+            webhook_recovered=false
+            for j in {1..12}; do
+              if kubectl get validatingwebhookconfigurations | grep -E "(vingress|aws-load-balancer)" >/dev/null 2>&1; then
+                echo "✅ ValidatingWebhookConfiguration 재확인 성공 (시도 $j/12)"
+                kubectl get validatingwebhookconfigurations | grep -E "(vingress|aws-load-balancer)"
+                webhook_recovered=true
+                break
+              else
+                echo "⏳ ValidatingWebhookConfiguration 재확인 중... ($j/12)"
+                sleep 10
+              fi
+            done
+            
+            if [ "$webhook_recovered" != "true" ]; then
+              echo "❌ ValidatingWebhookConfiguration 복구 실패"
+              echo "🔍 Controller 로그 확인:"
+              kubectl logs -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller --tail=20 || true
+              echo "⚠️ Webhook 없이 진행하지만 Ingress 처리가 안될 수 있습니다."
             fi
           fi
           
@@ -1075,11 +1097,15 @@ jobs:
           # Service를 ClusterIP로 변경 (Ingress 사용을 위해)
           sed -i "s/type: LoadBalancer/type: ClusterIP/g" deployment.yml
           
-          # ServiceAccount 추가
-          sed -i "/spec:/a\\      serviceAccountName: ${{ env.PROJECT_NAME }}-service-account" deployment.yml
+          # ServiceAccount 추가 (containers spec 하위에)
+          sed -i "/containers:/i\\      serviceAccountName: ${{ env.PROJECT_NAME }}-service-account" deployment.yml
           
-          # envFrom 설정 추가 (환경변수 주입)
-          sed -i "/- name: SPRING_PROFILES_ACTIVE/i\\        envFrom:\n        - configMapRef:\n            name: ${{ env.PROJECT_NAME }}-config\n        - secretRef:\n            name: ${{ env.PROJECT_NAME }}-secret" deployment.yml
+          # envFrom 설정 추가 (환경변수 주입) - SPRING_PROFILES_ACTIVE 바로 앞에
+          sed -i "/- name: SPRING_PROFILES_ACTIVE/i\\        envFrom:" deployment.yml
+          sed -i "/envFrom:/a\\        - configMapRef:" deployment.yml
+          sed -i "/- configMapRef:/a\\            name: ${{ env.PROJECT_NAME }}-config" deployment.yml
+          sed -i "/name: ${{ env.PROJECT_NAME }}-config/a\\        - secretRef:" deployment.yml
+          sed -i "/- secretRef:/a\\            name: ${{ env.PROJECT_NAME }}-secret" deployment.yml
           
           echo "✅ 기존 k8s 매니페스트 업데이트 완료"
           
@@ -1093,16 +1119,40 @@ jobs:
       run: |
           echo "🔍 서브넷 정보 조회 중..."
           
-          # 퍼블릭 서브넷 조회 (ALB용)
+          # 퍼블릭 서브넷 조회 (ALB용) - 여러 방법으로 시도
+          echo "🔍 퍼블릭 서브넷 조회 중..."
+          
+          # 방법 1: Type=public 태그로 조회
           PUBLIC_SUBNETS=$(aws ec2 describe-subnets \
             --filters "Name=tag:Type,Values=public" "Name=state,Values=available" \
             --query "Subnets[*].SubnetId" \
             --output text | tr '\t' ',' | sed 's/,$//')
           
           if [ -z "$PUBLIC_SUBNETS" ]; then
-            # 태그로 못 찾으면 기본값 사용
+            # 방법 2: kubernetes.io/role/elb 태그로 조회
+            echo "⚠️ Type=public 태그로 찾지 못함. kubernetes.io/role/elb 태그로 재시도..."
+            PUBLIC_SUBNETS=$(aws ec2 describe-subnets \
+              --filters "Name=tag:kubernetes.io/role/elb,Values=1" "Name=state,Values=available" \
+              --query "Subnets[*].SubnetId" \
+              --output text | tr '\t' ',' | sed 's/,$//')
+          fi
+          
+          if [ -z "$PUBLIC_SUBNETS" ]; then
+            # 방법 3: 라우트 테이블을 통해 인터넷 게이트웨이가 있는 서브넷 찾기
+            echo "⚠️ 태그로 찾지 못함. 라우트 테이블 분석으로 퍼블릭 서브넷 찾는 중..."
+            PUBLIC_SUBNETS=$(aws ec2 describe-route-tables \
+              --filters "Name=route.gateway-id,Values=igw-*" \
+              --query "RouteTables[*].Associations[?SubnetId!=null].SubnetId" \
+              --output text | tr '\t' ',' | sed 's/,$//')
+          fi
+          
+          if [ -z "$PUBLIC_SUBNETS" ]; then
+            # 방법 4: 기본값 사용
             PUBLIC_SUBNETS="subnet-0c3b7ce8248681101,subnet-057589a6494b65a9c"
-            echo "⚠️ 퍼블릭 서브넷 태그를 찾을 수 없어 기본값 사용: $PUBLIC_SUBNETS"
+            echo "⚠️ 퍼블릭 서브넷을 자동으로 찾을 수 없어 기본값 사용: $PUBLIC_SUBNETS"
+            echo "ℹ️ 인프라 배포 시 서브넷에 다음 태그 중 하나를 추가하세요:"
+            echo "   - Type=public 또는"
+            echo "   - kubernetes.io/role/elb=1"
           else
             echo "✅ 퍼블릭 서브넷 발견: $PUBLIC_SUBNETS"
           fi
@@ -1371,7 +1421,37 @@ jobs:
           echo "✅ Ingress 기반 ALB 배포 완료"
 
           echo "⏳ 배포 완료 대기 중..."
-          kubectl rollout status deployment/${{ env.PROJECT_NAME }}-app -n ${{ env.PROJECT_NAME }} --timeout=300s
+          echo "🔍 배포 전 상태 확인:"
+          kubectl get pods -n ${{ env.PROJECT_NAME }} -o wide || true
+          kubectl describe deployment ${{ env.PROJECT_NAME }}-app -n ${{ env.PROJECT_NAME }} || true
+          
+          # 더 긴 timeout으로 배포 대기
+          if ! kubectl rollout status deployment/${{ env.PROJECT_NAME }}-app -n ${{ env.PROJECT_NAME }} --timeout=600s; then
+            echo "❌ 배포 timeout 발생. 상세 진단 시작..."
+            
+            echo "🔍 Pod 상태 확인:"
+            kubectl get pods -n ${{ env.PROJECT_NAME }} -o wide
+            
+            echo "🔍 실패한 Pod 로그 확인:"
+            failed_pods=$(kubectl get pods -n ${{ env.PROJECT_NAME }} --field-selector=status.phase!=Running --no-headers -o custom-columns=":metadata.name" 2>/dev/null || echo "")
+            if [ -n "$failed_pods" ]; then
+              for pod in $failed_pods; do
+                echo "=== Pod $pod 로그 ==="
+                kubectl logs $pod -n ${{ env.PROJECT_NAME }} --tail=50 || true
+                echo "=== Pod $pod 상세 정보 ==="
+                kubectl describe pod $pod -n ${{ env.PROJECT_NAME }} || true
+              done
+            fi
+            
+            echo "🔍 Deployment 이벤트 확인:"
+            kubectl describe deployment ${{ env.PROJECT_NAME }}-app -n ${{ env.PROJECT_NAME }}
+            
+            echo "🔍 ConfigMap 및 Secret 확인:"
+            kubectl get configmap -n ${{ env.PROJECT_NAME }} || true
+            kubectl get secret -n ${{ env.PROJECT_NAME }} || true
+            
+            exit 1
+          fi
 
       # ===============================================
       # 배포 결과 확인
