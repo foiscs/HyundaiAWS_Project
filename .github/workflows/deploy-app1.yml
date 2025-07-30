@@ -8,6 +8,7 @@ on:
     branches: [ main ]
     paths:
       - 'WALB/server1/**'
+      - '.github/workflows/deploy-app1.yml'
   
 jobs:
   build-and-deploy:
