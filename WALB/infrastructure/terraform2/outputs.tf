@@ -47,6 +47,20 @@ output "eks_cluster_info" {
 # ALB는 Kubernetes Ingress Controller가 자동으로 생성하므로
 # Terraform에서 직접 관리하지 않음
 
+# =========================================
+# AWS Load Balancer Controller App2 정보
+# =========================================
+output "aws_load_balancer_controller_app2_info" {
+  description = "App2 전용 AWS Load Balancer Controller 정보"
+  value = {
+    service_account_name = "aws-load-balancer-controller-app2"
+    iam_role_arn        = module.eks.aws_load_balancer_controller_app2_role_arn
+    ingress_class       = "alb-app2"
+    helm_release_name   = "walb-app2-alb-controller"
+    namespace          = "kube-system"
+  }
+}
+
 # EKS 접속을 위한 kubectl 명령어
 output "eks_kubectl_config" {
   description = "kubectl 설정 명령어"
@@ -272,6 +286,18 @@ output "troubleshooting_info" {
 }
 
 # =========================================
+# ALB 서브넷 설정 (Ingress용)
+# =========================================
+output "alb_subnet_config" {
+  description = "ALB Ingress에서 사용할 서브넷 설정"
+  value = {
+    # 서로 다른 AZ의 퍼블릭 서브넷 2개 선택
+    public_subnets_for_alb = join(",", slice(module.vpc.public_subnet_ids, 0, 2))
+    all_public_subnets     = module.vpc.public_subnet_ids
+  }
+}
+
+# =========================================
 # 다음 단계 안내
 # =========================================
 output "next_steps" {
@@ -282,6 +308,7 @@ output "next_steps" {
     check_pods     = "kubectl get pods --all-namespaces"
     access_rds     = "Use the RDS endpoint: ${module.rds.db_instance_endpoint}"
     view_logs      = "Check CloudWatch logs in: ${aws_cloudwatch_log_group.application_logs.name}"
+    alb_subnets    = "Use these subnets for ALB: ${join(",", slice(module.vpc.public_subnet_ids, 0, 2))}"
   }
 }
 

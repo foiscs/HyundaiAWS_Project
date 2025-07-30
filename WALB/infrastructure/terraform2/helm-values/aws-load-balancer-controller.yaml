@@ -17,14 +17,15 @@ image:
 # 서비스 계정 설정 (Terraform에서 미리 생성)
 serviceAccount:
   create: false
-  name: aws-load-balancer-controller
+  name: aws-load-balancer-controller-app2
 
 # cert-manager 사용 설정 (비활성화하여 자체 서명 인증서 사용)
 enableCertManager: false
 
-# Ingress Class 생성
+# Ingress Class 생성 - app2 전용 클래스 생성
 createIngressClassResource: true
-defaultIngressClass: true
+defaultIngressClass: false
+ingressClass: alb-app2
 
 # 리소스 설정 - 웹훅 성능 개선을 위해 리소스 증가
 resources:
@@ -75,7 +76,7 @@ env:
 # 공통 라벨 설정
 commonLabels:
   app.kubernetes.io/managed-by: "Terraform"
-  app.kubernetes.io/instance: "walb2-alb-controller"
+  app.kubernetes.io/instance: "walb2-alb-controller-app2"
 
 # 서비스 모니터 (Prometheus 연동 시)
 serviceMonitor:

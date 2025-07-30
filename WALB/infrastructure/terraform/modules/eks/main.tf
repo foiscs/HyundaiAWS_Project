@@ -791,6 +791,116 @@ resource "kubernetes_service_account" "aws_load_balancer_controller" {
 }
 
 # =========================================
+# AWS Load Balancer Controller ClusterRole
+# =========================================
+resource "kubernetes_cluster_role" "aws_load_balancer_controller" {
+  count = var.enable_load_balancer ? 1 : 0
+
+  metadata {
+    name = "${var.cluster_name}-aws-load-balancer-controller-role"
+    labels = {
+      "app.kubernetes.io/name" = "aws-load-balancer-controller"
+      "app.kubernetes.io/managed-by" = "Terraform"
+    }
+  }
+
+  rule {
+    api_groups = ["elbv2.k8s.aws"]
+    resources  = ["targetgroupbindings"]
+    verbs      = ["create", "delete", "get", "list", "patch", "update", "watch"]
+  }
+
+  rule {
+    api_groups = ["elbv2.k8s.aws"]
+    resources  = ["ingressclassparams"]
+    verbs      = ["get", "list", "watch"]
+  }
+
+  rule {
+    api_groups = [""]
+    resources  = ["events"]
+    verbs      = ["create", "patch"]
+  }
+
+  rule {
+    api_groups = [""]
+    resources  = ["pods"]
+    verbs      = ["get", "list", "watch"]
+  }
+
+  rule {
+    api_groups = ["networking.k8s.io"]
+    resources  = ["ingressclasses"]
+    verbs      = ["get", "list", "watch"]
+  }
+
+  rule {
+    api_groups = ["", "extensions", "networking.k8s.io"]
+    resources  = ["services", "ingresses"]
+    verbs      = ["get", "list", "patch", "update", "watch"]
+  }
+
+  rule {
+    api_groups = [""]
+    resources  = ["nodes", "namespaces", "endpoints"]
+    verbs      = ["get", "list", "watch"]
+  }
+
+  rule {
+    api_groups = ["elbv2.k8s.aws", "", "extensions", "networking.k8s.io"]
+    resources  = ["targetgroupbindings/status", "pods/status", "services/status", "ingresses/status"]
+    verbs      = ["update", "patch"]
+  }
+
+  rule {
+    api_groups = ["discovery.k8s.io"]
+    resources  = ["endpointslices"]
+    verbs      = ["get", "list", "watch"]
+  }
+
+  # ValidatingWebhookConfiguration 권한 추가
+  rule {
+    api_groups = ["admissionregistration.k8s.io"]
+    resources  = ["validatingwebhookconfigurations"]
+    verbs      = ["create", "delete", "get", "list", "patch", "update", "watch"]
+  }
+
+  depends_on = [aws_eks_cluster.main]
+}
+
+# =========================================
+# AWS Load Balancer Controller ClusterRoleBinding
+# =========================================
+resource "kubernetes_cluster_role_binding" "aws_load_balancer_controller" {
+  count = var.enable_load_balancer ? 1 : 0
+
+  metadata {
+    name = "${var.cluster_name}-aws-load-balancer-controller-rolebinding"
+    labels = {
+      "app.kubernetes.io/name" = "aws-load-balancer-controller"
+      "app.kubernetes.io/managed-by" = "Terraform"
+    }
+  }
+
+  role_ref {
+    api_group = "rbac.authorization.k8s.io"
+    kind      = "ClusterRole"
+    name      = kubernetes_cluster_role.aws_load_balancer_controller[0].metadata[0].name
+  }
+
+  subject {
+    kind      = "ServiceAccount"
+    name      = "aws-load-balancer-controller"
+    namespace = "kube-system"
+  }
+
+  depends_on = [
+    kubernetes_cluster_role.aws_load_balancer_controller[0],
+    kubernetes_service_account.aws_load_balancer_controller[0]
+  ]
+}
+
+# =========================================
 # AWS Load Balancer Controller Helm Release
 # =========================================
 resource "helm_release" "aws_load_balancer_controller" {
@@ -814,6 +924,7 @@ resource "helm_release" "aws_load_balancer_controller" {
   # 의존성 설정
   depends_on = [
     kubernetes_service_account.aws_load_balancer_controller[0],
+    kubernetes_cluster_role_binding.aws_load_balancer_controller[0],
     aws_iam_role_policy_attachment.aws_load_balancer_controller_attach[0],
     aws_eks_node_group.main
   ]

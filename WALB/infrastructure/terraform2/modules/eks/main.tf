@@ -578,7 +578,7 @@ data "aws_iam_policy_document" "aws_load_balancer_controller_assume_role_policy"
     condition {
       test     = "StringEquals"
       variable = "${replace(aws_eks_cluster.main.identity[0].oidc[0].issuer, "https://", "")}:sub"
-      values   = ["system:serviceaccount:kube-system:aws-load-balancer-controller"]
+      values   = ["system:serviceaccount:kube-system:aws-load-balancer-controller-app2"]
     }
 
     principals {
@@ -591,13 +591,13 @@ data "aws_iam_policy_document" "aws_load_balancer_controller_assume_role_policy"
 resource "aws_iam_role" "aws_load_balancer_controller" {
   count              = var.enable_load_balancer ? 1 : 0
   assume_role_policy = data.aws_iam_policy_document.aws_load_balancer_controller_assume_role_policy[0].json
-  name               = "${var.cluster_name}-aws-load-balancer-controller"
+  name               = "${var.cluster_name}-aws-load-balancer-controller-app2"
   tags               = var.common_tags
 }
 
 resource "aws_iam_policy" "aws_load_balancer_controller" {
   count = var.enable_load_balancer && !var.use_existing_load_balancer_policy ? 1 : 0
-  name  = "${var.cluster_name}-AWSLoadBalancerControllerIAMPolicy"
+  name  = "${var.cluster_name}-AWSLoadBalancerControllerIAMPolicy-App2"
   
   policy = jsonencode({
     Version = "2012-10-17"
@@ -774,13 +774,13 @@ resource "aws_iam_role_policy_attachment" "aws_load_balancer_controller_attach" 
 
 
 # =========================================
-# AWS Load Balancer Controller ServiceAccount
+# AWS Load Balancer Controller ServiceAccount (App2 전용)
 # =========================================
 resource "kubernetes_service_account" "aws_load_balancer_controller" {
   count = var.enable_load_balancer ? 1 : 0
 
   metadata {
-    name      = "aws-load-balancer-controller"
+    name      = "aws-load-balancer-controller-app2"
     namespace = "kube-system"
     annotations = {
       "eks.amazonaws.com/role-arn" = aws_iam_role.aws_load_balancer_controller[0].arn
@@ -791,12 +791,122 @@ resource "kubernetes_service_account" "aws_load_balancer_controller" {
 }
 
 # =========================================
-# AWS Load Balancer Controller Helm Release
+# AWS Load Balancer Controller ClusterRole (App2 전용)
+# =========================================
+resource "kubernetes_cluster_role" "aws_load_balancer_controller" {
+  count = var.enable_load_balancer ? 1 : 0
+
+  metadata {
+    name = "${var.cluster_name}-aws-load-balancer-controller-app2-role"
+    labels = {
+      "app.kubernetes.io/name" = "aws-load-balancer-controller-app2"
+      "app.kubernetes.io/managed-by" = "Terraform"
+    }
+  }
+
+  rule {
+    api_groups = ["elbv2.k8s.aws"]
+    resources  = ["targetgroupbindings"]
+    verbs      = ["create", "delete", "get", "list", "patch", "update", "watch"]
+  }
+
+  rule {
+    api_groups = ["elbv2.k8s.aws"]
+    resources  = ["ingressclassparams"]
+    verbs      = ["get", "list", "watch"]
+  }
+
+  rule {
+    api_groups = [""]
+    resources  = ["events"]
+    verbs      = ["create", "patch"]
+  }
+
+  rule {
+    api_groups = [""]
+    resources  = ["pods"]
+    verbs      = ["get", "list", "watch"]
+  }
+
+  rule {
+    api_groups = ["networking.k8s.io"]
+    resources  = ["ingressclasses"]
+    verbs      = ["get", "list", "watch"]
+  }
+
+  rule {
+    api_groups = ["", "extensions", "networking.k8s.io"]
+    resources  = ["services", "ingresses"]
+    verbs      = ["get", "list", "patch", "update", "watch"]
+  }
+
+  rule {
+    api_groups = [""]
+    resources  = ["nodes", "namespaces", "endpoints"]
+    verbs      = ["get", "list", "watch"]
+  }
+
+  rule {
+    api_groups = ["elbv2.k8s.aws", "", "extensions", "networking.k8s.io"]
+    resources  = ["targetgroupbindings/status", "pods/status", "services/status", "ingresses/status"]
+    verbs      = ["update", "patch"]
+  }
+
+  rule {
+    api_groups = ["discovery.k8s.io"]
+    resources  = ["endpointslices"]
+    verbs      = ["get", "list", "watch"]
+  }
+
+  # ValidatingWebhookConfiguration 권한 추가
+  rule {
+    api_groups = ["admissionregistration.k8s.io"]
+    resources  = ["validatingwebhookconfigurations"]
+    verbs      = ["create", "delete", "get", "list", "patch", "update", "watch"]
+  }
+
+  depends_on = [aws_eks_cluster.main]
+}
+
+# =========================================
+# AWS Load Balancer Controller ClusterRoleBinding (App2 전용)
+# =========================================
+resource "kubernetes_cluster_role_binding" "aws_load_balancer_controller" {
+  count = var.enable_load_balancer ? 1 : 0
+
+  metadata {
+    name = "${var.cluster_name}-aws-load-balancer-controller-app2-rolebinding"
+    labels = {
+      "app.kubernetes.io/name" = "aws-load-balancer-controller-app2"
+      "app.kubernetes.io/managed-by" = "Terraform"
+    }
+  }
+
+  role_ref {
+    api_group = "rbac.authorization.k8s.io"
+    kind      = "ClusterRole"
+    name      = kubernetes_cluster_role.aws_load_balancer_controller[0].metadata[0].name
+  }
+
+  subject {
+    kind      = "ServiceAccount"
+    name      = "aws-load-balancer-controller-app2"
+    namespace = "kube-system"
+  }
+
+  depends_on = [
+    kubernetes_cluster_role.aws_load_balancer_controller[0],
+    kubernetes_service_account.aws_load_balancer_controller[0]
+  ]
+}
+
+# =========================================
+# AWS Load Balancer Controller Helm Release (App2 전용)
 # =========================================
 resource "helm_release" "aws_load_balancer_controller" {
   count = var.enable_load_balancer ? 1 : 0
 
-  name       = "walb-alb-controller"
+  name       = "walb-app2-alb-controller"
   repository = "https://aws.github.io/eks-charts"
   chart      = "aws-load-balancer-controller"
   namespace  = "kube-system"
@@ -814,6 +924,7 @@ resource "helm_release" "aws_load_balancer_controller" {
   # 의존성 설정
   depends_on = [
     kubernetes_service_account.aws_load_balancer_controller[0],
+    kubernetes_cluster_role_binding.aws_load_balancer_controller[0],
     aws_iam_role_policy_attachment.aws_load_balancer_controller_attach[0],
     aws_eks_node_group.main
   ]
@@ -827,6 +938,28 @@ resource "helm_release" "aws_load_balancer_controller" {
   # 설치 전 대기
   wait = true
   wait_for_jobs = true
+
+  # App2 전용 설정 추가
+  set {
+    name  = "serviceAccount.create"
+    value = "false"
+  }
+
+  set {
+    name  = "serviceAccount.name"
+    value = "aws-load-balancer-controller-app2"
+  }
+
+  # App2 전용 IngressClass 이름 설정
+  set {
+    name  = "ingressClass"
+    value = "alb-app2"
+  }
+
+  set {
+    name  = "ingressClassConfig.default"
+    value = "false"
+  }
 }
 
 # =========================================
@@ -836,8 +969,8 @@ resource "kubernetes_ingress_v1" "walb_app" {
   count = var.enable_load_balancer && var.create_ingress ? 1 : 0
 
   metadata {
-    name      = "walb-app-ingress"
-    namespace = "walb-app"
+    name      = "walb2-app-ingress"
+    namespace = "walb2-app"
     annotations = {
       # AWS Application Load Balancer 설정
       "alb.ingress.kubernetes.io/scheme"                = "internet-facing"
@@ -854,7 +987,7 @@ resource "kubernetes_ingress_v1" "walb_app" {
       "alb.ingress.kubernetes.io/healthcheck-port"             = "80"
       
       # Load Balancer 설정
-      "alb.ingress.kubernetes.io/load-balancer-name" = "walb-app-ingress-alb"
+      "alb.ingress.kubernetes.io/load-balancer-name" = "walb2-app-ingress-alb"
       "alb.ingress.kubernetes.io/target-group-attributes" = join(",", [
         "stickiness.enabled=false",
         "deregistration_delay.timeout_seconds=60",
@@ -864,17 +997,17 @@ resource "kubernetes_ingress_v1" "walb_app" {
       
       # 태그 설정
       "alb.ingress.kubernetes.io/tags" = join(",", [
-        "Environment=walb-app",
-        "Project=walb-app", 
+        "Environment=walb2-app",
+        "Project=walb2-app", 
         "ManagedBy=Kubernetes",
-        "CreatedBy=AWS-Load-Balancer-Controller",
+        "CreatedBy=AWS-Load-Balancer-Controller-App2",
         "Application=PHP-Blog"
       ])
     }
   }
 
   spec {
-    ingress_class_name = "alb"
+    ingress_class_name = "alb-app2"
     
     rule {
       http {
@@ -883,7 +1016,7 @@ resource "kubernetes_ingress_v1" "walb_app" {
           path_type = "Prefix"
           backend {
             service {
-              name = "walb-app-service"
+              name = "walb2-app-service"
               port {
                 number = 80
               }
@@ -896,20 +1029,20 @@ resource "kubernetes_ingress_v1" "walb_app" {
 
   depends_on = [
     helm_release.aws_load_balancer_controller[0],
-    kubernetes_namespace.walb_app[0]
+    kubernetes_namespace.walb_app2[0]
   ]
 }
 
 # =========================================
-# 애플리케이션 네임스페이스
+# 애플리케이션 네임스페이스 (App2 전용)
 # =========================================
-resource "kubernetes_namespace" "walb_app" {
+resource "kubernetes_namespace" "walb_app2" {
   count = var.enable_load_balancer && var.create_ingress ? 1 : 0
 
   metadata {
-    name = "walb-app"
+    name = "walb2-app"
     labels = {
-      "app.kubernetes.io/name"       = "walb-app"
+      "app.kubernetes.io/name"       = "walb2-app"
       "app.kubernetes.io/managed-by" = "Terraform"
     }
   }

@@ -273,6 +273,12 @@ output "aws_load_balancer_controller_role_arn" {
   value       = var.enable_load_balancer ? aws_iam_role.aws_load_balancer_controller[0].arn : null
 }
 
+# AWS Load Balancer Controller App2 정보
+output "aws_load_balancer_controller_app2_role_arn" {
+  description = "AWS Load Balancer Controller App2 IAM Role ARN"
+  value       = var.enable_load_balancer ? aws_iam_role.aws_load_balancer_controller[0].arn : null
+}
+
 
 output "current_user_access" {
   description = "현재 사용자의 클러스터 접근 정보"

@@ -948,298 +948,6 @@ jobs:
           kubectl get nodes --show-labels
 
       # ===============================================
-      # Ingress 및 ALB 동기화 상태 체크 및 정리
-      # ===============================================
-    - name: Check and Clean Ingress Resources
-      run: |
-          echo "🔍 기존 Ingress 리소스 및 finalizer 상태 체크 중..."
-          
-          # Ingress finalizer 체크 및 정리 함수
-          check_and_clean_ingress() {
-            local namespace="$1"
-            local ingress_name="$2"
-            
-            echo "🔍 Ingress '$ingress_name' (네임스페이스: $namespace) 상태 확인..."
-            
-            # Ingress 존재 확인
-            if ! kubectl get ingress "$ingress_name" -n "$namespace" >/dev/null 2>&1; then
-              echo "ℹ️ Ingress '$ingress_name'이 존재하지 않습니다."
-              return 0
-            fi
-            
-            # finalizer 확인
-            local finalizers=$(kubectl get ingress "$ingress_name" -n "$namespace" -o jsonpath='{.metadata.finalizers}' 2>/dev/null || echo "")
-            
-            if [[ "$finalizers" == *"ingress.k8s.aws/resources"* ]]; then
-              echo "⚠️ Ingress '$ingress_name'에 finalizer가 남아있습니다: $finalizers"
-              
-              # Ingress 삭제 시도
-              echo "🗑️ Ingress 삭제 시도 중..."
-              kubectl delete ingress "$ingress_name" -n "$namespace" --timeout=30s &
-              local delete_pid=$!
-              
-              # 30초 대기
-              sleep 30
-              
-              # 프로세스가 아직 실행 중인지 확인
-              if kill -0 $delete_pid 2>/dev/null; then
-                echo "⚠️ Ingress 삭제가 finalizer로 인해 멈춤. 강제 정리 시작..."
-                kill $delete_pid 2>/dev/null || true
-                
-                # validating webhook 확인 및 삭제
-                echo "🔍 validating webhook 확인 중..."
-                local webhook_exists=$(kubectl get validatingwebhookconfigurations aws-load-balancer-webhook 2>/dev/null | wc -l)
-                if [ "$webhook_exists" -gt 0 ]; then
-                  echo "🗑️ aws-load-balancer-webhook 삭제 중..."
-                  kubectl delete validatingwebhookconfigurations aws-load-balancer-webhook --timeout=10s || echo "webhook 삭제 실패 (이미 없을 수 있음)"
-                  echo "✅ webhook 삭제 완료"
-                else
-                  echo "ℹ️ validating webhook이 이미 없습니다."
-                fi
-                
-                # mutating webhook 확인 및 삭제
-                local mutating_webhook_exists=$(kubectl get mutatingwebhookconfigurations aws-load-balancer-webhook 2>/dev/null | wc -l)
-                if [ "$mutating_webhook_exists" -gt 0 ]; then
-                  echo "🗑️ aws-load-balancer-webhook (mutating) 삭제 중..."
-                  kubectl delete mutatingwebhookconfigurations aws-load-balancer-webhook --timeout=10s || echo "mutating webhook 삭제 실패 (이미 없을 수 있음)"
-                  echo "✅ mutating webhook 삭제 완료"
-                fi
-                
-                # finalizer 강제 제거
-                echo "🔧 finalizer 강제 제거 중..."
-                if kubectl patch ingress "$ingress_name" -n "$namespace" -p '{"metadata":{"finalizers":[]}}' --type=merge; then
-                  echo "✅ finalizer 제거 성공"
-                  
-                  # 다시 삭제 시도
-                  echo "🗑️ Ingress 재삭제 시도..."
-                  if kubectl delete ingress "$ingress_name" -n "$namespace" --timeout=30s; then
-                    echo "✅ Ingress '$ingress_name' 삭제 완료"
-                  else
-                    echo "⚠️ Ingress 재삭제 실패. 수동 확인 필요"
-                  fi
-                else
-                  echo "❌ finalizer 제거 실패"
-                fi
-              else
-                echo "✅ Ingress '$ingress_name' 정상 삭제 완료"
-              fi
-            else
-              echo "✅ Ingress '$ingress_name'에 문제되는 finalizer 없음"
-            fi
-          }
-          
-          # 모든 네임스페이스의 Ingress 조회 및 체크
-          echo "🔍 모든 네임스페이스의 Ingress 리소스 조회..."
-          kubectl get ingress -A --no-headers 2>/dev/null | while read namespace name class hosts address ports age; do
-            if [ -n "$namespace" ] && [ -n "$name" ]; then
-              check_and_clean_ingress "$namespace" "$name"
-            fi
-          done || echo "ℹ️ 기존 Ingress 리소스가 없습니다."
-          
-          echo "✅ Ingress 리소스 정리 완료"
-
-      # ===============================================
-      # AWS Load Balancer Controller 확인 및 복구
-      # ===============================================
-    - name: Check and Recover AWS Load Balancer Controller
-      run: |
-          echo "🔍 AWS Load Balancer Controller 상태 확인 중..."
-          
-          # AWS Load Balancer Controller Pod 확인
-          if kubectl get pods -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller >/dev/null 2>&1; then
-            echo "✅ AWS Load Balancer Controller Pod 발견"
-            kubectl get pods -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller
-            
-            # Pod 상태 확인
-            running_pods=$(kubectl get pods -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller --field-selector=status.phase=Running --no-headers | wc -l)
-            if [ "$running_pods" -eq 0 ]; then
-              echo "⚠️ AWS Load Balancer Controller Pod가 Running 상태가 아닙니다. 재시작 중..."
-              kubectl rollout restart deployment -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller
-              kubectl rollout status deployment -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller --timeout=120s
-              echo "✅ AWS Load Balancer Controller 재시작 완료"
-            fi
-          else
-            echo "❌ AWS Load Balancer Controller를 찾을 수 없습니다."
-            echo "Terraform으로 AWS Load Balancer Controller를 먼저 설치해주세요."
-            exit 1
-          fi
-          
-          # 3. IngressClass 상세 확인
-          echo "🔍 IngressClass 확인 시작..."
-          echo "🔍 모든 IngressClass 목록:"
-          kubectl get ingressclass -o wide || echo "IngressClass 없음"
-          
-          if kubectl get ingressclass alb >/dev/null 2>&1; then
-            echo "✅ IngressClass 'alb' 확인됨"
-            echo "🔍 'alb' IngressClass 상세 정보:"
-            kubectl describe ingressclass alb | head -20
-          else
-            echo "❌ IngressClass 'alb'를 찾을 수 없습니다."
-            echo "AWS Load Balancer Controller가 완전히 배포되지 않았습니다."
-            
-            # Controller 로그에서 IngressClass 생성 관련 오류 확인
-            echo "🔍 Controller 로그에서 IngressClass 생성 관련 오류 확인:"
-            kubectl logs -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller --tail=50 | grep -i "ingressclass\|error\|fail" || echo "관련 로그 없음"
-            
-            echo "⚠️ IngressClass 없이 진행하나 Ingress 처리가 실패할 수 있습니다."
-          fi
-          
-          # 4. AWS IAM 및 버전 확인
-          echo "🔍 AWS 및 Kubernetes 버전 확인..."
-          echo "🔍 AWS CLI 버전:"
-          aws --version || echo "AWS CLI 없음"
-          
-          echo "🔍 Kubernetes 버전:"
-          kubectl version --short || echo "kubectl 버전 확인 실패"
-          
-          echo "🔍 AWS 과정 사용자 ID 확인:"
-          aws sts get-caller-identity || echo "AWS 인증 실패"
-          
-          echo "🔍 EKS 클러스터 접근 권한 확인:"
-          kubectl auth can-i "*" "*" --all-namespaces || echo "관리자 권한 없음"
-          
-          echo "🔍 AWS Load Balancer Controller ServiceAccount 확인:"
-          kubectl get serviceaccount -n kube-system aws-load-balancer-controller || echo "ServiceAccount 없음"
-          
-          # IAM Role 얰결 확인
-          if kubectl get serviceaccount -n kube-system aws-load-balancer-controller >/dev/null 2>&1; then
-            iam_role=$(kubectl get serviceaccount -n kube-system aws-load-balancer-controller -o jsonpath='{.metadata.annotations.eks\.amazonaws\.com/role-arn}' 2>/dev/null || echo "")
-            if [ -n "$iam_role" ]; then
-              echo "✅ IAM Role 연결됨: $iam_role"
-            else
-              echo "⚠️ IAM Role이 ServiceAccount에 연결되지 않았습니다."
-            fi
-          fi
-          
-          # Webhook config 재생성 대기
-          echo "⏳ webhook config 재생성 대기 중..."
-          sleep 15
-          
-          # ValidatingAdmissionWebhook 확인 (더 상세한 로그와 함께)
-          webhook_ready=false
-          echo "🔍 현재 존재하는 모든 ValidatingWebhookConfiguration 확인:"
-          kubectl get validatingwebhookconfigurations -o name || echo "조회 실패"
-          
-          for i in {1..6}; do
-            echo "🔍 Webhook 검색 시도 $i/6..."
-            
-            # 여러 패턴으로 검색
-            if kubectl get validatingwebhookconfigurations | grep -E "(ingress|elb|load-balancer|aws)" >/dev/null 2>&1; then
-              echo "✅ ValidatingWebhookConfiguration 발견!"
-              echo "🔍 찾은 webhook 이름:"
-              kubectl get validatingwebhookconfigurations | grep -E "(ingress|elb|load-balancer|aws)" || true
-              webhook_ready=true
-              break
-            elif kubectl get validatingwebhookconfigurations 2>/dev/null | tail -n +2 | wc -l | grep -v "^0$" >/dev/null; then
-              echo "⚠️ AWS LB Controller와 관련되지 않은 webhook들이 존재합니다:"
-              kubectl get validatingwebhookconfigurations || true
-              echo "⏳ AWS Load Balancer Controller webhook 대기 중... ($i/6)"
-              sleep 5
-            else
-              echo "⏳ ValidatingWebhookConfiguration 없음. 대기 중... ($i/6)"
-              sleep 5
-            fi
-          done
-          
-          if [ "$webhook_ready" != "true" ]; then
-            echo "⚠️ ValidatingWebhookConfiguration을 찾을 수 없습니다."
-            echo "AWS Load Balancer Controller가 아직 완전히 준비되지 않았을 수 있습니다."
-            
-            # 기존 webhook 정리
-            echo "🧹 기존 webhook 정리 중..."
-            kubectl delete validatingwebhookconfigurations aws-load-balancer-webhook --ignore-not-found=true
-            kubectl delete mutatingwebhookconfigurations aws-load-balancer-webhook --ignore-not-found=true
-            
-            echo "🔧 Controller 강제 재시작 중..."
-            kubectl rollout restart deployment -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller
-            kubectl rollout status deployment -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller --timeout=180s
-            
-            # 재시작 후 더 긴 대기
-            echo "⏳ 재시작 후 webhook 재생성 대기..."
-            sleep 30
-            
-            # 더 긴 시간 동안 webhook 재확인
-            webhook_recovered=false
-            for j in {1..12}; do
-              echo "🔍 Webhook 복구 확인 시도 $j/12..."
-              
-              # 보다 넓은 범위로 검색
-              if kubectl get validatingwebhookconfigurations | grep -E "(ingress|elb|load-balancer|aws)" >/dev/null 2>&1; then
-                echo "✅ ValidatingWebhookConfiguration 복구 성공! (시도 $j/12)"
-                echo "🔍 복구된 webhook:"
-                kubectl get validatingwebhookconfigurations | grep -E "(ingress|elb|load-balancer|aws)" || true
-                
-                # webhook 상세 정보
-                webhook_name=$(kubectl get validatingwebhookconfigurations | grep -E "(ingress|elb|load-balancer|aws)" | awk '{print $1}' | head -1)
-                if [ -n "$webhook_name" ]; then
-                  echo "🔍 Webhook 상세 정보:"
-                  kubectl describe validatingwebhookconfiguration "$webhook_name" | head -20 || true
-                fi
-                
-                webhook_recovered=true
-                break
-              else
-                echo "⏳ ValidatingWebhookConfiguration 재확인 중... ($j/12)"
-                echo "🔍 현재 존재하는 모든 webhook:"
-                kubectl get validatingwebhookconfigurations || echo "없음"
-                sleep 10
-              fi
-            done
-            
-            if [ "$webhook_recovered" != "true" ]; then
-              echo "❌ ValidatingWebhookConfiguration 복구 실패"
-              
-              # Controller 로그에서 webhook 관련 오류 찾기
-              echo "🔍 Controller 로그에서 webhook 관련 오류 찾기:"
-              
-              # 최신 Pod들의 로그 확인
-              latest_pods=$(kubectl get pods -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller --sort-by=.metadata.creationTimestamp -o name | tail -3)
-              
-              for pod in $latest_pods; do
-                echo "=== $pod 전체 로그 (webhook 관련) ===="
-                kubectl logs -n kube-system $pod --tail=100 | grep -i "webhook\|admission\|certificate\|tls\|validating" || echo "webhook 관련 로그 없음"
-                
-                echo "=== $pod 오류 로그 ===="
-                kubectl logs -n kube-system $pod --tail=100 | grep -i "error\|fail\|denied\|forbidden\|unable\|timeout" || echo "오류 로그 없음"
-                
-                echo "=== $pod 시작 로그 ===="
-                kubectl logs -n kube-system $pod --tail=200 | head -20 || echo "시작 로그 없음"
-                echo ""
-              done
-              
-              # Webhook 생성 권한 확인
-              echo "🔍 ValidatingWebhookConfiguration 생성 권한 확인:"
-              kubectl auth can-i create validatingwebhookconfigurations --as=system:serviceaccount:kube-system:aws-load-balancer-controller || echo "Webhook 생성 권한 없음"
-              
-              # ClusterRole 및 ClusterRoleBinding 확인
-              echo "🔍 AWS Load Balancer Controller ClusterRole 확인:"
-              kubectl get clusterrole | grep -E "(aws-load-balancer|alb)" || echo "ClusterRole 없음"
-              
-              echo "🔍 AWS Load Balancer Controller ClusterRoleBinding 확인:"
-              kubectl get clusterrolebinding | grep -E "(aws-load-balancer|alb)" || echo "ClusterRoleBinding 없음"
-              
-              # Controller 재시작 후 추가 대기
-              echo "🔧 Controller 추가 대기 후 재확인..."
-              sleep 30
-              
-              # 최종 webhook 확인
-              if kubectl get validatingwebhookconfigurations | grep -E "(ingress|elb|load-balancer|aws)" >/dev/null 2>&1; then
-                echo "✅ 추가 대기 후 Webhook 발견!"
-                kubectl get validatingwebhookconfigurations | grep -E "(ingress|elb|load-balancer|aws)"
-                webhook_recovered=true
-              fi
-              
-              echo "⚠️ Webhook 없이 진행하지만 Ingress 처리가 안될 수 있습니다."
-              echo "🔍 문제 해결을 위해 다음을 확인하세요:"
-              echo "  1. AWS Load Balancer Controller의 ClusterRole에 ValidatingWebhookConfiguration 생성 권한이 있는지"
-              echo "  2. Controller Pod의 TLS 인증서 설정이 올바른지"
-              echo "  3. kube-system 네임스페이스에 적절한 Service가 있는지"
-            fi
-          fi
-          
-          echo "✅ AWS Load Balancer Controller 확인 완료 - Ingress 기반 ALB 생성 준비됨"
-
-      # ===============================================
       # 퍼블릭 서브넷 정보 조회
       # ===============================================
     - name: Get Subnet Information
@@ -1547,14 +1255,6 @@ jobs:
             # Ingress와 ALB 동기화 상태 체크
             echo "🔍 Ingress와 ALB 동기화 상태 체크 중..."
             
-            # webhook이 정상 작동하는지 확인
-            if ! kubectl get validatingwebhookconfigurations | grep -E "(ingress|elb|load-balancer|aws)" >/dev/null 2>&1; then
-              echo "⚠️ Webhook이 없습니다. Controller 재시작 중..."
-              kubectl rollout restart deployment -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller
-              kubectl rollout status deployment -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller --timeout=120s
-              sleep 10
-            fi
-            
             # Ingress finalizer 상태 확인
             ingress_finalizers=$(kubectl get ingress ${{ env.PROJECT_NAME }}-ingress -n ${{ env.PROJECT_NAME }} -o jsonpath='{.metadata.finalizers}' 2>/dev/null || echo "")
             if [[ -z "$ingress_finalizers" ]]; then
@@ -1755,15 +1455,6 @@ jobs:
           echo "📋 Ingress 상태:"
           kubectl get ingress -n ${{ env.PROJECT_NAME }} || echo "Ingress를 찾을 수 없습니다."
 
-          echo "📋 AWS Load Balancer Controller 상태:"
-          kubectl get pods -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller || echo "AWS Load Balancer Controller를 찾을 수 없습니다."
-          
-          echo "🔧 AWS Load Balancer Controller 재시작 중..."
-          kubectl rollout restart deployment -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller || true
-          kubectl rollout status deployment -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller --timeout=120s || true
-          
-          echo "✅ AWS Load Balancer Controller 재시작 완료"
-
           # Deployment 존재 확인 후 대기
           if kubectl get deployment ${{ env.PROJECT_NAME }}-app -n ${{ env.PROJECT_NAME }} >/dev/null 2>&1; then
             echo "⏳ Pod 준비 상태 대기 중..."
@@ -1833,13 +1524,6 @@ jobs:
             kubectl get ingress ${{ env.PROJECT_NAME }}-ingress -n ${{ env.PROJECT_NAME }}
             kubectl describe ingress ${{ env.PROJECT_NAME }}-ingress -n ${{ env.PROJECT_NAME }}
             
-            echo "🔧 AWS Load Balancer Controller 재시작 중..."
-            kubectl rollout restart deployment -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller || true
-            kubectl rollout status deployment -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller --timeout=60s || true
-            
-            echo "🔍 AWS Load Balancer Controller 로그:"
-            kubectl logs -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller --tail=20 || true
-            
             echo "잠시 후 ALB가 생성되면 다음 명령어로 URL을 확인하세요:"
             echo "kubectl get ingress ${{ env.PROJECT_NAME }}-ingress -n ${{ env.PROJECT_NAME }}"
             
@@ -1904,23 +1588,9 @@ jobs:
             if [[ "$finalizers" == *"ingress.k8s.aws/resources"* ]]; then
               echo "⚠️ Ingress '$ingress_name'에 finalizer가 남아있습니다. 강제 정리 시작..."
               
-              # validating webhook 삭제
-              kubectl delete validatingwebhookconfigurations aws-load-balancer-webhook --timeout=10s 2>/dev/null || echo "validating webhook 없음"
-              
-              # mutating webhook 삭제
-              kubectl delete mutatingwebhookconfigurations aws-load-balancer-webhook --timeout=10s 2>/dev/null || echo "mutating webhook 없음"
-              
-              # finalizer 강제 제거
-              echo "🔧 finalizer 강제 제거 중..."
-              if kubectl patch ingress "$ingress_name" -n "$namespace" -p '{"metadata":{"finalizers":[]}}' --type=merge; then
-                echo "✅ finalizer 제거 성공"
-                
-                # Ingress 삭제
-                kubectl delete ingress "$ingress_name" -n "$namespace" --timeout=30s || echo "Ingress 삭제 실패"
-                echo "✅ Ingress '$ingress_name' 정리 완료"
-              else
-                echo "⚠️ finalizer 제거 실패. 수동 확인 필요"
-              fi
+              # 자신의 앱 네임스페이스 내의 Ingress만 정상 삭제 시도
+              echo "🗑️ 자기 앱의 Ingress만 정상 삭제 시도..."
+              kubectl delete ingress "$ingress_name" -n "$namespace" --timeout=30s || echo "Ingress 삭제 실패"
             else
               echo "✅ Ingress '$ingress_name'에 문제되는 finalizer 없음"
               # 정상 삭제 시도
@@ -1938,10 +1608,5 @@ jobs:
           echo "🔄 애플리케이션 롤백 중..."
           kubectl rollout undo deployment/${{ env.PROJECT_NAME }}-app -n ${{ env.PROJECT_NAME }} || true
           kubectl rollout status deployment/${{ env.PROJECT_NAME }}-app -n ${{ env.PROJECT_NAME }} --timeout=300s || true
-          
-          # AWS Load Balancer Controller 복구
-          echo "🔧 AWS Load Balancer Controller 복구 중..."
-          kubectl rollout restart deployment -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller || true
-          kubectl rollout status deployment -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller --timeout=120s || true
-          
+        
           echo "✅ 롤백 및 정리 완료"

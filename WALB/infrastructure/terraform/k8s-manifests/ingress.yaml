@@ -8,9 +8,10 @@ metadata:
     alb.ingress.kubernetes.io/scheme: internet-facing
     alb.ingress.kubernetes.io/target-type: ip
     alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}]'
-    # 추가
-    kubernetes.io/ingress.class: alb
-    alb.ingress.kubernetes.io/subnets: subnet-0c3b7ce8248681101,subnet-057589a6494b65a9c
+    
+    # 서로 다른 AZ의 퍼블릭 서브넷 2개 사용 (Terraform에서 동적으로 선택)
+    # 설정: subnet-0681af293c4f19263 (ap-northeast-2a), subnet-057589a6494b65a9c (ap-northeast-2b)
+    alb.ingress.kubernetes.io/subnets: subnet-0681af293c4f19263,subnet-057589a6494b65a9c
     
     # Health Check 설정 (PHP 애플리케이션)
     alb.ingress.kubernetes.io/healthcheck-path: /healthcheck.php
@@ -28,9 +29,6 @@ metadata:
       deregistration_delay.timeout_seconds=60,
       load_balancing.algorithm.type=round_robin,
       slow_start.duration_seconds=30
-      
-    # 서브넷 자동 발견 (태그 기반)
-    alb.ingress.kubernetes.io/subnets: subnet-public
     
     # 보안 그룹 설정
     alb.ingress.kubernetes.io/security-groups: walb-app-alb-sg
