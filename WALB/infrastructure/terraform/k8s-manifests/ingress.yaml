@@ -14,7 +14,7 @@ metadata:
     alb.ingress.kubernetes.io/subnets: subnet-0681af293c4f19263,subnet-057589a6494b65a9c
     
     # Health Check 설정 (PHP 애플리케이션)
-    alb.ingress.kubernetes.io/healthcheck-path: /healthcheck.php
+    alb.ingress.kubernetes.io/healthcheck-path: /health.php
     alb.ingress.kubernetes.io/healthcheck-interval-seconds: '30'
     alb.ingress.kubernetes.io/healthcheck-timeout-seconds: '10'
     alb.ingress.kubernetes.io/healthy-threshold-count: '2'
@@ -30,8 +30,7 @@ metadata:
       load_balancing.algorithm.type=round_robin,
       slow_start.duration_seconds=30
     
-    # 보안 그룹 설정
-    alb.ingress.kubernetes.io/security-groups: walb-app-alb-sg
+    # 보안 그룹은 ALB Controller가 자동 생성
     
     # 태그 설정
     alb.ingress.kubernetes.io/tags: |
@@ -65,7 +64,7 @@ spec:
 #     alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}]'
     
 #     # Health Check 설정 (PHP 애플리케이션)
-#     alb.ingress.kubernetes.io/healthcheck-path: /healthcheck.php
+#     alb.ingress.kubernetes.io/healthcheck-path: /health.php
 #     alb.ingress.kubernetes.io/healthcheck-interval-seconds: '30'
 #     alb.ingress.kubernetes.io/healthcheck-timeout-seconds: '10'
 #     alb.ingress.kubernetes.io/healthy-threshold-count: '2'

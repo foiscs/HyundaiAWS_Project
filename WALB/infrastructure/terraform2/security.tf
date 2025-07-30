@@ -17,6 +17,28 @@ resource "aws_security_group_rule" "eks_to_rds" {
   description              = "EKS to RDS MySQL access"
 }
 
+# Bastion Host에서 RDS로의 접근 허용 (인바운드)
+resource "aws_security_group_rule" "bastion_to_rds_inbound" {
+  type                     = "ingress"
+  from_port                = 3306
+  to_port                  = 3306
+  protocol                 = "tcp"
+  source_security_group_id = aws_security_group.bastion.id
+  security_group_id        = module.rds.security_group_id
+  description              = "Bastion Host to RDS MySQL access"
+}
+
+# Bastion Host에서 RDS로의 접근 허용 (아웃바운드)
+resource "aws_security_group_rule" "bastion_to_rds_outbound" {
+  type              = "egress"
+  from_port         = 3306
+  to_port           = 3306
+  protocol          = "tcp"
+  cidr_blocks       = ["0.0.0.0/0"]
+  security_group_id = aws_security_group.bastion.id
+  description       = "Bastion Host outbound MySQL access"
+}
+
 # EKS 클러스터에서 인터넷으로의 HTTPS 접근 허용
 resource "aws_security_group_rule" "eks_https_egress" {
   type              = "egress"

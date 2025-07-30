@@ -409,23 +409,6 @@ resource "aws_security_group" "bastion" {
     cidr_blocks = ["0.0.0.0/0"]  # 보안상 위험하지만 GitHub Actions용
   }
 
-  # PostgreSQL 포트 포워딩을 위한 로컬 접근 (추가 필요)
-  ingress {
-    description = "PostgreSQL port forwarding"
-    from_port   = 5432
-    to_port     = 5432
-    protocol    = "tcp"
-    cidr_blocks = ["127.0.0.1/32"]  # 로컬 루프백만 허용
-  }
-  
-  # RDS에 대한 outbound 접근 허용 (기존 egress 규칙을 보다 구체적으로)
-  egress {
-    description = "PostgreSQL to RDS"
-    from_port   = 5432
-    to_port     = 5432
-    protocol    = "tcp"
-    cidr_blocks = [var.vpc_cidr]
-  }
 
   egress {
     description = "All outbound traffic"

@@ -1,10 +1,10 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: simpleblog-deployment
-  namespace: simpleblog-namespace
+  name: walb-app-deployment
+  namespace: walb-app
   labels:
-    app: simpleblog-app
+    app: walb-app
     version: v1
 spec:
   replicas: 3
@@ -15,15 +15,15 @@ spec:
       maxSurge: 1
   selector:
     matchLabels:
-      app: simpleblog-app
+      app: walb-app
   template:
     metadata:
       labels:
-        app: simpleblog-app
+        app: walb-app
         version: v1
     spec:
       containers:
-      - name: simpleblog-app
+      - name: walb-app
         image: 253157413163.dkr.ecr.ap-northeast-2.amazonaws.com/simple-blog-app:latest
         ports:
         - containerPort: 80
@@ -51,7 +51,7 @@ spec:
             cpu: "500m"
         readinessProbe:
           httpGet:
-            path: /healthcheck.php
+            path: /health.php
             port: 80
           initialDelaySeconds: 30
           periodSeconds: 5
@@ -59,7 +59,7 @@ spec:
           failureThreshold: 3
         livenessProbe:
           httpGet:
-            path: /healthcheck.php
+            path: /health.php
             port: 80
           initialDelaySeconds: 60
           periodSeconds: 10
@@ -69,14 +69,14 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: simpleblog-deployment
-  namespace: simpleblog-namespace
+  name: walb-app-service
+  namespace: walb-app
   labels:
-    app: simpleblog-app
+    app: walb-app
 spec:
   type: LoadBalancer
   selector:
-    app: simpleblog-app
+    app: walb-app
   ports:
   - port: 80
     targetPort: 80

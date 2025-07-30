@@ -31,8 +31,8 @@ app2_config:
   
   # 애플리케이션 설정
   application:
-    deployment_name: "music1-deployment"  # 기존 deployment 이름
-    image_name: "music1-app"              # 컨테이너 이미지 이름
+    deployment_name: "walb2-app-app"      # 실제 deployment 이름
+    image_name: "walb2-app-ecr"           # ECR 리포지토리 이름
     health_check_path: "/api/music"       # Music API health check 경로
   
   # 네트워크 설정

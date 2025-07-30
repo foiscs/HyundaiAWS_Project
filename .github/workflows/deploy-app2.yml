@@ -89,7 +89,7 @@ jobs:
     
     - name: Validate and Build Maven Project
       run: |
-        echo "🔍 Java Spring Boot 애플리케이션 검증 중..."
+        echo "🔍 Java Spring Boot 애플리케이션 검증 중.."
         if [ -f "server2/pom.xml" ]; then
           cd server2
           echo "📦 Maven 의존성 검증 및 빌드 중..."
@@ -266,97 +266,6 @@ jobs:
         echo "✅ DB User: '$DB_USER'"
         echo "✅ DB Name: '$DB_NAME'"
         
-        # 보안 그룹 설정 함수 정의
-        echo "🔧 setup_security_groups 함수 정의 시작..."
-        setup_security_groups() {
-          echo "🔧 보안 그룹 규칙 자동 설정 중..."
-          
-          # Bastion Host 정보 조회
-          BASTION_INSTANCE_ID=$(aws ec2 describe-instances \
-            --filters "Name=ip-address,Values=$BASTION_IP" "Name=instance-state-name,Values=running" \
-            --query "Reservations[0].Instances[0].InstanceId" \
-            --output text 2>/dev/null || echo "")
-          
-          if [ -n "$BASTION_INSTANCE_ID" ] && [ "$BASTION_INSTANCE_ID" != "None" ]; then
-            # Bastion Host의 보안 그룹 조회
-            BASTION_SG=$(aws ec2 describe-instances \
-              --instance-ids $BASTION_INSTANCE_ID \
-              --query "Reservations[0].Instances[0].SecurityGroups[0].GroupId" \
-              --output text 2>/dev/null || echo "")
-            
-            echo "Bastion Security Group: $BASTION_SG"
-          fi
-          
-          # RDS 정보 조회
-          RDS_INSTANCE_ID=$(aws rds describe-db-instances \
-            --query "DBInstances[?Endpoint.Address=='$DB_HOST'].DBInstanceIdentifier" \
-            --output text 2>/dev/null || echo "")
-          
-          if [ -n "$RDS_INSTANCE_ID" ] && [ "$RDS_INSTANCE_ID" != "None" ]; then
-            # RDS의 보안 그룹 조회
-            RDS_SG=$(aws rds describe-db-instances \
-              --db-instance-identifier $RDS_INSTANCE_ID \
-              --query "DBInstances[0].VpcSecurityGroups[0].VpcSecurityGroupId" \
-              --output text 2>/dev/null || echo "")
-            
-            echo "RDS Security Group: $RDS_SG"
-            
-            # RDS 보안 그룹에 Bastion 접근 규칙 추가
-            if [ -n "$BASTION_SG" ] && [ -n "$RDS_SG" ]; then
-              echo "🔧 RDS 보안 그룹에 Bastion 접근 규칙 추가 중..."
-              
-              # 기존 규칙 확인
-              EXISTING_RULE=$(aws ec2 describe-security-groups \
-                --group-ids $RDS_SG \
-                --query "SecurityGroups[0].IpPermissions[?FromPort==\`${{ env.DB_PORT }}\` && UserIdGroupPairs[?GroupId==\`$BASTION_SG\`]]" \
-                --output text 2>/dev/null || echo "")
-              
-              if [ -z "$EXISTING_RULE" ]; then
-                aws ec2 authorize-security-group-ingress \
-                  --group-id $RDS_SG \
-                  --protocol tcp \
-                  --port ${{ env.DB_PORT }} \
-                  --source-group $BASTION_SG \
-                  --no-cli-pager 2>/dev/null && echo "✅ RDS 인바운드 규칙 추가 완료" || echo "⚠️ RDS 규칙 추가 실패 (이미 존재할 수 있음)"
-              else
-                echo "✅ RDS 인바운드 규칙이 이미 존재합니다"
-              fi
-            fi
-          fi
-          
-          # Bastion 보안 그룹에 아웃바운드 규칙 확인/추가
-          if [ -n "$BASTION_SG" ]; then
-            echo "🔧 Bastion 보안 그룹 아웃바운드 규칙 확인 중..."
-            
-            # MySQL 아웃바운드 규칙 확인
-            EXISTING_OUTBOUND=$(aws ec2 describe-security-groups \
-              --group-ids $BASTION_SG \
-              --query "SecurityGroups[0].IpPermissionsEgress[?FromPort==\`${{ env.DB_PORT }}\` || IpProtocol==\`-1\`]" \
-              --output text 2>/dev/null || echo "")
-            
-            if [ -z "$EXISTING_OUTBOUND" ]; then
-              echo "🔧 Bastion 아웃바운드 규칙 추가 중..."
-              aws ec2 authorize-security-group-egress \
-                --group-id $BASTION_SG \
-                --protocol tcp \
-                --port ${{ env.DB_PORT }} \
-                --cidr 0.0.0.0/0 \
-                --no-cli-pager 2>/dev/null && echo "✅ Bastion 아웃바운드 규칙 추가 완료" || echo "⚠️ Bastion 규칙 추가 실패 (이미 존재할 수 있음)"
-            else
-              echo "✅ Bastion 아웃바운드 규칙이 이미 존재합니다"
-            fi
-          fi
-        }
-        echo "✅ setup_security_groups 함수 정의 완료"
-        
-        # 보안 그룹 설정 함수 호출
-        if type setup_security_groups > /dev/null 2>&1; then
-          setup_security_groups
-        else
-          echo "❌ setup_security_groups 함수가 정의되지 않았습니다."
-          exit 1
-        fi
-        
         # SSH 키를 Parameter Store에서 가져오기
         echo "🔑 SSH 키 조회 중..."
         aws ssm get-parameter \
@@ -509,7 +418,7 @@ jobs:
     # MySQL 클라이언트 설치 및 스키마 적용
     # ===============================================
     - name: Apply Database Schema
-      if: ${{ github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/terraform') }}
+      if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
       run: |
         echo "🗄️ 데이터베이스 스키마 적용 중..."
         
@@ -538,97 +447,6 @@ jobs:
         echo "  Bastion IP: $BASTION_IP"
         echo "  DB 이름: $DB_NAME"
         echo "  DB 사용자: $DB_USER"
-        
-        # 보안 그룹 설정 함수 정의
-        echo "🔧 setup_security_groups 함수 정의 시작..."
-        setup_security_groups() {
-          echo "🔧 보안 그룹 규칙 자동 설정 중..."
-          
-          # Bastion Host 정보 조회
-          BASTION_INSTANCE_ID=$(aws ec2 describe-instances \
-            --filters "Name=ip-address,Values=$BASTION_IP" "Name=instance-state-name,Values=running" \
-            --query "Reservations[0].Instances[0].InstanceId" \
-            --output text 2>/dev/null || echo "")
-          
-          if [ -n "$BASTION_INSTANCE_ID" ] && [ "$BASTION_INSTANCE_ID" != "None" ]; then
-            # Bastion Host의 보안 그룹 조회
-            BASTION_SG=$(aws ec2 describe-instances \
-              --instance-ids $BASTION_INSTANCE_ID \
-              --query "Reservations[0].Instances[0].SecurityGroups[0].GroupId" \
-              --output text 2>/dev/null || echo "")
-            
-            echo "Bastion Security Group: $BASTION_SG"
-          fi
-          
-          # RDS 정보 조회
-          RDS_INSTANCE_ID=$(aws rds describe-db-instances \
-            --query "DBInstances[?Endpoint.Address=='$DB_HOST'].DBInstanceIdentifier" \
-            --output text 2>/dev/null || echo "")
-          
-          if [ -n "$RDS_INSTANCE_ID" ] && [ "$RDS_INSTANCE_ID" != "None" ]; then
-            # RDS의 보안 그룹 조회
-            RDS_SG=$(aws rds describe-db-instances \
-              --db-instance-identifier $RDS_INSTANCE_ID \
-              --query "DBInstances[0].VpcSecurityGroups[0].VpcSecurityGroupId" \
-              --output text 2>/dev/null || echo "")
-            
-            echo "RDS Security Group: $RDS_SG"
-            
-            # RDS 보안 그룹에 Bastion 접근 규칙 추가
-            if [ -n "$BASTION_SG" ] && [ -n "$RDS_SG" ]; then
-              echo "🔧 RDS 보안 그룹에 Bastion 접근 규칙 추가 중..."
-              
-              # 기존 규칙 확인
-              EXISTING_RULE=$(aws ec2 describe-security-groups \
-                --group-ids $RDS_SG \
-                --query "SecurityGroups[0].IpPermissions[?FromPort==\`${{ env.DB_PORT }}\` && UserIdGroupPairs[?GroupId==\`$BASTION_SG\`]]" \
-                --output text 2>/dev/null || echo "")
-              
-              if [ -z "$EXISTING_RULE" ]; then
-                aws ec2 authorize-security-group-ingress \
-                  --group-id $RDS_SG \
-                  --protocol tcp \
-                  --port ${{ env.DB_PORT }} \
-                  --source-group $BASTION_SG \
-                  --no-cli-pager 2>/dev/null && echo "✅ RDS 인바운드 규칙 추가 완료" || echo "⚠️ RDS 규칙 추가 실패 (이미 존재할 수 있음)"
-              else
-                echo "✅ RDS 인바운드 규칙이 이미 존재합니다"
-              fi
-            fi
-          fi
-          
-          # Bastion 보안 그룹에 아웃바운드 규칙 확인/추가
-          if [ -n "$BASTION_SG" ]; then
-            echo "🔧 Bastion 보안 그룹 아웃바운드 규칙 확인 중..."
-            
-            # MySQL 아웃바운드 규칙 확인
-            EXISTING_OUTBOUND=$(aws ec2 describe-security-groups \
-              --group-ids $BASTION_SG \
-              --query "SecurityGroups[0].IpPermissionsEgress[?FromPort==\`${{ env.DB_PORT }}\` || IpProtocol==\`-1\`]" \
-              --output text 2>/dev/null || echo "")
-            
-            if [ -z "$EXISTING_OUTBOUND" ]; then
-              echo "🔧 Bastion 아웃바운드 규칙 추가 중..."
-              aws ec2 authorize-security-group-egress \
-                --group-id $BASTION_SG \
-                --protocol tcp \
-                --port ${{ env.DB_PORT }} \
-                --cidr 0.0.0.0/0 \
-                --no-cli-pager 2>/dev/null && echo "✅ Bastion 아웃바운드 규칙 추가 완료" || echo "⚠️ Bastion 규칙 추가 실패 (이미 존재할 수 있음)"
-            else
-              echo "✅ Bastion 아웃바운드 규칙이 이미 존재합니다"
-            fi
-          fi
-        }
-        echo "✅ setup_security_groups 함수 정의 완료"
-        
-        # 보안 그룹 설정 함수 호출
-        if type setup_security_groups > /dev/null 2>&1; then
-          setup_security_groups
-        else
-          echo "❌ setup_security_groups 함수가 정의되지 않았습니다."
-          exit 1
-        fi
         
         # SSH 키를 Parameter Store에서 가져오기
         echo "🔑 SSH 키 가져오는 중..."
@@ -1108,10 +926,10 @@ jobs:
           echo "✅ 매니페스트 파일 생성 완료"
 
       # ===============================================
-      # EKS에 애플리케이션 배포 (main 또는 terraform 브랜치일 때만)
+      # EKS에 애플리케이션 배포 (main 브랜치일 때만)
       # ===============================================
     - name: Deploy to EKS
-      if: ${{ github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/terraform') }}
+      if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
       run: |
           echo "🚀 EKS에 애플리케이션 배포 중..."
 
@@ -1310,7 +1128,7 @@ jobs:
       # 배포 결과 확인
       # ===============================================
     - name: Verify Deployment
-      if: ${{ github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/terraform') }}
+      if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
       run: |
           echo "🔍 배포 상태 확인 중..."
           echo "네임스페이스: ${{ env.PROJECT_NAME }}"
@@ -1358,7 +1176,7 @@ jobs:
       # 배포 방법별 접속 URL 제공
       # ===============================================
     - name: Get Application URL
-      if: success() && ${{ github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/terraform') }}
+      if: success() && ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
       run: |
           echo "🔗 애플리케이션 접속 정보 확인 중..."
           echo "배포 방법: ${DEPLOYMENT_METHOD:-Unknown}"
@@ -1430,7 +1248,7 @@ jobs:
       # 배포 완료 알림
       # ===============================================
     - name: Application Deployment Notification
-      if: success() && ${{ github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/terraform') }}
+      if: success() && ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
       run: |
           echo "🎉 Java Spring Boot 애플리케이션 배포 완료!"
           echo "프로젝트: ${{ env.PROJECT_NAME }}"
@@ -1449,7 +1267,7 @@ jobs:
       # 배포 실패 시 롤백 및 정리
       # ===============================================
     - name: Rollback on failure
-      if: ${{ failure() && github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/terraform') }}
+      if: ${{ failure() && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
       run: |
           echo "❌ 배포 실패 - 롤백 및 정리 시작..."
           

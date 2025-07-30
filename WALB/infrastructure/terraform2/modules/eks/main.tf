@@ -977,14 +977,14 @@ resource "kubernetes_ingress_v1" "walb_app" {
       "alb.ingress.kubernetes.io/target-type"           = "ip"
       "alb.ingress.kubernetes.io/listen-ports"          = "[{\"HTTP\": 80}]"
       
-      # Health Check 설정 (PHP 애플리케이션)
-      "alb.ingress.kubernetes.io/healthcheck-path"             = "/healthcheck.php"
+      # Health Check 설정 (Spring Boot 애플리케이션)
+      "alb.ingress.kubernetes.io/healthcheck-path"             = "/api/music"
       "alb.ingress.kubernetes.io/healthcheck-interval-seconds" = "30"
-      "alb.ingress.kubernetes.io/healthcheck-timeout-seconds"  = "10"
+      "alb.ingress.kubernetes.io/healthcheck-timeout-seconds"  = "15"
       "alb.ingress.kubernetes.io/healthy-threshold-count"      = "2"
       "alb.ingress.kubernetes.io/unhealthy-threshold-count"    = "3"
       "alb.ingress.kubernetes.io/healthcheck-protocol"         = "HTTP"
-      "alb.ingress.kubernetes.io/healthcheck-port"             = "80"
+      "alb.ingress.kubernetes.io/healthcheck-port"             = "8080"
       
       # Load Balancer 설정
       "alb.ingress.kubernetes.io/load-balancer-name" = "walb2-app-ingress-alb"
@@ -1001,7 +1001,7 @@ resource "kubernetes_ingress_v1" "walb_app" {
         "Project=walb2-app", 
         "ManagedBy=Kubernetes",
         "CreatedBy=AWS-Load-Balancer-Controller-App2",
-        "Application=PHP-Blog"
+        "Application=Spring-Boot-Music-API"
       ])
     }
   }
