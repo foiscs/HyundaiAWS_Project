@@ -8,7 +8,6 @@ on:
     branches: [ main ]
     paths:
       - 'WALB/server1/**'
-      - '.github/workflows/deploy-app1.yml'
   
 jobs:
   build-and-deploy:
@@ -280,84 +279,89 @@ jobs:
         echo "✅ DB User: '$DB_USER'"
         echo "✅ DB Name: '$DB_NAME'"
         
-        # 보안 그룹 자동 설정
-        echo "🔧 보안 그룹 규칙 자동 설정 중..."
-        
-        # Bastion Host 정보 조회
-        BASTION_INSTANCE_ID=$(aws ec2 describe-instances \
-          --filters "Name=ip-address,Values=$BASTION_IP" "Name=instance-state-name,Values=running" \
-          --query "Reservations[0].Instances[0].InstanceId" \
-          --output text 2>/dev/null || echo "")
-        
-        if [ -n "$BASTION_INSTANCE_ID" ] && [ "$BASTION_INSTANCE_ID" != "None" ]; then
-          # Bastion Host의 보안 그룹 조회
-          BASTION_SG=$(aws ec2 describe-instances \
-            --instance-ids $BASTION_INSTANCE_ID \
-            --query "Reservations[0].Instances[0].SecurityGroups[0].GroupId" \
+        # 보안 그룹 설정 함수 정의
+        setup_security_groups() {
+          echo "🔧 보안 그룹 규칙 자동 설정 중..."
+          
+          # Bastion Host 정보 조회
+          BASTION_INSTANCE_ID=$(aws ec2 describe-instances \
+            --filters "Name=ip-address,Values=$BASTION_IP" "Name=instance-state-name,Values=running" \
+            --query "Reservations[0].Instances[0].InstanceId" \
             --output text 2>/dev/null || echo "")
           
-          echo "Bastion Security Group: $BASTION_SG"
-        fi
-        
-        # RDS 정보 조회
-        RDS_INSTANCE_ID=$(aws rds describe-db-instances \
-          --query "DBInstances[?Endpoint.Address=='$DB_HOST'].DBInstanceIdentifier" \
-          --output text 2>/dev/null || echo "")
-        
-        if [ -n "$RDS_INSTANCE_ID" ] && [ "$RDS_INSTANCE_ID" != "None" ]; then
-          # RDS의 보안 그룹 조회
-          RDS_SG=$(aws rds describe-db-instances \
-            --db-instance-identifier $RDS_INSTANCE_ID \
-            --query "DBInstances[0].VpcSecurityGroups[0].VpcSecurityGroupId" \
-            --output text 2>/dev/null || echo "")
-          
-          echo "RDS Security Group: $RDS_SG"
-          
-          # RDS 보안 그룹에 Bastion 접근 규칙 추가
-          if [ -n "$BASTION_SG" ] && [ -n "$RDS_SG" ]; then
-            echo "🔧 RDS 보안 그룹에 Bastion 접근 규칙 추가 중.."
-            
-            # 기존 규칙 확인
-            EXISTING_RULE=$(aws ec2 describe-security-groups \
-              --group-ids $RDS_SG \
-              --query "SecurityGroups[0].IpPermissions[?FromPort==\`5432\` && UserIdGroupPairs[?GroupId==\`$BASTION_SG\`]]" \
+          if [ -n "$BASTION_INSTANCE_ID" ] && [ "$BASTION_INSTANCE_ID" != "None" ]; then
+            # Bastion Host의 보안 그룹 조회
+            BASTION_SG=$(aws ec2 describe-instances \
+              --instance-ids $BASTION_INSTANCE_ID \
+              --query "Reservations[0].Instances[0].SecurityGroups[0].GroupId" \
               --output text 2>/dev/null || echo "")
             
-            if [ -z "$EXISTING_RULE" ]; then
-              aws ec2 authorize-security-group-ingress \
-                --group-id $RDS_SG \
-                --protocol tcp \
-                --port 5432 \
-                --source-group $BASTION_SG \
-                --no-cli-pager 2>/dev/null && echo "✅ RDS 인바운드 규칙 추가 완료" || echo "⚠️ RDS 규칙 추가 실패 (이미 존재할 수 있음)"
-            else
-              echo "✅ RDS 인바운드 규칙이 이미 존재합니다"
-            fi
+            echo "Bastion Security Group: $BASTION_SG"
           fi
-        fi
-        
-        # Bastion 보안 그룹에 아웃바운드 규칙 확인/추가
-        if [ -n "$BASTION_SG" ]; then
-          echo "🔧 Bastion 보안 그룹 아웃바운드 규칙 확인 중..."
           
-          # PostgreSQL 아웃바운드 규칙 확인
-          EXISTING_OUTBOUND=$(aws ec2 describe-security-groups \
-            --group-ids $BASTION_SG \
-            --query "SecurityGroups[0].IpPermissionsEgress[?FromPort==\`5432\` || IpProtocol==\`-1\`]" \
+          # RDS 정보 조회
+          RDS_INSTANCE_ID=$(aws rds describe-db-instances \
+            --query "DBInstances[?Endpoint.Address=='$DB_HOST'].DBInstanceIdentifier" \
             --output text 2>/dev/null || echo "")
           
-          if [ -z "$EXISTING_OUTBOUND" ]; then
-            echo "🔧 Bastion 아웃바운드 규칙 추가 중..."
-            aws ec2 authorize-security-group-egress \
-              --group-id $BASTION_SG \
-              --protocol tcp \
-              --port 5432 \
-              --cidr 0.0.0.0/0 \
-              --no-cli-pager 2>/dev/null && echo "✅ Bastion 아웃바운드 규칙 추가 완료" || echo "⚠️ Bastion 규칙 추가 실패 (이미 존재할 수 있음)"
-          else
-            echo "✅ Bastion 아웃바운드 규칙이 이미 존재합니다"
+          if [ -n "$RDS_INSTANCE_ID" ] && [ "$RDS_INSTANCE_ID" != "None" ]; then
+            # RDS의 보안 그룹 조회
+            RDS_SG=$(aws rds describe-db-instances \
+              --db-instance-identifier $RDS_INSTANCE_ID \
+              --query "DBInstances[0].VpcSecurityGroups[0].VpcSecurityGroupId" \
+              --output text 2>/dev/null || echo "")
+            
+            echo "RDS Security Group: $RDS_SG"
+            
+            # RDS 보안 그룹에 Bastion 접근 규칙 추가
+            if [ -n "$BASTION_SG" ] && [ -n "$RDS_SG" ]; then
+              echo "🔧 RDS 보안 그룹에 Bastion 접근 규칙 추가 중.."
+              
+              # 기존 규칙 확인
+              EXISTING_RULE=$(aws ec2 describe-security-groups \
+                --group-ids $RDS_SG \
+                --query "SecurityGroups[0].IpPermissions[?FromPort==\`5432\` && UserIdGroupPairs[?GroupId==\`$BASTION_SG\`]]" \
+                --output text 2>/dev/null || echo "")
+              
+              if [ -z "$EXISTING_RULE" ]; then
+                aws ec2 authorize-security-group-ingress \
+                  --group-id $RDS_SG \
+                  --protocol tcp \
+                  --port 5432 \
+                  --source-group $BASTION_SG \
+                  --no-cli-pager 2>/dev/null && echo "✅ RDS 인바운드 규칙 추가 완료" || echo "⚠️ RDS 규칙 추가 실패 (이미 존재할 수 있음)"
+              else
+                echo "✅ RDS 인바운드 규칙이 이미 존재합니다"
+              fi
+            fi
           fi
-        fi
+          
+          # Bastion 보안 그룹에 아웃바운드 규칙 확인/추가
+          if [ -n "$BASTION_SG" ]; then
+            echo "🔧 Bastion 보안 그룹 아웃바운드 규칙 확인 중..."
+            
+            # PostgreSQL 아웃바운드 규칙 확인
+            EXISTING_OUTBOUND=$(aws ec2 describe-security-groups \
+              --group-ids $BASTION_SG \
+              --query "SecurityGroups[0].IpPermissionsEgress[?FromPort==\`5432\` || IpProtocol==\`-1\`]" \
+              --output text 2>/dev/null || echo "")
+            
+            if [ -z "$EXISTING_OUTBOUND" ]; then
+              echo "🔧 Bastion 아웃바운드 규칙 추가 중..."
+              aws ec2 authorize-security-group-egress \
+                --group-id $BASTION_SG \
+                --protocol tcp \
+                --port 5432 \
+                --cidr 0.0.0.0/0 \
+                --no-cli-pager 2>/dev/null && echo "✅ Bastion 아웃바운드 규칙 추가 완료" || echo "⚠️ Bastion 규칙 추가 실패 (이미 존재할 수 있음)"
+            else
+              echo "✅ Bastion 아웃바운드 규칙이 이미 존재합니다"
+            fi
+          fi
+        }
+        
+        # 보안 그룹 설정 함수 호출
+        setup_security_groups
         
         # SSH 키를 Parameter Store에서 가져오기
         echo "🔑 SSH 키 조회 중..."
@@ -388,11 +392,11 @@ jobs:
         fi
         
         # 로컬 포트가 사용 중인지 확인
-        if netstat -tuln | grep -q ":5432 "; then
-          echo "⚠️ 포트 5432가 이미 사용 중입니다. 다른 포트를 사용합니다."
-          LOCAL_PORT=5433
+        if netstat -tuln | grep -q ":${{ env.DB_PORT }} "; then
+          echo "⚠️ 포트 ${{ env.DB_PORT }}이 이미 사용 중입니다. 다른 포트를 사용합니다."
+          LOCAL_PORT=$((${{ env.DB_PORT }} + 1))
         else
-          LOCAL_PORT=5432
+          LOCAL_PORT=${{ env.DB_PORT }}
         fi
         
         # DB_HOST에서 와일드카드 제거 (보안상 마스킹된 부분 처리)
@@ -577,71 +581,89 @@ jobs:
         echo "  DB 이름: $DB_NAME"
         echo "  DB 사용자: $DB_USER"
         
-        # 보안 그룹 자동 설정
-        echo "🔧 보안 그룹 규칙 자동 설정 중..."
-        
-        # Bastion Host 정보 조회
-        BASTION_INSTANCE_ID=$(aws ec2 describe-instances \
-          --filters "Name=ip-address,Values=$BASTION_IP" "Name=instance-state-name,Values=running" \
-          --query "Reservations[0].Instances[0].InstanceId" \
-          --output text 2>/dev/null || echo "")
-        
-        if [ -n "$BASTION_INSTANCE_ID" ] && [ "$BASTION_INSTANCE_ID" != "None" ]; then
-          # Bastion Host의 보안 그룹 조회
-          BASTION_SG=$(aws ec2 describe-instances \
-            --instance-ids $BASTION_INSTANCE_ID \
-            --query "Reservations[0].Instances[0].SecurityGroups[0].GroupId" \
+        # 보안 그룹 설정 함수 정의
+        setup_security_groups() {
+          echo "🔧 보안 그룹 규칙 자동 설정 중..."
+          
+          # Bastion Host 정보 조회
+          BASTION_INSTANCE_ID=$(aws ec2 describe-instances \
+            --filters "Name=ip-address,Values=$BASTION_IP" "Name=instance-state-name,Values=running" \
+            --query "Reservations[0].Instances[0].InstanceId" \
             --output text 2>/dev/null || echo "")
           
-          echo "Bastion Security Group: $BASTION_SG"
-        fi
-        
-        # RDS 정보 조회
-        RDS_INSTANCE_ID=$(aws rds describe-db-instances \
-          --query "DBInstances[?Endpoint.Address=='$DB_HOST'].DBInstanceIdentifier" \
-          --output text 2>/dev/null || echo "")
-        
-        if [ -n "$RDS_INSTANCE_ID" ] && [ "$RDS_INSTANCE_ID" != "None" ]; then
-          # RDS의 보안 그룹 조회
-          RDS_SG=$(aws rds describe-db-instances \
-            --db-instance-identifier $RDS_INSTANCE_ID \
-            --query "DBInstances[0].VpcSecurityGroups[0].VpcSecurityGroupId" \
-            --output text 2>/dev/null || echo "")
-          
-          echo "RDS Security Group: $RDS_SG"
-          
-          # RDS 보안 그룹에 Bastion 접근 규칙 추가
-          if [ -n "$BASTION_SG" ] && [ -n "$RDS_SG" ]; then
-            echo "🔧 RDS 보안 그룹에 Bastion 접근 규칙 추가 중..."
+          if [ -n "$BASTION_INSTANCE_ID" ] && [ "$BASTION_INSTANCE_ID" != "None" ]; then
+            # Bastion Host의 보안 그룹 조회
+            BASTION_SG=$(aws ec2 describe-instances \
+              --instance-ids $BASTION_INSTANCE_ID \
+              --query "Reservations[0].Instances[0].SecurityGroups[0].GroupId" \
+              --output text 2>/dev/null || echo "")
             
-            if ! aws ec2 describe-security-groups --group-ids $RDS_SG --query "SecurityGroups[0].IpPermissions[?FromPort==\`5432\` && ToPort==\`5432\` && UserIdGroupPairs[?GroupId==\`$BASTION_SG\`]]" --output text | grep -q "5432"; then
-              aws ec2 authorize-security-group-ingress \
-                --group-id $RDS_SG \
-                --protocol tcp \
-                --port 5432 \
-                --source-group $BASTION_SG \
-                --no-cli-pager && echo "✅ RDS 인바운드 규칙 추가 완료"
-            else
-              echo "✅ RDS 인바운드 규칙이 이미 존재합니다"
+            echo "Bastion Security Group: $BASTION_SG"
+          fi
+          
+          # RDS 정보 조회
+          RDS_INSTANCE_ID=$(aws rds describe-db-instances \
+            --query "DBInstances[?Endpoint.Address=='$DB_HOST'].DBInstanceIdentifier" \
+            --output text 2>/dev/null || echo "")
+          
+          if [ -n "$RDS_INSTANCE_ID" ] && [ "$RDS_INSTANCE_ID" != "None" ]; then
+            # RDS의 보안 그룹 조회
+            RDS_SG=$(aws rds describe-db-instances \
+              --db-instance-identifier $RDS_INSTANCE_ID \
+              --query "DBInstances[0].VpcSecurityGroups[0].VpcSecurityGroupId" \
+              --output text 2>/dev/null || echo "")
+            
+            echo "RDS Security Group: $RDS_SG"
+            
+            # RDS 보안 그룹에 Bastion 접근 규칙 추가
+            if [ -n "$BASTION_SG" ] && [ -n "$RDS_SG" ]; then
+              echo "🔧 RDS 보안 그룹에 Bastion 접근 규칙 추가 중.."
+              
+              # 기존 규칙 확인
+              EXISTING_RULE=$(aws ec2 describe-security-groups \
+                --group-ids $RDS_SG \
+                --query "SecurityGroups[0].IpPermissions[?FromPort==\`5432\` && UserIdGroupPairs[?GroupId==\`$BASTION_SG\`]]" \
+                --output text 2>/dev/null || echo "")
+              
+              if [ -z "$EXISTING_RULE" ]; then
+                aws ec2 authorize-security-group-ingress \
+                  --group-id $RDS_SG \
+                  --protocol tcp \
+                  --port 5432 \
+                  --source-group $BASTION_SG \
+                  --no-cli-pager 2>/dev/null && echo "✅ RDS 인바운드 규칙 추가 완료" || echo "⚠️ RDS 규칙 추가 실패 (이미 존재할 수 있음)"
+              else
+                echo "✅ RDS 인바운드 규칙이 이미 존재합니다"
+              fi
             fi
           fi
-        fi
-        
-        # Bastion 보안 그룹에 아웃바운드 규칙 추가
-        if [ -n "$BASTION_SG" ]; then
-          echo "🔧 Bastion 보안 그룹 아웃바운드 규칙 추가 중..."
           
-          if ! aws ec2 describe-security-groups --group-ids $BASTION_SG --query "SecurityGroups[0].IpPermissionsEgress[?FromPort==\`5432\` && ToPort==\`5432\` && IpRanges[?CidrIp==\`0.0.0.0/0\`]]" --output text | grep -q "5432"; then
-            aws ec2 authorize-security-group-egress \
-              --group-id $BASTION_SG \
-              --protocol tcp \
-              --port 5432 \
-              --cidr 0.0.0.0/0 \
-              --no-cli-pager && echo "✅ Bastion 아웃바운드 규칙 추가 완료"
-          else
-            echo "✅ Bastion 아웃바운드 규칙이 이미 존재합니다"
+          # Bastion 보안 그룹에 아웃바운드 규칙 확인/추가
+          if [ -n "$BASTION_SG" ]; then
+            echo "🔧 Bastion 보안 그룹 아웃바운드 규칙 확인 중..."
+            
+            # PostgreSQL 아웃바운드 규칙 확인
+            EXISTING_OUTBOUND=$(aws ec2 describe-security-groups \
+              --group-ids $BASTION_SG \
+              --query "SecurityGroups[0].IpPermissionsEgress[?FromPort==\`5432\` || IpProtocol==\`-1\`]" \
+              --output text 2>/dev/null || echo "")
+            
+            if [ -z "$EXISTING_OUTBOUND" ]; then
+              echo "🔧 Bastion 아웃바운드 규칙 추가 중..."
+              aws ec2 authorize-security-group-egress \
+                --group-id $BASTION_SG \
+                --protocol tcp \
+                --port 5432 \
+                --cidr 0.0.0.0/0 \
+                --no-cli-pager 2>/dev/null && echo "✅ Bastion 아웃바운드 규칙 추가 완료" || echo "⚠️ Bastion 규칙 추가 실패 (이미 존재할 수 있음)"
+            else
+              echo "✅ Bastion 아웃바운드 규칙이 이미 존재합니다"
+            fi
           fi
-        fi
+        }
+        
+        # 보안 그룹 설정 함수 호출
+        setup_security_groups
         
         # SSH 키를 Parameter Store에서 가져오기
         echo "🔑 SSH 키 가져오는 중..."
@@ -653,11 +675,11 @@ jobs:
         chmod 600 bastion_key.pem
         
         # 로컬 포트가 사용 중인지 확인
-        if netstat -tuln | grep -q ":5432 "; then
-          echo "⚠️ 포트 5432가 이미 사용 중입니다. 다른 포트를 사용합니다."
-          LOCAL_PORT=5433
+        if netstat -tuln | grep -q ":${{ env.DB_PORT }} "; then
+          echo "⚠️ 포트 ${{ env.DB_PORT }}이 이미 사용 중입니다. 다른 포트를 사용합니다."
+          LOCAL_PORT=$((${{ env.DB_PORT }} + 1))
         else
-          LOCAL_PORT=5432
+          LOCAL_PORT=${{ env.DB_PORT }}
         fi
         
         # SSH 터널 생성 (백그라운드에서 실행)
@@ -1073,17 +1095,39 @@ jobs:
           if [ "$webhook_ready" != "true" ]; then
             echo "⚠️ ValidatingWebhookConfiguration을 찾을 수 없습니다."
             echo "AWS Load Balancer Controller가 아직 완전히 준비되지 않았을 수 있습니다."
+            
+            # 기존 webhook 정리
+            echo "🧹 기존 webhook 정리 중..."
+            kubectl delete validatingwebhookconfigurations aws-load-balancer-webhook --ignore-not-found=true
+            kubectl delete mutatingwebhookconfigurations aws-load-balancer-webhook --ignore-not-found=true
+            
             echo "🔧 Controller 강제 재시작 중..."
             kubectl rollout restart deployment -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller
-            kubectl rollout status deployment -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller --timeout=120s
+            kubectl rollout status deployment -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller --timeout=180s
             
-            # 재시작 후 다시 확인
-            echo "⏳ 재시작 후 webhook 재확인..."
-            sleep 15
-            if kubectl get validatingwebhookconfigurations | grep -E "(vingress|aws-load-balancer)" >/dev/null 2>&1; then
-              echo "✅ ValidatingWebhookConfiguration 재확인 성공"
-            else
-              echo "❌ ValidatingWebhookConfiguration 재확인 실패. 수동 점검 필요"
+            # 재시작 후 더 긴 대기
+            echo "⏳ 재시작 후 webhook 재생성 대기..."
+            sleep 30
+            
+            # 더 긴 시간 동안 webhook 재확인
+            webhook_recovered=false
+            for j in {1..12}; do
+              if kubectl get validatingwebhookconfigurations | grep -E "(vingress|aws-load-balancer)" >/dev/null 2>&1; then
+                echo "✅ ValidatingWebhookConfiguration 재확인 성공 (시도 $j/12)"
+                kubectl get validatingwebhookconfigurations | grep -E "(vingress|aws-load-balancer)"
+                webhook_recovered=true
+                break
+              else
+                echo "⏳ ValidatingWebhookConfiguration 재확인 중... ($j/12)"
+                sleep 10
+              fi
+            done
+            
+            if [ "$webhook_recovered" != "true" ]; then
+              echo "❌ ValidatingWebhookConfiguration 복구 실패"
+              echo "🔍 Controller 로그 확인:"
+              kubectl logs -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller --tail=20 || true
+              echo "⚠️ Webhook 없이 진행하지만 Ingress 처리가 안될 수 있습니다."
             fi
           fi
           
@@ -1282,10 +1326,29 @@ jobs:
           # Ingress 배포 (AWS Load Balancer Controller로 ALB 생성)
           echo "🔗 Ingress 리소스 배포 중..."
           
+          # Ingress 배포 전 사전 검증
+          echo "🔍 Ingress 배포 전 사전 검증..."
+          echo "Namespace 확인:"
+          kubectl get namespace ${{ env.PROJECT_NAME }} || true
+          echo "Service 확인:"
+          kubectl get service ${{ env.PROJECT_NAME }}-service -n ${{ env.PROJECT_NAME }} || true
+          echo "IngressClass 확인:"
+          kubectl get ingressclass alb || true
+          echo "ValidatingWebhookConfiguration 확인:"
+          kubectl get validatingwebhookconfigurations | grep -E "(vingress|aws-load-balancer)" || echo "Webhook 없음"
+          
+          # Ingress 매니페스트 내용 확인
+          echo "🔍 Ingress 매니페스트 내용:"
+          cat ingress.yaml
+          
           # Ingress 배포
           echo "🚀 Ingress 배포 시작..."
           if kubectl apply -f ingress.yaml; then
             echo "✅ Ingress 리소스 생성 성공"
+            
+            # 생성된 Ingress 즉시 확인
+            echo "🔍 생성된 Ingress 상태 확인:"
+            kubectl get ingress ${{ env.PROJECT_NAME }}-ingress -n ${{ env.PROJECT_NAME }} -o yaml || echo "Ingress 조회 실패"
             
             # Ingress와 ALB 동기화 상태 체크
             echo "🔍 Ingress와 ALB 동기화 상태 체크 중..."
@@ -1436,7 +1499,37 @@ jobs:
           echo "✅ Ingress 기반 ALB 배포 완료"
 
           echo "⏳ 배포 완료 대기 중..."
-          kubectl rollout status deployment/${{ env.PROJECT_NAME }}-app -n ${{ env.PROJECT_NAME }} --timeout=300s
+          echo "🔍 배포 전 상태 확인:"
+          kubectl get pods -n ${{ env.PROJECT_NAME }} -o wide || true
+          kubectl describe deployment ${{ env.PROJECT_NAME }}-app -n ${{ env.PROJECT_NAME }} || true
+          
+          # 더 긴 timeout으로 배포 대기
+          if ! kubectl rollout status deployment/${{ env.PROJECT_NAME }}-app -n ${{ env.PROJECT_NAME }} --timeout=600s; then
+            echo "❌ 배포 timeout 발생. 상세 진단 시작..."
+            
+            echo "🔍 Pod 상태 확인:"
+            kubectl get pods -n ${{ env.PROJECT_NAME }} -o wide
+            
+            echo "🔍 실패한 Pod 로그 확인:"
+            failed_pods=$(kubectl get pods -n ${{ env.PROJECT_NAME }} --field-selector=status.phase!=Running --no-headers -o custom-columns=":metadata.name" 2>/dev/null || echo "")
+            if [ -n "$failed_pods" ]; then
+              for pod in $failed_pods; do
+                echo "=== Pod $pod 로그 ==="
+                kubectl logs $pod -n ${{ env.PROJECT_NAME }} --tail=50 || true
+                echo "=== Pod $pod 상세 정보 ==="
+                kubectl describe pod $pod -n ${{ env.PROJECT_NAME }} || true
+              done
+            fi
+            
+            echo "🔍 Deployment 이벤트 확인:"
+            kubectl describe deployment ${{ env.PROJECT_NAME }}-app -n ${{ env.PROJECT_NAME }}
+            
+            echo "🔍 ConfigMap 및 Secret 확인:"
+            kubectl get configmap -n ${{ env.PROJECT_NAME }} || true
+            kubectl get secret -n ${{ env.PROJECT_NAME }} || true
+            
+            exit 1
+          fi
 
       # ===============================================
       # 배포 결과 확인

@@ -267,6 +267,7 @@ jobs:
         echo "✅ DB Name: '$DB_NAME'"
         
         # 보안 그룹 설정 함수 정의
+        echo "🔧 setup_security_groups 함수 정의 시작..."
         setup_security_groups() {
           echo "🔧 보안 그룹 규칙 자동 설정 중..."
           
@@ -346,9 +347,15 @@ jobs:
             fi
           fi
         }
+        echo "✅ setup_security_groups 함수 정의 완료"
         
         # 보안 그룹 설정 함수 호출
-        setup_security_groups
+        if type setup_security_groups > /dev/null 2>&1; then
+          setup_security_groups
+        else
+          echo "❌ setup_security_groups 함수가 정의되지 않았습니다."
+          exit 1
+        fi
         
         # SSH 키를 Parameter Store에서 가져오기
         echo "🔑 SSH 키 조회 중..."
@@ -381,7 +388,7 @@ jobs:
         # 로컬 포트가 사용 중인지 확인
         if netstat -tuln | grep -q ":${{ env.DB_PORT }} "; then
           echo "⚠️ 포트 ${{ env.DB_PORT }}이 이미 사용 중입니다. 다른 포트를 사용합니다."
-          LOCAL_PORT=$(({{ env.DB_PORT }} + 1))
+          LOCAL_PORT=$((${{ env.DB_PORT }} + 1))
         else
           LOCAL_PORT=${{ env.DB_PORT }}
         fi
@@ -533,6 +540,7 @@ jobs:
         echo "  DB 사용자: $DB_USER"
         
         # 보안 그룹 설정 함수 정의
+        echo "🔧 setup_security_groups 함수 정의 시작..."
         setup_security_groups() {
           echo "🔧 보안 그룹 규칙 자동 설정 중..."
           
@@ -612,9 +620,15 @@ jobs:
             fi
           fi
         }
+        echo "✅ setup_security_groups 함수 정의 완료"
         
         # 보안 그룹 설정 함수 호출
-        setup_security_groups
+        if type setup_security_groups > /dev/null 2>&1; then
+          setup_security_groups
+        else
+          echo "❌ setup_security_groups 함수가 정의되지 않았습니다."
+          exit 1
+        fi
         
         # SSH 키를 Parameter Store에서 가져오기
         echo "🔑 SSH 키 가져오는 중..."
@@ -628,7 +642,7 @@ jobs:
         # 로컬 포트가 사용 중인지 확인
         if netstat -tuln | grep -q ":${{ env.DB_PORT }} "; then
           echo "⚠️ 포트 ${{ env.DB_PORT }}이 이미 사용 중입니다. 다른 포트를 사용합니다."
-          LOCAL_PORT=$(({{ env.DB_PORT }} + 1))
+          LOCAL_PORT=$((${{ env.DB_PORT }} + 1))
         else
           LOCAL_PORT=${{ env.DB_PORT }}
         fi
