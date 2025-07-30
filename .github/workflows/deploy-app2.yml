@@ -894,7 +894,7 @@ jobs:
           echo "    alb.ingress.kubernetes.io/healthy-threshold-count: '2'" >> ingress.yaml
           echo "    alb.ingress.kubernetes.io/unhealthy-threshold-count: '3'" >> ingress.yaml
           echo "    alb.ingress.kubernetes.io/healthcheck-protocol: HTTP" >> ingress.yaml
-          echo "    alb.ingress.kubernetes.io/healthcheck-port: '8080'" >> ingress.yaml
+          echo "    alb.ingress.kubernetes.io/healthcheck-port: '80'" >> ingress.yaml
           echo "    " >> ingress.yaml
           echo "    # Load Balancer 설정" >> ingress.yaml
           echo "    alb.ingress.kubernetes.io/load-balancer-name: ${{ env.PROJECT_NAME }}-ingress-alb" >> ingress.yaml
@@ -910,7 +910,7 @@ jobs:
           echo "          service:" >> ingress.yaml
           echo "            name: ${{ env.PROJECT_NAME }}-service" >> ingress.yaml
           echo "            port:" >> ingress.yaml
-          echo "              number: 8080" >> ingress.yaml
+          echo "              number: 80" >> ingress.yaml
 
           echo "✅ Ingress 기반 매니페스트 생성 완료"
 
