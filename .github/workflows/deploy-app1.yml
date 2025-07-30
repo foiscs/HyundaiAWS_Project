@@ -831,24 +831,74 @@ jobs:
           fi
           
           if [ -z "$PUBLIC_SUBNETS" ]; then
-            # 방법 3: 라우트 테이블을 통해 인터넷 게이트웨이가 있는 서브넷 찾기
+            # 방법 3: 라우트 테이블을 통해 인터넷 게이트웨이가 있는 서브넷 찾기 (가용영역별로 1개씩)
             echo "⚠️ 태그로 찾지 못함. 라우트 테이블 분석으로 퍼블릭 서브넷 찾는 중..."
             PUBLIC_SUBNETS_RAW=$(aws ec2 describe-route-tables \
               --filters "Name=route.gateway-id,Values=igw-*" \
               --query "RouteTables[*].Associations[?SubnetId!=null].SubnetId" \
               --output text | tr '\n' ' ' | tr '\t' ' ')
             
-            # 중복 제거 및 최대 3개로 제한
-            PUBLIC_SUBNETS=$(echo "$PUBLIC_SUBNETS_RAW" | tr ' ' '\n' | grep -v '^$' | sort | uniq | head -3 | tr '\n' ',' | sed 's/,$//')
+            # 가용영역별로 서브넷 선택 (중복 AZ 방지)
+            if [ -n "$PUBLIC_SUBNETS_RAW" ]; then
+              UNIQUE_AZ_SUBNETS=""
+              USED_AZS=""
+              for subnet in $PUBLIC_SUBNETS_RAW; do
+                AZ=$(aws ec2 describe-subnets --subnet-ids $subnet --query 'Subnets[0].AvailabilityZone' --output text 2>/dev/null)
+                if [ -n "$AZ" ] && [[ ! "$USED_AZS" == *"$AZ"* ]]; then
+                  UNIQUE_AZ_SUBNETS="$UNIQUE_AZ_SUBNETS $subnet"
+                  USED_AZS="$USED_AZS $AZ"
+                  # 최대 3개 AZ까지만
+                  if [ $(echo $UNIQUE_AZ_SUBNETS | wc -w) -ge 3 ]; then
+                    break
+                  fi
+                fi
+              done
+              PUBLIC_SUBNETS=$(echo "$UNIQUE_AZ_SUBNETS" | tr ' ' ',' | sed 's/^,//' | sed 's/,$//')
+            fi
           fi
           
           if [ -z "$PUBLIC_SUBNETS" ]; then
-            # 방법 4: 기본값 사용
-            PUBLIC_SUBNETS="subnet-0c3b7ce8248681101,subnet-057589a6494b65a9c"
-            echo "⚠️ 퍼블릭 서브넷을 자동으로 찾을 수 없어 기본값 사용: $PUBLIC_SUBNETS"
-            echo "ℹ️ 인프라 배포 시 서브넷에 다음 태그 중 하나를 추가하세요:"
-            echo "   - Type=public 또는"
-            echo "   - kubernetes.io/role/elb=1"
+            # 방법 4: 모든 퍼블릭 서브넷에서 가용영역별로 1개씩 선택
+            echo "⚠️ 태그 기반 조회 실패. 모든 퍼블릭 서브넷에서 가용영역별로 선택 중..."
+            
+            # 모든 서브넷 조회 (State=available만)
+            ALL_SUBNETS=$(aws ec2 describe-subnets \
+              --filters "Name=state,Values=available" \
+              --query "Subnets[*].[SubnetId,AvailabilityZone,MapPublicIpOnLaunch]" \
+              --output text)
+            
+            if [ -n "$ALL_SUBNETS" ]; then
+              UNIQUE_AZ_SUBNETS=""
+              USED_AZS=""
+              
+              echo "$ALL_SUBNETS" | while read subnet_id az map_public; do
+                # MapPublicIpOnLaunch가 true인 서브넷만 (퍼블릭 서브넷)
+                if [ "$map_public" = "True" ] && [[ ! "$USED_AZS" == *"$az"* ]]; then
+                  UNIQUE_AZ_SUBNETS="$UNIQUE_AZ_SUBNETS $subnet_id"
+                  USED_AZS="$USED_AZS $az"
+                  echo "✅ 가용영역 $az에서 서브넷 $subnet_id 선택"
+                  
+                  # 최대 3개 AZ까지만
+                  if [ $(echo $UNIQUE_AZ_SUBNETS | wc -w) -ge 3 ]; then
+                    break
+                  fi
+                fi
+              done
+              
+              if [ -n "$UNIQUE_AZ_SUBNETS" ]; then
+                PUBLIC_SUBNETS=$(echo "$UNIQUE_AZ_SUBNETS" | tr ' ' ',' | sed 's/^,//' | sed 's/,$//')
+                echo "✅ 자동 선택된 퍼블릭 서브넷: $PUBLIC_SUBNETS"
+              fi
+            fi
+            
+            if [ -z "$PUBLIC_SUBNETS" ]; then
+              echo "❌ 사용 가능한 퍼블릭 서브넷을 찾을 수 없습니다."
+              echo "🔍 VPC에 퍼블릭 서브넷이 생성되어 있는지 확인하세요."
+              echo "🔍 또는 서브넷에 다음 태그를 추가하세요:"
+              echo "   - Type=public 또는"
+              echo "   - kubernetes.io/role/elb=1"
+              exit 1
+            fi
           else
             echo "✅ 퍼블릭 서브넷 발견: $PUBLIC_SUBNETS"
           fi

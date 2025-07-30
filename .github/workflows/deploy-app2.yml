@@ -814,12 +814,56 @@ jobs:
           fi
           
           if [ -z "$PUBLIC_SUBNETS" ]; then
-            # 방법 4: 기본값 사용 (app2 전용 - 주의: app1과 다른 서브넷 ID)
-            PUBLIC_SUBNETS="subnet-01fbc1b7b3df0ace6,subnet-0dc46ee2f98b5b0ce"
-            echo "⚠️ 퍼블릭 서브넷을 자동으로 찾을 수 없어 app2 기본값 사용: $PUBLIC_SUBNETS"
-            echo "ℹ️ EKS VPC: ${EKS_VPC_ID:-알수없음} 내에서 서브넷에 다음 태그 중 하나를 추가하세요:"
-            echo "   - Type=public 또는"
-            echo "   - kubernetes.io/role/elb=1"
+            # 방법 4: 모든 퍼블릭 서브넷에서 가용영역별로 1개씩 선택
+            echo "⚠️ 태그 기반 조회 실패. 모든 퍼블릭 서브넷에서 가용영역별로 선택 중..."
+            
+            # EKS VPC 내에서 우선 조회, 실패하면 전체 계정에서 조회
+            VPC_FILTER_OPTION=""
+            if [ -n "$EKS_VPC_ID" ] && [ "$EKS_VPC_ID" != "None" ]; then
+              VPC_FILTER_OPTION="Name=vpc-id,Values=$EKS_VPC_ID"
+              echo "🔍 EKS VPC($EKS_VPC_ID) 내에서 퍼블릭 서브넷 조회 중..."
+            else
+              echo "🔍 전체 계정에서 퍼블릭 서브넷 조회 중..."
+            fi
+            
+            # 모든 서브넷 조회 (State=available만)
+            ALL_SUBNETS=$(aws ec2 describe-subnets \
+              --filters "Name=state,Values=available" $VPC_FILTER_OPTION \
+              --query "Subnets[*].[SubnetId,AvailabilityZone,MapPublicIpOnLaunch]" \
+              --output text)
+            
+            if [ -n "$ALL_SUBNETS" ]; then
+              UNIQUE_AZ_SUBNETS=""
+              USED_AZS=""
+              
+              echo "$ALL_SUBNETS" | while read subnet_id az map_public; do
+                # MapPublicIpOnLaunch가 true인 서브넷만 (퍼블릭 서브넷)
+                if [ "$map_public" = "True" ] && [[ ! "$USED_AZS" == *"$az"* ]]; then
+                  UNIQUE_AZ_SUBNETS="$UNIQUE_AZ_SUBNETS $subnet_id"
+                  USED_AZS="$USED_AZS $az"
+                  echo "✅ 가용영역 $az에서 서브넷 $subnet_id 선택"
+                  
+                  # 최대 3개 AZ까지만
+                  if [ $(echo $UNIQUE_AZ_SUBNETS | wc -w) -ge 3 ]; then
+                    break
+                  fi
+                fi
+              done
+              
+              if [ -n "$UNIQUE_AZ_SUBNETS" ]; then
+                PUBLIC_SUBNETS=$(echo "$UNIQUE_AZ_SUBNETS" | tr ' ' ',' | sed 's/^,//' | sed 's/,$//')
+                echo "✅ 자동 선택된 퍼블릭 서브넷: $PUBLIC_SUBNETS"
+              fi
+            fi
+            
+            if [ -z "$PUBLIC_SUBNETS" ]; then
+              echo "❌ 사용 가능한 퍼블릭 서브넷을 찾을 수 없습니다."
+              echo "🔍 VPC에 퍼블릭 서브넷이 생성되어 있는지 확인하세요."
+              echo "🔍 또는 서브넷에 다음 태그를 추가하세요:"
+              echo "   - Type=public 또는"
+              echo "   - kubernetes.io/role/elb=1"
+              exit 1
+            fi
           else
             echo "✅ 퍼블릭 서브넷 발견 (VPC: ${EKS_VPC_ID:-전체}): $PUBLIC_SUBNETS"
           fi
