@@ -1100,12 +1100,12 @@ jobs:
           # ServiceAccount 추가 (containers spec 하위에)
           sed -i "/containers:/i\\      serviceAccountName: ${{ env.PROJECT_NAME }}-service-account" deployment.yml
           
-          # envFrom 설정 추가 (환경변수 주입) - SPRING_PROFILES_ACTIVE 바로 앞에
-          sed -i "/- name: SPRING_PROFILES_ACTIVE/i\\        envFrom:" deployment.yml
-          sed -i "/envFrom:/a\\        - configMapRef:" deployment.yml
-          sed -i "/- configMapRef:/a\\            name: ${{ env.PROJECT_NAME }}-config" deployment.yml
-          sed -i "/name: ${{ env.PROJECT_NAME }}-config/a\\        - secretRef:" deployment.yml
-          sed -i "/- secretRef:/a\\            name: ${{ env.PROJECT_NAME }}-secret" deployment.yml
+          # envFrom 설정 추가 (환경변수 주입) - ports 섹션 뒤에 추가
+          sed -i "/          name: http/a\\        envFrom:" deployment.yml
+          sed -i "/        envFrom:/a\\        - configMapRef:" deployment.yml
+          sed -i "/        - configMapRef:/a\\            name: ${{ env.PROJECT_NAME }}-config" deployment.yml
+          sed -i "/            name: ${{ env.PROJECT_NAME }}-config/a\\        - secretRef:" deployment.yml
+          sed -i "/        - secretRef:/a\\            name: ${{ env.PROJECT_NAME }}-secret" deployment.yml
           
           echo "✅ 기존 k8s 매니페스트 업데이트 완료"
           

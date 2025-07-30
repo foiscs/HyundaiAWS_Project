@@ -1064,31 +1064,79 @@ jobs:
             exit 1
           fi
           
-          # IngressClass 확인
+          # 3. IngressClass 상세 확인
+          echo "🔍 IngressClass 확인 시작..."
+          echo "🔍 모든 IngressClass 목록:"
+          kubectl get ingressclass -o wide || echo "IngressClass 없음"
+          
           if kubectl get ingressclass alb >/dev/null 2>&1; then
             echo "✅ IngressClass 'alb' 확인됨"
-            kubectl get ingressclass alb
+            echo "🔍 'alb' IngressClass 상세 정보:"
+            kubectl describe ingressclass alb | head -20
           else
             echo "❌ IngressClass 'alb'를 찾을 수 없습니다."
-            echo "사용 가능한 IngressClass:"
-            kubectl get ingressclass
-            exit 1
+            echo "AWS Load Balancer Controller가 완전히 배포되지 않았습니다."
+            
+            # Controller 로그에서 IngressClass 생성 관련 오류 확인
+            echo "🔍 Controller 로그에서 IngressClass 생성 관련 오류 확인:"
+            kubectl logs -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller --tail=50 | grep -i "ingressclass\|error\|fail" || echo "관련 로그 없음"
+            
+            echo "⚠️ IngressClass 없이 진행하나 Ingress 처리가 실패할 수 있습니다."
+          fi
+          
+          # 4. AWS IAM 및 버전 확인
+          echo "🔍 AWS 및 Kubernetes 버전 확인..."
+          echo "🔍 AWS CLI 버전:"
+          aws --version || echo "AWS CLI 없음"
+          
+          echo "🔍 Kubernetes 버전:"
+          kubectl version --short || echo "kubectl 버전 확인 실패"
+          
+          echo "🔍 AWS 과정 사용자 ID 확인:"
+          aws sts get-caller-identity || echo "AWS 인증 실패"
+          
+          echo "🔍 EKS 클러스터 접근 권한 확인:"
+          kubectl auth can-i "*" "*" --all-namespaces || echo "관리자 권한 없음"
+          
+          echo "🔍 AWS Load Balancer Controller ServiceAccount 확인:"
+          kubectl get serviceaccount -n kube-system aws-load-balancer-controller || echo "ServiceAccount 없음"
+          
+          # IAM Role 얰결 확인
+          if kubectl get serviceaccount -n kube-system aws-load-balancer-controller >/dev/null 2>&1; then
+            iam_role=$(kubectl get serviceaccount -n kube-system aws-load-balancer-controller -o jsonpath='{.metadata.annotations.eks\.amazonaws\.com/role-arn}' 2>/dev/null || echo "")
+            if [ -n "$iam_role" ]; then
+              echo "✅ IAM Role 연결됨: $iam_role"
+            else
+              echo "⚠️ IAM Role이 ServiceAccount에 연결되지 않았습니다."
+            fi
           fi
           
           # Webhook config 재생성 대기
           echo "⏳ webhook config 재생성 대기 중..."
-          sleep 10
+          sleep 15
           
-          # ValidatingAdmissionWebhook 확인
+          # ValidatingAdmissionWebhook 확인 (더 상세한 로그와 함께)
           webhook_ready=false
+          echo "🔍 현재 존재하는 모든 ValidatingWebhookConfiguration 확인:"
+          kubectl get validatingwebhookconfigurations -o name || echo "조회 실패"
+          
           for i in {1..6}; do
-            if kubectl get validatingwebhookconfigurations | grep -E "(vingress|aws-load-balancer)" >/dev/null 2>&1; then
-              echo "✅ ValidatingWebhookConfiguration 확인됨"
-              kubectl get validatingwebhookconfigurations | grep -E "(vingress|aws-load-balancer)"
+            echo "🔍 Webhook 검색 시도 $i/6..."
+            
+            # 여러 패턴으로 검색
+            if kubectl get validatingwebhookconfigurations | grep -E "(ingress|elb|load-balancer|aws)" >/dev/null 2>&1; then
+              echo "✅ ValidatingWebhookConfiguration 발견!"
+              echo "🔍 찾은 webhook 이름:"
+              kubectl get validatingwebhookconfigurations | grep -E "(ingress|elb|load-balancer|aws)" || true
               webhook_ready=true
               break
+            elif kubectl get validatingwebhookconfigurations 2>/dev/null | tail -n +2 | wc -l | grep -v "^0$" >/dev/null; then
+              echo "⚠️ AWS LB Controller와 관련되지 않은 webhook들이 존재합니다:"
+              kubectl get validatingwebhookconfigurations || true
+              echo "⏳ AWS Load Balancer Controller webhook 대기 중... ($i/6)"
+              sleep 5
             else
-              echo "⏳ ValidatingWebhookConfiguration 대기 중... ($i/6)"
+              echo "⏳ ValidatingWebhookConfiguration 없음. 대기 중... ($i/6)"
               sleep 5
             fi
           done
@@ -1113,13 +1161,27 @@ jobs:
             # 더 긴 시간 동안 webhook 재확인
             webhook_recovered=false
             for j in {1..12}; do
-              if kubectl get validatingwebhookconfigurations | grep -E "(vingress|aws-load-balancer)" >/dev/null 2>&1; then
-                echo "✅ ValidatingWebhookConfiguration 재확인 성공 (시도 $j/12)"
-                kubectl get validatingwebhookconfigurations | grep -E "(vingress|aws-load-balancer)"
+              echo "🔍 Webhook 복구 확인 시도 $j/12..."
+              
+              # 보다 넓은 범위로 검색
+              if kubectl get validatingwebhookconfigurations | grep -E "(ingress|elb|load-balancer|aws)" >/dev/null 2>&1; then
+                echo "✅ ValidatingWebhookConfiguration 복구 성공! (시도 $j/12)"
+                echo "🔍 복구된 webhook:"
+                kubectl get validatingwebhookconfigurations | grep -E "(ingress|elb|load-balancer|aws)" || true
+                
+                # webhook 상세 정보
+                webhook_name=$(kubectl get validatingwebhookconfigurations | grep -E "(ingress|elb|load-balancer|aws)" | awk '{print $1}' | head -1)
+                if [ -n "$webhook_name" ]; then
+                  echo "🔍 Webhook 상세 정보:"
+                  kubectl describe validatingwebhookconfiguration "$webhook_name" | head -20 || true
+                fi
+                
                 webhook_recovered=true
                 break
               else
                 echo "⏳ ValidatingWebhookConfiguration 재확인 중... ($j/12)"
+                echo "🔍 현재 존재하는 모든 webhook:"
+                kubectl get validatingwebhookconfigurations || echo "없음"
                 sleep 10
               fi
             done
@@ -1424,7 +1486,7 @@ jobs:
           echo "IngressClass 확인:"
           kubectl get ingressclass alb || true
           echo "ValidatingWebhookConfiguration 확인:"
-          kubectl get validatingwebhookconfigurations | grep -E "(vingress|aws-load-balancer)" || echo "Webhook 없음"
+          kubectl get validatingwebhookconfigurations | grep -E "(ingress|elb|load-balancer|aws)" || echo "AWS LB Controller Webhook 없음"
           
           # Ingress 매니페스트 내용 확인
           echo "🔍 Ingress 매니페스트 내용:"
@@ -1443,7 +1505,7 @@ jobs:
             echo "🔍 Ingress와 ALB 동기화 상태 체크 중..."
             
             # webhook이 정상 작동하는지 확인
-            if ! kubectl get validatingwebhookconfigurations | grep -E "(vingress|aws-load-balancer)" >/dev/null 2>&1; then
+            if ! kubectl get validatingwebhookconfigurations | grep -E "(ingress|elb|load-balancer|aws)" >/dev/null 2>&1; then
               echo "⚠️ Webhook이 없습니다. Controller 재시작 중..."
               kubectl rollout restart deployment -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller
               kubectl rollout status deployment -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller --timeout=120s
@@ -1546,7 +1608,7 @@ jobs:
               kubectl describe ingressclass alb || true
               
               echo "🔍 ValidatingWebhookConfiguration 확인:"
-              webhook_status=$(kubectl get validatingwebhookconfigurations | grep -E "(vingress|aws-load-balancer)" || echo "웹훅 없음")
+              webhook_status=$(kubectl get validatingwebhookconfigurations | grep -E "(ingress|elb|load-balancer|aws)" || echo "웹훅 없음")
               echo "Webhook 상태: $webhook_status"
               
               if [[ "$webhook_status" == "웹훅 없음" ]]; then
