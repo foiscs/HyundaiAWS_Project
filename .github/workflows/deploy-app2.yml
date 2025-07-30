@@ -1122,42 +1122,90 @@ jobs:
           # 퍼블릭 서브넷 조회 (ALB용) - 여러 방법으로 시도
           echo "🔍 퍼블릭 서브넷 조회 중..."
           
-          # 방법 1: Type=public 태그로 조회
-          PUBLIC_SUBNETS=$(aws ec2 describe-subnets \
-            --filters "Name=tag:Type,Values=public" "Name=state,Values=available" \
-            --query "Subnets[*].SubnetId" \
-            --output text | tr '\t' ',' | sed 's/,$//')
+          # EKS 클러스터의 VPC 조회
+          echo "🔍 EKS 클러스터 VPC 조회 중..."
+          EKS_VPC_ID=$(aws eks describe-cluster --name ${{ env.EKS_CLUSTER_NAME }} --query "cluster.resourcesVpcConfig.vpcId" --output text 2>/dev/null || echo "")
           
-          if [ -z "$PUBLIC_SUBNETS" ]; then
-            # 방법 2: kubernetes.io/role/elb 태그로 조회
-            echo "⚠️ Type=public 태그로 찾지 못함. kubernetes.io/role/elb 태그로 재시도..."
+          if [ -z "$EKS_VPC_ID" ] || [ "$EKS_VPC_ID" == "None" ]; then
+            echo "⚠️ EKS 클러스터 VPC를 찾을 수 없습니다. 전체 계정에서 검색합니다."
+            VPC_FILTER=""
+          else
+            echo "✅ EKS VPC 발견: $EKS_VPC_ID"
+            VPC_FILTER="Name=vpc-id,Values=$EKS_VPC_ID"
+          fi
+          
+          # 방법 1: Type=public 태그로 조회 (EKS VPC 내에서, 최대 3개)
+          if [ -n "$VPC_FILTER" ]; then
             PUBLIC_SUBNETS=$(aws ec2 describe-subnets \
-              --filters "Name=tag:kubernetes.io/role/elb,Values=1" "Name=state,Values=available" \
-              --query "Subnets[*].SubnetId" \
+              --filters "Name=tag:Type,Values=public" "Name=state,Values=available" "$VPC_FILTER" \
+              --query "Subnets[:3].SubnetId" \
+              --output text | tr '\t' ',' | sed 's/,$//')
+          else
+            PUBLIC_SUBNETS=$(aws ec2 describe-subnets \
+              --filters "Name=tag:Type,Values=public" "Name=state,Values=available" \
+              --query "Subnets[:3].SubnetId" \
               --output text | tr '\t' ',' | sed 's/,$//')
           fi
           
           if [ -z "$PUBLIC_SUBNETS" ]; then
-            # 방법 3: 라우트 테이블을 통해 인터넷 게이트웨이가 있는 서브넷 찾기
+            # 방법 2: kubernetes.io/role/elb 태그로 조회 (EKS VPC 내에서)
+            echo "⚠️ Type=public 태그로 찾지 못함. kubernetes.io/role/elb 태그로 재시도..."
+            if [ -n "$VPC_FILTER" ]; then
+              PUBLIC_SUBNETS=$(aws ec2 describe-subnets \
+                --filters "Name=tag:kubernetes.io/role/elb,Values=1" "Name=state,Values=available" "$VPC_FILTER" \
+                --query "Subnets[:3].SubnetId" \
+                --output text | tr '\t' ',' | sed 's/,$//')
+            else
+              PUBLIC_SUBNETS=$(aws ec2 describe-subnets \
+                --filters "Name=tag:kubernetes.io/role/elb,Values=1" "Name=state,Values=available" \
+                --query "Subnets[:3].SubnetId" \
+                --output text | tr '\t' ',' | sed 's/,$//')
+            fi
+          fi
+          
+          if [ -z "$PUBLIC_SUBNETS" ]; then
+            # 방법 3: 라우트 테이블을 통해 인터넷 게이트웨이가 있는 서브넷 찾기 (EKS VPC 내에서)
             echo "⚠️ 태그로 찾지 못함. 라우트 테이블 분석으로 퍼블릭 서브넷 찾는 중..."
-            PUBLIC_SUBNETS=$(aws ec2 describe-route-tables \
-              --filters "Name=route.gateway-id,Values=igw-*" \
-              --query "RouteTables[*].Associations[?SubnetId!=null].SubnetId" \
-              --output text | tr '\t' ',' | sed 's/,$//')
+            if [ -n "$EKS_VPC_ID" ]; then
+              PUBLIC_SUBNETS_RAW=$(aws ec2 describe-route-tables \
+                --filters "Name=route.gateway-id,Values=igw-*" "Name=vpc-id,Values=$EKS_VPC_ID" \
+                --query "RouteTables[*].Associations[?SubnetId!=null].SubnetId" \
+                --output text | tr '\n' ' ' | tr '\t' ' ')
+            else
+              PUBLIC_SUBNETS_RAW=$(aws ec2 describe-route-tables \
+                --filters "Name=route.gateway-id,Values=igw-*" \
+                --query "RouteTables[*].Associations[?SubnetId!=null].SubnetId" \
+                --output text | tr '\n' ' ' | tr '\t' ' ')
+            fi
+            
+            # 중복 제거 및 최대 3개로 제한
+            PUBLIC_SUBNETS=$(echo "$PUBLIC_SUBNETS_RAW" | tr ' ' '\n' | grep -v '^$' | sort | uniq | head -3 | tr '\n' ',' | sed 's/,$//')
           fi
           
           if [ -z "$PUBLIC_SUBNETS" ]; then
-            # 방법 4: 기본값 사용
-            PUBLIC_SUBNETS="subnet-0c3b7ce8248681101,subnet-057589a6494b65a9c"
-            echo "⚠️ 퍼블릭 서브넷을 자동으로 찾을 수 없어 기본값 사용: $PUBLIC_SUBNETS"
-            echo "ℹ️ 인프라 배포 시 서브넷에 다음 태그 중 하나를 추가하세요:"
+            # 방법 4: 기본값 사용 (app2 전용 - 주의: app1과 다른 서브넷 ID)
+            PUBLIC_SUBNETS="subnet-01fbc1b7b3df0ace6,subnet-0dc46ee2f98b5b0ce"
+            echo "⚠️ 퍼블릭 서브넷을 자동으로 찾을 수 없어 app2 기본값 사용: $PUBLIC_SUBNETS"
+            echo "ℹ️ EKS VPC: ${EKS_VPC_ID:-알수없음} 내에서 서브넷에 다음 태그 중 하나를 추가하세요:"
             echo "   - Type=public 또는"
             echo "   - kubernetes.io/role/elb=1"
           else
-            echo "✅ 퍼블릭 서브넷 발견: $PUBLIC_SUBNETS"
+            echo "✅ 퍼블릭 서브넷 발견 (VPC: ${EKS_VPC_ID:-전체}): $PUBLIC_SUBNETS"
           fi
           
-          echo "PUBLIC_SUBNETS=$PUBLIC_SUBNETS" >> $GITHUB_ENV
+          # 환경변수 안전하게 저장
+          if [ -n "$PUBLIC_SUBNETS" ] && [ "$PUBLIC_SUBNETS" != "null" ]; then
+            # 서브넷 개수 확인
+            SUBNET_COUNT=$(echo "$PUBLIC_SUBNETS" | tr ',' '\n' | wc -l)
+            echo "📊 선택된 서브넷 개수: $SUBNET_COUNT개"
+            echo "📋 서브넷 목록: $PUBLIC_SUBNETS"
+            
+            # GITHUB_ENV에 안전하게 저장
+            echo "PUBLIC_SUBNETS=$PUBLIC_SUBNETS" >> "$GITHUB_ENV"
+          else
+            echo "❌ 유효한 퍼블릭 서브넷을 찾을 수 없습니다."
+            exit 1
+          fi
 
     - name: Generate additional Kubernetes manifests
       run: |
