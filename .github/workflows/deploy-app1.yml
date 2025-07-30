@@ -1188,9 +1188,52 @@ jobs:
             
             if [ "$webhook_recovered" != "true" ]; then
               echo "❌ ValidatingWebhookConfiguration 복구 실패"
-              echo "🔍 Controller 로그 확인:"
-              kubectl logs -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller --tail=20 || true
+              
+              # Controller 로그에서 webhook 관련 오류 찾기
+              echo "🔍 Controller 로그에서 webhook 관련 오류 찾기:"
+              
+              # 최신 Pod들의 로그 확인
+              latest_pods=$(kubectl get pods -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller --sort-by=.metadata.creationTimestamp -o name | tail -3)
+              
+              for pod in $latest_pods; do
+                echo "=== $pod 전체 로그 (webhook 관련) ===="
+                kubectl logs -n kube-system $pod --tail=100 | grep -i "webhook\|admission\|certificate\|tls\|validating" || echo "webhook 관련 로그 없음"
+                
+                echo "=== $pod 오류 로그 ===="
+                kubectl logs -n kube-system $pod --tail=100 | grep -i "error\|fail\|denied\|forbidden\|unable\|timeout" || echo "오류 로그 없음"
+                
+                echo "=== $pod 시작 로그 ===="
+                kubectl logs -n kube-system $pod --tail=200 | head -20 || echo "시작 로그 없음"
+                echo ""
+              done
+              
+              # Webhook 생성 권한 확인
+              echo "🔍 ValidatingWebhookConfiguration 생성 권한 확인:"
+              kubectl auth can-i create validatingwebhookconfigurations --as=system:serviceaccount:kube-system:aws-load-balancer-controller || echo "Webhook 생성 권한 없음"
+              
+              # ClusterRole 및 ClusterRoleBinding 확인
+              echo "🔍 AWS Load Balancer Controller ClusterRole 확인:"
+              kubectl get clusterrole | grep -E "(aws-load-balancer|alb)" || echo "ClusterRole 없음"
+              
+              echo "🔍 AWS Load Balancer Controller ClusterRoleBinding 확인:"
+              kubectl get clusterrolebinding | grep -E "(aws-load-balancer|alb)" || echo "ClusterRoleBinding 없음"
+              
+              # Controller 재시작 후 추가 대기
+              echo "🔧 Controller 추가 대기 후 재확인..."
+              sleep 30
+              
+              # 최종 webhook 확인
+              if kubectl get validatingwebhookconfigurations | grep -E "(ingress|elb|load-balancer|aws)" >/dev/null 2>&1; then
+                echo "✅ 추가 대기 후 Webhook 발견!"
+                kubectl get validatingwebhookconfigurations | grep -E "(ingress|elb|load-balancer|aws)"
+                webhook_recovered=true
+              fi
+              
               echo "⚠️ Webhook 없이 진행하지만 Ingress 처리가 안될 수 있습니다."
+              echo "🔍 문제 해결을 위해 다음을 확인하세요:"
+              echo "  1. AWS Load Balancer Controller의 ClusterRole에 ValidatingWebhookConfiguration 생성 권한이 있는지"
+              echo "  2. Controller Pod의 TLS 인증서 설정이 올바른지"
+              echo "  3. kube-system 네임스페이스에 적절한 Service가 있는지"
             fi
           fi
           
