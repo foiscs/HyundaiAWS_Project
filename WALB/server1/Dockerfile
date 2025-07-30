@@ -45,7 +45,7 @@ RUN composer install --no-dev --optimize-autoloader --no-interaction || \
 COPY files/app/ ./app/
 COPY files/css/ ./app/css/
 COPY files/simple-health.php ./app/
-COPY files/healthcheck.php ./app/
+COPY files/health.php ./app/
 COPY files/detailed-health.php ./app/
 COPY files/db_test.php ./app/
 

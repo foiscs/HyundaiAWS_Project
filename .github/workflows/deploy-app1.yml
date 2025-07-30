@@ -945,14 +945,14 @@ jobs:
           echo "            name: ${{ env.PROJECT_NAME }}-secret" >> deployment.yaml
           echo "        livenessProbe:" >> deployment.yaml
           echo "          httpGet:" >> deployment.yaml
-          echo "            path: /healthcheck.php" >> deployment.yaml
+          echo "            path: ${{ env.HEALTH_CHECK_PATH }}" >> deployment.yaml
           echo "            port: 80" >> deployment.yaml
           echo "          initialDelaySeconds: 60" >> deployment.yaml
           echo "          periodSeconds: 30" >> deployment.yaml
           echo "          timeoutSeconds: 10" >> deployment.yaml
           echo "        readinessProbe:" >> deployment.yaml
           echo "          httpGet:" >> deployment.yaml
-          echo "            path: /healthcheck.php" >> deployment.yaml
+          echo "            path: ${{ env.HEALTH_CHECK_PATH }}" >> deployment.yaml
           echo "            port: 80" >> deployment.yaml
           echo "          initialDelaySeconds: 30" >> deployment.yaml
           echo "          periodSeconds: 10" >> deployment.yaml
@@ -1002,7 +1002,7 @@ jobs:
           echo "    alb.ingress.kubernetes.io/subnets: ${{ env.PUBLIC_SUBNETS }}" >> ingress.yaml
           echo "    " >> ingress.yaml
           echo "    # Health Check 설정 (PHP 애플리케이션)" >> ingress.yaml
-          echo "    alb.ingress.kubernetes.io/healthcheck-path: /healthcheck.php" >> ingress.yaml
+          echo "    alb.ingress.kubernetes.io/healthcheck-path: ${{ env.HEALTH_CHECK_PATH }}" >> ingress.yaml
           echo "    alb.ingress.kubernetes.io/healthcheck-interval-seconds: '30'" >> ingress.yaml
           echo "    alb.ingress.kubernetes.io/healthcheck-timeout-seconds: '10'" >> ingress.yaml
           echo "    alb.ingress.kubernetes.io/healthy-threshold-count: '2'" >> ingress.yaml
@@ -1116,7 +1116,7 @@ jobs:
                 fi
                 
                 # ALB가 실제로 응답하는지 확인
-                if curl -s --connect-timeout 5 --max-time 10 -o /dev/null -w "%{http_code}" "http://$ALB_DNS/healthcheck.php" | grep -E "^(200|404)$" >/dev/null; then
+                if curl -s --connect-timeout 5 --max-time 10 -o /dev/null -w "%{http_code}" "http://$ALB_DNS${{ env.HEALTH_CHECK_PATH }}" | grep -E "^(200|404)$" >/dev/null; then
                   echo "✅ ALB 프로비저닝 완료 및 연결 가능: $ALB_DNS"
                   echo "ALB_HOSTNAME=$ALB_DNS" >> $GITHUB_ENV
                   echo "DEPLOYMENT_METHOD=Ingress" >> $GITHUB_ENV
@@ -1317,7 +1317,7 @@ jobs:
             
             # 실제 연결 테스트
             echo "🔍 ALB 연결 테스트 중..."
-            if curl -s --connect-timeout 10 --max-time 15 -o /dev/null -w "%{http_code}" "http://${ALB_HOSTNAME}/healthcheck.php" | grep -E "^(200|404)$" >/dev/null; then
+            if curl -s --connect-timeout 10 --max-time 15 -o /dev/null -w "%{http_code}" "http://${ALB_HOSTNAME}${{ env.HEALTH_CHECK_PATH }}" | grep -E "^(200|404)$" >/dev/null; then
               echo "✅ ALB 연결 성공 - 애플리케이션 접속 가능"
             else
               echo "⚠️ ALB 연결 실패 - 헬스체크 문제일 수 있습니다"
@@ -1333,7 +1333,7 @@ jobs:
             echo "ℹ️ 5-10분 후 접속이 가능할 예정입니다."
             
             echo "🔍 현재 ALB 연결 상태:"
-            curl -s --connect-timeout 5 --max-time 10 -w "HTTP 상태코드: %{http_code}, 응답시간: %{time_total}s\n" "http://${ALB_HOSTNAME}/healthcheck.php" || echo "아직 연결 불가"
+            curl -s --connect-timeout 5 --max-time 10 -w "HTTP 상태코드: %{http_code}, 응답시간: %{time_total}s\n" "http://${ALB_HOSTNAME}${{ env.HEALTH_CHECK_PATH }}" || echo "아직 연결 불가"
             
             echo "🔍 Ingress 상태:"
             kubectl describe ingress ${{ env.PROJECT_NAME }}-ingress -n ${{ env.PROJECT_NAME }}

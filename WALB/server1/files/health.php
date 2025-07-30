@@ -1,5 +1,5 @@
 <?php
-// healthcheck.php (readinessProbe 용)
+// health.php (readinessProbe 용)
 
 $db_host = getenv('DB_HOST') ?: 'localhost';
 $db_port = getenv('DB_PORT') ?: '5432';

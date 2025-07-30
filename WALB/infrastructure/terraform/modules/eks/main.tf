@@ -964,7 +964,7 @@ resource "kubernetes_ingress_v1" "walb_app" {
       "alb.ingress.kubernetes.io/listen-ports"          = "[{\"HTTP\": 80}]"
       
       # Health Check 설정 (PHP 애플리케이션)
-      "alb.ingress.kubernetes.io/healthcheck-path"             = "/healthcheck.php"
+      "alb.ingress.kubernetes.io/healthcheck-path"             = "/health.php"
       "alb.ingress.kubernetes.io/healthcheck-interval-seconds" = "30"
       "alb.ingress.kubernetes.io/healthcheck-timeout-seconds"  = "10"
       "alb.ingress.kubernetes.io/healthy-threshold-count"      = "2"

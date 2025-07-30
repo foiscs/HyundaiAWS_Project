@@ -9,7 +9,7 @@ metadata:
     alb.ingress.kubernetes.io/target-type: ip
     alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}]'
     alb.ingress.kubernetes.io/subnets: subnet-0c3b7ce8248681101,subnet-057589a6494b65a9c
-    alb.ingress.kubernetes.io/healthcheck-path: /healthcheck.php
+    alb.ingress.kubernetes.io/healthcheck-path: /health.php
     alb.ingress.kubernetes.io/healthcheck-interval-seconds: "30"
     alb.ingress.kubernetes.io/healthcheck-timeout-seconds: "10"
     alb.ingress.kubernetes.io/healthy-threshold-count: "2"
