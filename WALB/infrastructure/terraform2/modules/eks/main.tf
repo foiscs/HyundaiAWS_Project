@@ -1047,3 +1047,10 @@ resource "kubernetes_namespace" "walb_app2" {
     }
   }
 }
+
+# ALB 정보를 가져오기 위한 데이터 소스
+data "aws_lb" "walb_app_alb" {
+  count = var.enable_load_balancer && var.create_ingress ? 1 : 0
+  name  = "walb2-app-ingress-alb"
+  depends_on = [kubernetes_ingress_v1.walb_app]
+}

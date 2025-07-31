@@ -299,3 +299,21 @@ output "access_verification_commands" {
     test_connection   = "kubectl get nodes"
   }
 }
+
+# ALB 정보 (WAF 연결용)
+output "alb_arn" {
+  description = "Application Load Balancer ARN for WAF association"
+  value       = var.enable_load_balancer && var.create_ingress ? data.aws_lb.walb_app_alb[0].arn : null
+}
+output "alb_dns_name" {
+  description = "Application Load Balancer DNS name"
+  value       = var.enable_load_balancer && var.create_ingress ? data.aws_lb.walb_app_alb[0].dns_name : null      
+}
+output "alb_zone_id" {
+  description = "Application Load Balancer hosted zone ID"
+  value       = var.enable_load_balancer && var.create_ingress ? data.aws_lb.walb_app_alb[0].zone_id : null       
+}
+output "alb_name" {
+  description = "Application Load Balancer name"
+  value       = var.enable_load_balancer && var.create_ingress ? data.aws_lb.walb_app_alb[0].name : null
+}
