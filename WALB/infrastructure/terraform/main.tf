@@ -625,9 +625,15 @@ resource "aws_iam_openid_connect_provider" "github_actions" {
   ]
 
   tags = merge(local.common_tags, {
-    Name      = "${var.project_name}-github-oidc-provider"
+    Name      = "walb-app-github-oidc-provider"
     Component = "CI/CD"
   })
+
+  lifecycle {
+    create_before_destroy = true
+    ignore_changes        = [thumbprint_list]
+    prevent_destroy       = true
+  }
 }
 
 # GitHub Actions IAM Role for Infrastructure (Terraform)

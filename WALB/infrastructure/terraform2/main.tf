@@ -308,7 +308,7 @@ module "rds" {
   
   # 데이터베이스 설정
   engine                 = "mysql"
-  engine_version         = "8.0.35"
+  engine_version         = "8.0.39"
   instance_class         = var.rds_instance_class
   allocated_storage      = 20
   max_allocated_storage  = 100
@@ -619,14 +619,14 @@ resource "aws_iam_openid_connect_provider" "github_actions" {
   ]
 
   tags = merge(local.common_tags, {
-    Name      = "${var.project_name}-github-oidc-provider"
+    Name      = "walb2-app-github-oidc-provider"
     Component = "CI/CD"
   })
 
   lifecycle {
     create_before_destroy = true
     ignore_changes        = [thumbprint_list]
-    prevent_destroy       = true
+    prevent_destroy       = false
   }
 }
 
