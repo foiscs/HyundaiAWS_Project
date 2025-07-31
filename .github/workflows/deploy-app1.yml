@@ -1283,7 +1283,7 @@ jobs:
             echo "🔍 진단 정보:"
             kubectl get pods -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller
             kubectl logs -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller --tail=50 || true
-            kubectl get validatingwebhookconfigurations | grep -E "(vingress|aws-load-balancer)" || echo "웹훅 없음"
+            kubectl get validatingwebhookconfigurations | grep -E "(ingress|aws-load-balancer)" || echo "웹훅 없음"
             kubectl get ingressclass || true
             exit 1
           fi

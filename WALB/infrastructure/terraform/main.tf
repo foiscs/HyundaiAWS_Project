@@ -454,6 +454,8 @@ resource "aws_iam_role" "eks_app_role" {
   })
 }
 
+# terraform import kubernetes_config_map.aws_auth kube-system/aws-auth 필요
+
 # =========================================
 # aws-auth ConfigMap for GitHub Actions Access
 # =========================================
@@ -630,7 +632,6 @@ resource "aws_iam_openid_connect_provider" "github_actions" {
   lifecycle {
     create_before_destroy = true
     ignore_changes        = [thumbprint_list]
-    prevent_destroy       = true
   }
 }
 
@@ -815,10 +816,13 @@ resource "aws_iam_role_policy" "github_actions_app_policy" {
           "ssm:GetParameters",
           "ssm:GetParametersByPath",
           
-          # EC2 권한 추가 (Bastion Host 조회용)
+          # EC2 권한 추가 (Bastion Host 및 네트워크 조회용)
           "ec2:DescribeInstances",
-          "ec2:DescribeInstanceStatus",
+          "ec2:DescribeInstanceStatus", 
           "ec2:DescribeTags",
+          "ec2:DescribeSubnets",
+          "ec2:DescribeRouteTables",
+          "ec2:DescribeVpcs",
           
           # 계정 정보 조회
           "sts:GetCallerIdentity"

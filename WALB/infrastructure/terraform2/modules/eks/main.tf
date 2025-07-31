@@ -355,6 +355,7 @@ resource "aws_security_group_rule" "node_to_node_kubelet" {
   description              = "Allow kubelet communication between nodes"
 }
 
+
 # 시작 템플릿 (노드 그룹용)
 resource "aws_launch_template" "node_group" {
   count = var.create_launch_template ? 1 : 0

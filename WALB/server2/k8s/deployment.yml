@@ -58,7 +58,7 @@ metadata:
   labels:
     app: walb2-app
 spec:
-  type: LoadBalancer
+  type: ClusterIP
   selector:
     app: walb2-app
   ports:

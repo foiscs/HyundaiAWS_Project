@@ -810,10 +810,13 @@ resource "aws_iam_role_policy" "github_actions_app_policy" {
           "ssm:GetParameters",
           "ssm:GetParametersByPath",
           
-          # EC2 권한 추가 (Bastion Host 조회용)
+          # EC2 권한 추가 (Bastion Host 및 네트워크 조회용)
           "ec2:DescribeInstances",
           "ec2:DescribeInstanceStatus",
           "ec2:DescribeTags",
+          "ec2:DescribeSubnets",
+          "ec2:DescribeRouteTables",
+          "ec2:DescribeVpcs",
           
           # 계정 정보 조회
           "sts:GetCallerIdentity"

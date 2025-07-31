@@ -38,24 +38,3 @@ app2_config:
   # 네트워크 설정
   network:
     region: "ap-northeast-2"
-    # 서브넷은 동적으로 조회하지만, 필요시 수동 설정 가능
-    # public_subnets: "subnet-xxx,subnet-yyy"
-
-# GitHub Repository Variables 설정 방법:
-# GitHub 리포지토리 설정 > Secrets and variables > Actions > Variables 탭에서 다음 변수들을 설정:
-#
-# PROJECT_NAME: walb2-app
-# DB_NAME: musicdb  
-# DB_USER: msadmin
-# DB_PORT: 3306
-# DB_RDS_IDENTIFIER: walb2-rds-database
-# EKS_CLUSTER_NAME: walb2-eks-cluster
-# S3_BUCKET_NAME: walb2-app-files
-# IAM_ROLE_NAME: walb2-app-eks-app-role
-# BASTION_HOST_TAG: walb2-app-bastion-host
-# DEPLOYMENT_NAME: music1-deployment
-# IMAGE_NAME: music1-app
-# HEALTH_CHECK_PATH: /api/music
-# AWS_REGION: ap-northeast-2
-#
-# 이렇게 설정하면 deploy-app2.yml에서 해당 값들을 자동으로 사용합니다.

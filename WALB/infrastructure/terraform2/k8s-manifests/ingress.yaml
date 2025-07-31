@@ -10,7 +10,7 @@ metadata:
     alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}]'
     
     # 서로 다른 AZ의 퍼블릭 서브넷 2개 사용
-    alb.ingress.kubernetes.io/subnets: subnet-0c3b7ce8248681101,subnet-0810872fcbe5a4ae3
+    alb.ingress.kubernetes.io/subnets: subnet-0ebdab58e342615b5,subnet-052b7ae3df0930e19
     
     # Health Check 설정 (Spring Boot 애플리케이션)
     alb.ingress.kubernetes.io/healthcheck-path: /api/music

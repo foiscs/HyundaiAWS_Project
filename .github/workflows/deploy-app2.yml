@@ -1089,7 +1089,7 @@ jobs:
               kubectl describe ingressclass alb || true
               
               echo "🔍 ValidatingWebhookConfiguration 확인:"
-              webhook_status=$(kubectl get validatingwebhookconfigurations | grep -E "(vingress|aws-load-balancer)" || echo "웹훅 없음")
+              webhook_status=$(kubectl get validatingwebhookconfigurations | grep -E "(ingress|aws-load-balancer)" || echo "웹훅 없음")
               echo "Webhook 상태: $webhook_status"
               
               if [[ "$webhook_status" == "웹훅 없음" ]]; then
@@ -1123,7 +1123,7 @@ jobs:
             echo "🔍 진단 정보:"
             kubectl get pods -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller-app2
             kubectl logs -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller-app2 --tail=50 || true
-            kubectl get validatingwebhookconfigurations | grep -E "(vingress|aws-load-balancer)" || echo "웹훅 없음"
+            kubectl get validatingwebhookconfigurations | grep -E "(ingress|aws-load-balancer)" || echo "웹훅 없음"
             kubectl get ingressclass || true
             exit 1
           fi
