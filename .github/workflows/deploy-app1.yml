@@ -831,12 +831,19 @@ jobs:
           fi
           
           if [ -z "$PUBLIC_SUBNETS" ]; then
-            # 방법 3: 라우트 테이블을 통해 인터넷 게이트웨이가 있는 서브넷 찾기 (가용영역별로 1개씩)
+            # 방법 3: 라우트 테이블을 통해 인터넷 게이트웨이가 있는 서브넷 찾기 (EKS VPC 내에서)
             echo "⚠️ 태그로 찾지 못함. 라우트 테이블 분석으로 퍼블릭 서브넷 찾는 중..."
-            PUBLIC_SUBNETS_RAW=$(aws ec2 describe-route-tables \
-              --filters "Name=route.gateway-id,Values=igw-*" \
-              --query "RouteTables[*].Associations[?SubnetId!=null].SubnetId" \
-              --output text | tr '\n' ' ' | tr '\t' ' ')
+            if [ -n "$EKS_VPC_ID" ]; then
+              PUBLIC_SUBNETS_RAW=$(aws ec2 describe-route-tables \
+                --filters "Name=route.gateway-id,Values=igw-*" "Name=vpc-id,Values=$EKS_VPC_ID" \
+                --query "RouteTables[*].Associations[?SubnetId!=null].SubnetId" \
+                --output text | tr '\n' ' ' | tr '\t' ' ')
+            else
+              PUBLIC_SUBNETS_RAW=$(aws ec2 describe-route-tables \
+                --filters "Name=route.gateway-id,Values=igw-*" \
+                --query "RouteTables[*].Associations[?SubnetId!=null].SubnetId" \
+                --output text | tr '\n' ' ' | tr '\t' ' ')
+            fi
             
             # 가용영역별로 서브넷 선택 (중복 AZ 방지)
             if [ -n "$PUBLIC_SUBNETS_RAW" ]; then
@@ -861,9 +868,18 @@ jobs:
             # 방법 4: 모든 퍼블릭 서브넷에서 가용영역별로 1개씩 선택
             echo "⚠️ 태그 기반 조회 실패. 모든 퍼블릭 서브넷에서 가용영역별로 선택 중..."
             
+            # EKS VPC 내에서 우선 조회, 실패하면 전체 계정에서 조회
+            VPC_FILTER_OPTION=""
+            if [ -n "$EKS_VPC_ID" ] && [ "$EKS_VPC_ID" != "None" ]; then
+              VPC_FILTER_OPTION="Name=vpc-id,Values=$EKS_VPC_ID"
+              echo "🔍 EKS VPC($EKS_VPC_ID) 내에서 퍼블릭 서브넷 조회 중..."
+            else
+              echo "🔍 전체 계정에서 퍼블릭 서브넷 조회 중..."
+            fi
+            
             # 모든 서브넷 조회 (State=available만)
             ALL_SUBNETS=$(aws ec2 describe-subnets \
-              --filters "Name=state,Values=available" \
+              --filters "Name=state,Values=available" $VPC_FILTER_OPTION \
               --query "Subnets[*].[SubnetId,AvailabilityZone,MapPublicIpOnLaunch]" \
               --output text)
             

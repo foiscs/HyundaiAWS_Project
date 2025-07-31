@@ -457,7 +457,7 @@ resource "aws_iam_role" "eks_app_role" {
 # =========================================
 # aws-auth ConfigMap for GitHub Actions Access
 # =========================================
-resource "kubernetes_config_map_v1_data" "aws_auth" {
+resource "kubernetes_config_map" "aws_auth" {
   depends_on = [module.eks]
   
   metadata {
@@ -508,8 +508,6 @@ resource "kubernetes_config_map_v1_data" "aws_auth" {
       }
     ])
   }
-
-  force = true
 }
 
 # EKS 애플리케이션용 정책 연결
@@ -885,12 +883,17 @@ resource "aws_instance" "bastion" {
   vpc_security_group_ids = [aws_security_group.bastion.id]
   subnet_id             = module.vpc.public_subnet_ids[0]
   
-  # PostgreSQL 클라이언트 설치를 위한 user data
+  # PostgreSQL 클라이언트 및 네트워크 도구 설치를 위한 user data
   user_data = base64encode(<<-EOF
     #!/bin/bash
     yum update -y
+    
+    # PostgreSQL 클라이언트 설치
     amazon-linux-extras install -y postgresql13
     yum install -y postgresql
+    
+    # 네트워크 진단 도구 설치
+    yum install -y telnet nc nmap-ncat
     
     # AWS CLI 설치 (최신 버전)
     curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"

@@ -618,17 +618,12 @@ jobs:
           echo "🔍 현재 AWS 자격 증명 확인..."
           aws sts get-caller-identity
 
-          # EKS 클러스터 이름 조회 (여러 방법 시도)
+          # EKS 클러스터 이름 조회 (config에서 읽은 값 사용)
           echo "🔍 EKS 클러스터 조회 중..."
-
-          # 방법 1: 클러스터 목록에서 첫 번째 조회
-          EKS_CLUSTER_NAME=$(aws eks list-clusters --query 'clusters[0]' --output text 2>/dev/null || echo "")
-
-          # 방법 2: 특정 이름으로 조회
-          if [ -z "$EKS_CLUSTER_NAME" ] || [ "$EKS_CLUSTER_NAME" == "None" ]; then
-            EKS_CLUSTER_NAME="${{ env.EKS_CLUSTER_NAME }}"
-            echo "기본 클러스터 이름 사용: $EKS_CLUSTER_NAME"
-          fi
+          
+          # config에서 읽은 클러스터 이름 사용
+          EKS_CLUSTER_NAME="${{ env.EKS_CLUSTER_NAME }}"
+          echo "config에서 읽은 클러스터 이름: $EKS_CLUSTER_NAME"
 
           # 클러스터 존재 확인
           if ! aws eks describe-cluster --name "$EKS_CLUSTER_NAME" --region ${{ secrets.AWS_REGION }} >/dev/null 2>&1; then
