@@ -6,7 +6,10 @@ output "logs_bucket_id" {
   description = "로그 버킷 ID"
   value       = aws_s3_bucket.logs.id
 }
-
+output "logs_bucket_name"{
+  description = "로그 버킷 name"
+  value       = aws_s3_bucket.logs.bucket
+}
 output "logs_bucket_arn" {
   description = "로그 버킷 ARN"
   value       = aws_s3_bucket.logs.arn

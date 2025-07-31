@@ -943,188 +943,185 @@ data "aws_ami" "amazon_linux" {
 module "iam_security" {                             
   source = "./modules/iam-security"                 
   project_name        = var.project_name            
-  s3_logs_bucket_name = module.s3.logs_bucket_name  
-  create_access_keys  = false  # 보안상 기본값 false
+  #s3_logs_bucket_name = module.s3.logs_bucket_name  
+  s3_logs_bucket_name = "walb2-app-logs-walb-87d08755"
+  create_access_keys  = true  # 보안상 기본값 false
   common_tags = merge(local.common_tags, {          
     Component = "Security"                          
     Purpose   = "User Management"                   
   })
-  depends_on = [module.s3]
 }
 
-# CloudTrail Hub Module
-module "cloudtrail" {
-  source = "./modules/cloudtrail"
-  project_name                    = var.project_name
-  s3_bucket_name                  = module.s3.logs_bucket_name
-  cloudtrail_cloudwatch_role_arn  = module.iam_security.cloudtrail_cloudwatch_role_arn
-  cloudwatch_kinesis_role_arn     = module.iam_security.cloudwatch_kinesis_role_arn
-  kms_key_arn                     = aws_kms_key.main.arn
-  sns_topic_arn                   = aws_sns_topic.security_alerts.arn
+# # CloudTrail Hub Module
+# module "cloudtrail" {
+#   source = "./modules/cloudtrail"
+#   project_name                    = var.project_name
+#   s3_bucket_name                  = module.s3.logs_bucket_name
+#   cloudtrail_cloudwatch_role_arn  = module.iam_security.cloudtrail_cloudwatch_role_arn
+#   cloudwatch_kinesis_role_arn     = module.iam_security.cloudwatch_kinesis_role_arn
+#   kms_key_arn                     = aws_kms_key.main.arn
+#   sns_topic_arn                   = aws_sns_topic.security_alerts.arn
   
-  common_tags = merge(local.common_tags, {
-    Component = "Security"
-  })
+#   common_tags = merge(local.common_tags, {
+#     Component = "Security"
+#   })
   
-  depends_on = [module.iam_security, module.s3]
-}
+#   depends_on = [module.iam_security, module.s3]
+# }
 
-# =========================================
-# Security Hub Module
-# =========================================
-module "security_hub" {
-  source = "./modules/securityhub"
+# # =========================================
+# # Security Hub Module
+# # =========================================
+# module "security_hub" {
+#   source = "./modules/securityhub"
   
-  project_name                = var.project_name
-  cloudwatch_kinesis_role_arn = module.iam_security.cloudwatch_kinesis_role_arn
-  kms_key_arn                 = aws_kms_key.main.arn
-  sns_topic_arn               = aws_sns_topic.security_alerts.arn
+#   project_name                = var.project_name
+#   cloudwatch_kinesis_role_arn = module.iam_security.cloudwatch_kinesis_role_arn
+#   kms_key_arn                 = aws_kms_key.main.arn
+#   sns_topic_arn               = aws_sns_topic.security_alerts.arn
   
-  # Security Hub 설정
-  enable_default_standards = true
-  enable_aws_foundational  = true
-  enable_cis_standard      = true
+#   # Security Hub 설정
+#   enable_default_standards = true
+#   enable_aws_foundational  = true
+#   enable_cis_standard      = true
   
-  # Kinesis 설정
-  kinesis_shard_count     = 1
-  kinesis_retention_hours = 24
+#   # Kinesis 설정
+#   kinesis_shard_count     = 1
+#   kinesis_retention_hours = 24
 
-  # 모니터링 설정
-  enable_monitoring        = true
+#   # 모니터링 설정
+#   enable_monitoring        = true
 
-  # 로그 설정
-  log_retention_days = var.security_log_retention_days
-  log_filter_pattern = ""
+#   # 로그 설정
+#   log_retention_days = var.security_log_retention_days
+#   log_filter_pattern = ""
 
-    common_tags = merge(local.common_tags, {
-    Component = "Security"
-    Service   = "SecurityHub"
-  })
+#     common_tags = merge(local.common_tags, {
+#     Component = "Security"
+#     Service   = "SecurityHub"
+#   })
 
-  depends_on = [module.iam_security]
-}
+#   depends_on = [module.iam_security]
+# }
 
-# GuardDuty Module
-module "guardduty" {
-  source = "./modules/guardduty"
-  project_name                = var.project_name
-  cloudwatch_kinesis_role_arn = module.iam_security.cloudwatch_kinesis_role_arn
-  kms_key_arn                 = aws_kms_key.main.arn
-  sns_topic_arn               = aws_sns_topic.security_alerts.arn        
-  # GuardDuty 설정
-  finding_publishing_frequency = "FIFTEEN_MINUTES"
-  enable_s3_protection        = true
-  enable_kubernetes_protection = true
-  enable_malware_protection   = true
+# # GuardDuty Module
+# module "guardduty" {
+#   source = "./modules/guardduty"
+#   project_name                = var.project_name
+#   cloudwatch_kinesis_role_arn = module.iam_security.cloudwatch_kinesis_role_arn
+#   kms_key_arn                 = aws_kms_key.main.arn
+#   sns_topic_arn               = aws_sns_topic.security_alerts.arn        
+#   # GuardDuty 설정
+#   finding_publishing_frequency = "FIFTEEN_MINUTES"
+#   enable_s3_protection        = true
+#   enable_kubernetes_protection = true
+#   enable_malware_protection   = true
   
-  # Kinesis 설정
-  kinesis_shard_count     = 1
-  kinesis_retention_hours = 24
+#   # Kinesis 설정
+#   kinesis_shard_count     = 1
+#   kinesis_retention_hours = 24
   
-  # 모니터링 설정
-  enable_monitoring        = true
-  high_severity_threshold  = 3
-  # 로그 설정
-  log_retention_days = var.security_log_retention_days
-  log_filter_pattern = ""
+#   # 모니터링 설정
+#   enable_monitoring        = true
+#   high_severity_threshold  = 3
+#   # 로그 설정
+#   log_retention_days = var.security_log_retention_days
+#   log_filter_pattern = ""
   
-  common_tags = merge(local.common_tags, {
-    Component = "Security"
-    Service   = "GuardDuty"
-  })
+#   common_tags = merge(local.common_tags, {
+#     Component = "Security"
+#     Service   = "GuardDuty"
+#   })
   
-  depends_on = [module.iam_security]
-}
+#   depends_on = [module.iam_security]
+# }
 
-# =========================================
-# WAF Module
-# =========================================
-module "waf" {
-  source = "./modules/waf"
-  project_name     = var.project_name
-  target_alb_name  = "walb2-app-ingress-alb"  # EKS Ingress에서 생성되는 ALB 이름
-  # WAF 설정
-  rate_limit             = 2000
-  blocked_ip_addresses   = []  # 필요시 차단할 IP 추가
-  blocked_requests_threshold = 100
+# # =========================================
+# # WAF Module
+# # =========================================
+# module "waf" {
+#   source = "./modules/waf"
+#   project_name     = var.project_name
+#   target_alb_name  = "walb2-app-ingress-alb"  # EKS Ingress에서 생성되는 ALB 이름
+#   # WAF 설정
+#   rate_limit             = 2000
+#   blocked_ip_addresses   = []  # 필요시 차단할 IP 추가
+#   blocked_requests_threshold = 100
   
-  # Firehose 설정
-  firehose_role_arn       = module.iam_security.firehose_role_arn  # IAM Security 모듈에서 생성 필요
-  s3_bucket_arn           = module.s3.logs_bucket_arn
-  buffer_size_mb          = 5
-  buffer_interval_seconds = 300
-  # 모니터링 설정
-  enable_monitoring = true
-  kms_key_arn      = aws_kms_key.main.arn
-  # 로그 설정
-  log_retention_days = var.security_log_retention_days
+#   # Firehose 설정
+#   firehose_role_arn       = module.iam_security.firehose_role_arn  # IAM Security 모듈에서 생성 필요
+#   s3_bucket_arn           = module.s3.logs_bucket_arn
+#   buffer_size_mb          = 5
+#   buffer_interval_seconds = 300
+#   # 모니터링 설정
+#   enable_monitoring = true
+#   kms_key_arn      = aws_kms_key.main.arn
+#   # 로그 설정
+#   log_retention_days = var.security_log_retention_days
   
-  # 데이터 변환 설정 (선택적)
-  enable_data_transformation = false
-  lambda_processor_arn       = null
+#   # 데이터 변환 설정 (선택적)
+#   enable_data_transformation = false
+#   lambda_processor_arn       = null
   
-  common_tags = merge(local.common_tags, {
-    Component = "Security"
-    Service   = "WAF"
-  })
+#   common_tags = merge(local.common_tags, {
+#     Component = "Security"
+#     Service   = "WAF"
+#   })
   
-  depends_on = [module.eks, module.iam_security, module.s3]
-}
+#   depends_on = [module.eks, module.iam_security, module.s3]
+# }
 
-# =========================================
-# VPC Flow Logs Module
-# =========================================
-module "vpcflow" {
-  source = "./modules/vpcflow"
-  project_name = var.project_name
-  vpc_id       = module.vpc.vpc_id
-  # S3 설정
-  vpc_flow_logs_s3_arn = "${module.s3.logs_bucket_arn}/vpc-flow-logs/"
-  s3_bucket_name       = module.s3.logs_bucket_name
-  # Flow Logs 설정
-  traffic_type = "ALL"
-  vpc_flow_logs_format = "$${version} $${account-id} $${interface-id} $${srcaddr} $${dstaddr} $${srcport} $${dstport} $${protocol} $${packets} $${bytes} $${windowstart} $${windowend} $${action} $${flowlogstatus} $${vpc-id} $${subnet-id} $${instance-id} $${tcp-flags} $${type} $${pkt-srcaddr} $${pkt-dstaddr} $${region} $${az-id}"
-  # S3 파티셔닝 옵션
-  enable_hive_partitions   = true
-  enable_hourly_partitions = true
-  # S3 라이프사이클 설정
-  enable_s3_lifecycle              = true
-  transition_to_ia_days           = 30
-  transition_to_glacier_days      = 90
-  transition_to_deep_archive_days = 365
-  vpc_flow_logs_retention_days    = 2555  # 7 years
-  common_tags = merge(local.common_tags, {
-    Component = "Security"
-    Service   = "VPCFlowLogs"
-  })
-  depends_on = [module.vpc, module.s3]
-}
+# # =========================================
+# # VPC Flow Logs Module
+# # =========================================
+# module "vpcflow" {
+#   source = "./modules/vpcflow"
+#   project_name = var.project_name
+#   vpc_id       = module.vpc.vpc_id
+#   # S3 설정
+#   vpc_flow_logs_s3_arn = "${module.s3.logs_bucket_arn}/vpc-flow-logs/"
+#   s3_bucket_name       = module.s3.logs_bucket_name
+#   # Flow Logs 설정
+#   traffic_type = "ALL"
+#   vpc_flow_logs_format = "$${version} $${account-id} $${interface-id} $${srcaddr} $${dstaddr} $${srcport} $${dstport} $${protocol} $${packets} $${bytes} $${windowstart} $${windowend} $${action} $${flowlogstatus} $${vpc-id} $${subnet-id} $${instance-id} $${tcp-flags} $${type} $${pkt-srcaddr} $${pkt-dstaddr} $${region} $${az-id}"
+#   # S3 파티셔닝 옵션
+#   enable_hive_partitions   = true
+#   enable_hourly_partitions = true
+#   # S3 라이프사이클 설정
+#   enable_s3_lifecycle              = true
+#   transition_to_ia_days           = 30
+#   transition_to_glacier_days      = 90
+#   transition_to_deep_archive_days = 365
+#   vpc_flow_logs_retention_days    = 2555  # 7 years
+#   common_tags = merge(local.common_tags, {
+#     Component = "Security"
+#     Service   = "VPCFlowLogs"
+#   })
+#   depends_on = [module.vpc, module.s3]
+# }
 
-# DNS Resolve Logging Module
-module "dnsresolve" {
-  source = "./modules/dnsresolve"
-  project_name         = var.project_name
-  environment         = var.environment
-  common_tags         = local.common_tags
-  # Route 53 Configuration
-  hosted_zone_id      = var.hosted_zone_id
-  # S3 Configuration
-  s3_logs_bucket_name = module.s3.logs_bucket_name
+# # DNS Resolve Logging Module
+# module "dnsresolve" {
+#   source = "./modules/dnsresolve"
+#   project_name         = var.project_name
+#   environment         = var.environment
+#   common_tags         = local.common_tags
+#   # Route 53 Configuration
+#   hosted_zone_id      = var.hosted_zone_id
+#   # S3 Configuration
+#   s3_logs_bucket_name = module.s3.logs_bucket_name
+
+#   vpc_id                  = module.vpc.vpc_id
   
-  # DNS Firewall Configuration (Optional)
-  enable_dns_firewall     = var.enable_dns_firewall
-  malicious_domains_list_id = var.malicious_domains_list_id
-  vpc_id                  = module.vpc.vpc_id
+#   # S3 Lifecycle Configuration
+#   enable_s3_lifecycle             = var.enable_s3_lifecycle
+#   transition_to_ia_days          = var.transition_to_ia_days
+#   transition_to_glacier_days     = var.transition_to_glacier_days
+#   transition_to_deep_archive_days = var.transition_to_deep_archive_days
+#   dns_log_retention_days         = var.dns_log_retention_days
   
-  # S3 Lifecycle Configuration
-  enable_s3_lifecycle             = var.enable_s3_lifecycle
-  transition_to_ia_days          = var.transition_to_ia_days
-  transition_to_glacier_days     = var.transition_to_glacier_days
-  transition_to_deep_archive_days = var.transition_to_deep_archive_days
-  dns_log_retention_days         = var.dns_log_retention_days
-  
-  depends_on = [
-    module.s3,
-    module.vpc
-  ]
-}
+#   depends_on = [
+#     module.s3,
+#     module.vpc
+#   ]
+# }

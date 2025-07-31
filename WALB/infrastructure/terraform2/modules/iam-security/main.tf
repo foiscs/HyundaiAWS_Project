@@ -5,27 +5,11 @@ data "aws_region" "current" {}
 # Check if blog-s3-user already exists
 data "aws_iam_user" "blog_s3_user_existing" {
   user_name = "blog-s3-user"
-  
-  # Use lifecycle to handle case where user doesn't exist
-  lifecycle {
-    postcondition {
-      condition = true  # Always allow this data source to complete
-      error_message = "This should never trigger"
-    }
-  }
 }
 
 # Check if splunk-kinesis-reader already exists  
 data "aws_iam_user" "splunk_kinesis_reader_existing" {
   user_name = "splunk-kinesis-reader"
-  
-  # Use lifecycle to handle case where user doesn't exist
-  lifecycle {
-    postcondition {
-      condition = true  # Always allow this data source to complete
-      error_message = "This should never trigger"
-    }
-  }
 }
 
 # Create blog-s3-user if it doesn't exist
@@ -54,9 +38,13 @@ resource "aws_iam_user" "splunk_kinesis_reader" {
   })
 }
 
+# Check if blog_s3_policy already exists
+data "aws_iam_policy" "blog_s3_policy_existing" {
+    name = "blog-s3-user-policy"
+}
 # S3 access policy for blog-s3-user
 resource "aws_iam_policy" "blog_s3_policy" {
-  count       = try(data.aws_iam_user.blog_s3_user_existing.user_name, null) == null ? 1 : 0
+  count       = try(data.aws_iam_policy.blog_s3_policy_existing.name, null) == null ? 1 : 0
   name        = "blog-s3-user-policy"
   description = "S3 access policy for blog application"
   
@@ -84,9 +72,13 @@ resource "aws_iam_policy" "blog_s3_policy" {
   tags = var.common_tags
 }
 
+# Check if splunk_kinesis_policy already exists
+data "aws_iam_policy" "splunk_kinesis_policy_existing" {
+    name = "splunk-kinesis-reader-policy"
+}
 # Kinesis read policy for splunk-kinesis-reader
 resource "aws_iam_policy" "splunk_kinesis_policy" {
-  count       = try(data.aws_iam_user.splunk_kinesis_reader_existing.user_name, null) == null ? 1 : 0
+  count       = try(data.aws_iam_policy.splunk_kinesis_policy_existing.name, null) == null ? 1 : 0
   name        = "splunk-kinesis-reader-policy"
   description = "Kinesis read access policy for Splunk"
   
@@ -109,8 +101,8 @@ resource "aws_iam_policy" "splunk_kinesis_policy" {
         ]
       },
       {
-        Effect: "Allow",
-        Action: [
+        Effect = "Allow",
+        Action = [
             "dynamodb:CreateTable",
             "dynamodb:GetItem",
             "dynamodb:PutItem",
@@ -119,8 +111,7 @@ resource "aws_iam_policy" "splunk_kinesis_policy" {
             "dynamodb:Scan",
             "dynamodb:Query"
         ],
-        Resource: 
-          "arn:aws:dynamodb:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:table/splunk_checkpoints"
+        Resource = "arn:aws:dynamodb:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:table/splunk_checkpoints"
       }
     ]
   })
@@ -130,16 +121,14 @@ resource "aws_iam_policy" "splunk_kinesis_policy" {
 
 # Attach S3 policy to blog-s3-user
 resource "aws_iam_user_policy_attachment" "blog_s3_user_policy" {
-  count      = try(data.aws_iam_user.blog_s3_user_existing.user_name, null) == null ? 1 : 0
-  user       = aws_iam_user.blog_s3_user[0].name
-  policy_arn = aws_iam_policy.blog_s3_policy[0].arn
+    user       = try(data.aws_iam_user.blog_s3_user_existing.user_name, aws_iam_user.blog_s3_user[0].name)
+    policy_arn = try(data.aws_iam_policy.blog_s3_policy_existing.arn, aws_iam_policy.blog_s3_policy[0].arn)
 }
 
 # Attach Kinesis policy to splunk-kinesis-reader
 resource "aws_iam_user_policy_attachment" "splunk_kinesis_reader_policy" {
-  count      = try(data.aws_iam_user.splunk_kinesis_reader_existing.user_name, null) == null ? 1 : 0
-  user       = aws_iam_user.splunk_kinesis_reader[0].name
-  policy_arn = aws_iam_policy.splunk_kinesis_policy[0].arn
+    user       = try(data.aws_iam_user.splunk_kinesis_reader_existing.user_name, aws_iam_user.splunk_kinesis_reader[0].name)
+    policy_arn = try(data.aws_iam_policy.splunk_kinesis_policy_existing.arn, aws_iam_policy.splunk_kinesis_policy[0].arn)
 }
 
 # Optional: Create access keys for the users
@@ -202,15 +191,7 @@ resource "aws_secretsmanager_secret_version" "splunk_kinesis_reader_credentials"
 # CloudTrail -> CloudWatch Role section
 data "aws_iam_role" "cloudtrail_cloudwatch_existing" {
   name = "CloudTrail-CloutWatchLogs-Role"
-  # Use lifecycle to handle case where role doesn't exist
-  lifecycle {
-    postcondition {
-      condition = true  # Always allow this data source to complete
-      error_message = "This should never trigger"
-    }
-  }
 }
-
 # Create CloudTrail to CloudWatch role if it doesn't exist
 resource "aws_iam_role" "cloudtrail_cloudwatch" {
   count = try(data.aws_iam_role.cloudtrail_cloudwatch_existing.name, null) == null ? 1 : 0
@@ -240,9 +221,14 @@ resource "aws_iam_role" "cloudtrail_cloudwatch" {
     Service   = "CloudTrail"
   })
 }
+
+# Check if cloudtrail_cloudwatch_policy already exists
+data "aws_iam_policy" "cloudtrail_cloudwatch_policy_existing" {
+  name = "CloudTrail-CloudWatchLogs-Policy"
+}
 # CloudTrail to CloudWatch Logs Policy
 resource "aws_iam_policy" "cloudtrail_cloudwatch_policy" {
-  count       = try(data.aws_iam_role.cloudtrail_cloudwatch_existing.name, null) == null ? 1 : 0
+  count       = try(data.aws_iam_policy.cloudtrail_cloudwatch_policy_existing.name, null) == null ? 1 : 0
   name        = "CloudTrail-CloudWatchLogs-Policy"
   description = "CloudTrail에서 CloudWatch Logs로 전송하는 정책"
   policy = jsonencode({
@@ -274,21 +260,13 @@ resource "aws_iam_policy" "cloudtrail_cloudwatch_policy" {
 }
 # Attach CloudTrail to CloudWatch Logs Policy to role
 resource "aws_iam_role_policy_attachment" "cloudtrail_cloudwatch" {
-  count      = try(data.aws_iam_role.cloudtrail_cloudwatch_existing.name, null) == null ? 1 : 0
-  role       = aws_iam_role.cloudtrail_cloudwatch[0].name
-  policy_arn = aws_iam_policy.cloudtrail_cloudwatch_policy[0].arn
+  role       = try(data.aws_iam_role.cloudtrail_cloudwatch_existing.name, aws_iam_role.cloudtrail_cloudwatch[0].name)
+  policy_arn = try(data.aws_iam_policy.cloudtrail_cloudwatch_policy_existing.arn, aws_iam_policy.cloudtrail_cloudwatch_policy[0].arn)
 }
 
 #CloudWatch -> Kinesis Role section
 data "aws_iam_role" "cloudwatch_kinesis_existing" {
   name = "CloutWatchLogs-Kinesis-Role"
-  # Use lifecycle to handle case where role doesn't exist
-  lifecycle {
-    postcondition {
-      condition = true  # Always allow this data source to complete
-      error_message = "This should never trigger"
-    }
-  }
 }
 # Create CloudWatch to Kinesis role if it doesn't exist
 resource "aws_iam_role" "cloudwatch_kinesis" {
@@ -313,9 +291,14 @@ resource "aws_iam_role" "cloudwatch_kinesis" {
     Service   = "CloudWatch"
   })
 }
+
+# Check if cloudwatch_kinesis_policy already exists
+data "aws_iam_policy" "cloudwatch_kinesis_policy_existing" {
+  name = "CloudWatchLogs-Kinesis-Policy"
+}
 # CloudWatch Logs to Kinesis Policy
 resource "aws_iam_policy" "cloudwatch_kinesis_policy" {
-  count       = try(data.aws_iam_role.cloudwatch_kinesis_existing.name, null) == null ? 1 : 0
+  count       = try(data.aws_iam_policy.cloudwatch_kinesis_policy_existing.name, null) == null ? 1 : 0
   name        = "CloudWatchLogs-Kinesis-Policy"
   description = "CloudWatch Logs에서 Kinesis로 전송하는 정책"
   policy = jsonencode({
@@ -339,13 +322,17 @@ resource "aws_iam_policy" "cloudwatch_kinesis_policy" {
 }
 # Attach CloudWatch Logs to Kinesis Policy to role
 resource "aws_iam_role_policy_attachment" "cloudwatch_kinesis" {
-  count      = try(data.aws_iam_role.cloudwatch_kinesis_existing.name, null) == null ? 1 : 0
-  role       = aws_iam_role.cloudwatch_kinesis[0].name
-  policy_arn = aws_iam_policy.cloudwatch_kinesis_policy[0].arn
+  role       = try(data.aws_iam_role.cloudwatch_kinesis_existing.name, aws_iam_role.cloudwatch_kinesis[0].name)
+  policy_arn = try(data.aws_iam_policy.cloudwatch_kinesis_policy_existing.arn, aws_iam_policy.cloudwatch_kinesis_policy[0].arn)
 }
 
+# Check if firehose_waf_role already exists
+data "aws_iam_role" "firehose_waf_role_existing" {
+  name = "${var.project_name}-firehose-waf-role"
+}
 # Firehose Role for WAF logs
 resource "aws_iam_role" "firehose_waf_role" {
+  count = try(data.aws_iam_role.firehose_waf_role_existing.name, null) == null ? 1 : 0
   name = "${var.project_name}-firehose-waf-role"
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -365,9 +352,13 @@ resource "aws_iam_role" "firehose_waf_role" {
     Service   = "Firehose"
   })
 }
-
+# Check if firehose_waf_policy already exists
+data "aws_iam_policy" "firehose_waf_policy_existing" {
+  name = "${var.project_name}-firehose-waf-policy"
+}
 # Firehose Policy for S3 delivery
 resource "aws_iam_policy" "firehose_waf_policy" {
+  count = try(data.aws_iam_policy.firehose_waf_policy_existing.name, null) == null ? 1 : 0
   name        = "${var.project_name}-firehose-waf-policy"
   description = "Policy for Firehose to deliver WAF logs to S3"
   policy = jsonencode({
@@ -403,6 +394,6 @@ resource "aws_iam_policy" "firehose_waf_policy" {
 }
 
 resource "aws_iam_role_policy_attachment" "firehose_waf" {
-  role       = aws_iam_role.firehose_waf_role.name
-  policy_arn = aws_iam_policy.firehose_waf_policy.arn
+    role       = try(data.aws_iam_role.firehose_waf_role_existing.name, aws_iam_role.firehose_waf_role[0].name)     
+    policy_arn = try(data.aws_iam_policy.firehose_waf_policy_existing.arn, aws_iam_policy.firehose_waf_policy[0].arn)
 }
