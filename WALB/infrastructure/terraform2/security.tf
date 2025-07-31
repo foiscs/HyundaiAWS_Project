@@ -259,3 +259,38 @@ resource "aws_ssm_parameter" "security_policy" {
     Component = "Security"
   }
 }
+
+# =========================================
+# EKS 웹후크용 9443 포트 허용
+# =========================================
+resource "aws_security_group_rule" "eks_webhook_ingress" {
+  type                     = "ingress"
+  from_port                = 9443
+  to_port                  = 9443
+  protocol                 = "tcp"
+  source_security_group_id = module.eks.cluster_security_group_id
+  security_group_id        = module.eks.node_group_security_group_id
+  description              = "EKS webhook admission controller"
+}
+
+# AWS Load Balancer Controller webhook 서비스용 443 포트 허용
+resource "aws_security_group_rule" "alb_webhook_ingress" {
+  type                     = "ingress"
+  from_port                = 443
+  to_port                  = 443
+  protocol                 = "tcp"
+  source_security_group_id = module.eks.cluster_security_group_id
+  security_group_id        = module.eks.node_group_security_group_id
+  description              = "AWS Load Balancer Controller webhook service"
+}
+
+# 노드 간 webhook 통신 허용 (443 포트)
+resource "aws_security_group_rule" "node_webhook_ingress" {
+  type                     = "ingress"
+  from_port                = 443
+  to_port                  = 443
+  protocol                 = "tcp"
+  self                     = true
+  security_group_id        = module.eks.node_group_security_group_id
+  description              = "Node to node webhook communication"
+}
