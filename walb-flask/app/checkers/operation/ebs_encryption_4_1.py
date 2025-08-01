@@ -29,10 +29,10 @@ class EbsEncryptionChecker(BaseChecker):
         findings = {'non_default_regions': [], 'unencrypted_volumes': []}
         
         try:
-            ec2_regions = [r['RegionName'] for r in boto3.client('ec2').describe_regions()['Regions']]
+            ec2_regions = [r['RegionName'] for r in self.session.client('ec2').describe_regions()['Regions']]
             for region in ec2_regions:
                 try:
-                    ec2 = boto3.client('ec2', region_name=region)
+                    ec2 = self.session.client('ec2', region_name=region)
                     if not ec2.get_ebs_encryption_by_default()['EbsEncryptionByDefault']:
                         findings['non_default_regions'].append(region)
                     
@@ -106,7 +106,7 @@ class EbsEncryptionChecker(BaseChecker):
                 # 선택된 항목인지 확인
                 if any(region in str(item) for item in selected_items.values() for item in item):
                     try:
-                        boto3.client('ec2', region_name=region).enable_ebs_encryption_by_default()
+                        self.session.client('ec2', region_name=region).enable_ebs_encryption_by_default()
                         print(f"     [SUCCESS] 리전 '{region}'의 기본 암호화를 활성화했습니다.")
                         results.append({
                             'status': 'success',
@@ -131,18 +131,15 @@ class EbsEncryptionChecker(BaseChecker):
             print("  └─ 3. 암호화된 스냅샷으로부터 새 볼륨을 생성합니다.")
             print("  └─ 4. EC2 인스턴스에서 기존 볼륨을 분리(detach)하고 새로 생성한 암호화된 볼륨을 연결(attach)합니다.")
             
-            return {
-                'status': 'partial_success',
-                'results': results,
-                'message': f"기본 암호화 설정 {len(results)}건 완료. 미암호화 볼륨은 수동 조치가 필요합니다.",
-                'manual_guide': self._get_manual_guide()
-            }
+            # 수동 조치 안내를 results에 추가
+            results.append({
+                'item': 'manual_guide',
+                'status': 'info',
+                'message': f"기본 암호화 설정 {len([r for r in results if r['item'] != 'manual_guide'])}건 완료. 미암호화 볼륨은 수동 조치가 필요합니다."
+            })
+            return results
 
-        return {
-            'status': 'success',
-            'results': results,
-            'message': f"{len(results)}개 항목에 대한 조치가 완료되었습니다."
-        }
+        return results
 
     def _get_manual_guide(self):
         """미암호화 볼륨 수동 조치 가이드 반환"""

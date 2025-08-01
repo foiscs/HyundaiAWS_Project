@@ -55,7 +55,7 @@ variable "cluster_endpoint_public_access_cidrs" {
 variable "cluster_endpoint_private_access_cidrs" {
   description = "프라이빗 엔드포인트 접근 허용 CIDR"
   type        = list(string)
-  default     = ["10.0.0.0/8"]
+  default     = ["10.1.0.0/16"]
 }
 
 # 로깅 설정
@@ -155,7 +155,7 @@ variable "ec2_key_pair_name" {
 variable "ssh_access_cidrs" {
   description = "SSH 접근 허용 CIDR 블록"
   type        = list(string)
-  default     = ["10.0.0.0/8"]
+  default     = ["10.1.0.0/16"]
 }
 
 # 시작 템플릿 설정

@@ -6,16 +6,11 @@
 # EKS 클러스터 추가 보안 그룹 규칙
 # =========================================
 
-# EKS 클러스터에서 RDS로의 접근 허용
-resource "aws_security_group_rule" "eks_to_rds" {
-  type                     = "egress"
-  from_port                = 3306
-  to_port                  = 3306
-  protocol                 = "tcp"
-  source_security_group_id = module.rds.security_group_id
-  security_group_id        = module.eks.cluster_security_group_id
-  description              = "EKS to RDS MySQL access"
-}
+# RDS 관련 Security Group 규칙은 RDS 모듈에서 관리됨
+# main.tf의 allowed_security_groups에 다음이 포함되어 처리됨:
+# - module.eks.cluster_security_group_id
+# - module.eks.node_group_security_group_id  
+# - aws_security_group.bastion.id
 
 # EKS 클러스터에서 인터넷으로의 HTTPS 접근 허용
 resource "aws_security_group_rule" "eks_https_egress" {
@@ -263,4 +258,39 @@ resource "aws_ssm_parameter" "security_policy" {
     Name      = "${var.project_name}-${var.environment}-security-policy"
     Component = "Security"
   }
+}
+
+# =========================================
+# EKS 웹후크용 9443 포트 허용
+# =========================================
+resource "aws_security_group_rule" "eks_webhook_ingress" {
+  type                     = "ingress"
+  from_port                = 9443
+  to_port                  = 9443
+  protocol                 = "tcp"
+  source_security_group_id = module.eks.cluster_security_group_id
+  security_group_id        = module.eks.node_group_security_group_id
+  description              = "EKS webhook admission controller"
+}
+
+# AWS Load Balancer Controller webhook 서비스용 443 포트 허용
+resource "aws_security_group_rule" "alb_webhook_ingress" {
+  type                     = "ingress"
+  from_port                = 443
+  to_port                  = 443
+  protocol                 = "tcp"
+  source_security_group_id = module.eks.cluster_security_group_id
+  security_group_id        = module.eks.node_group_security_group_id
+  description              = "AWS Load Balancer Controller webhook service"
+}
+
+# 노드 간 webhook 통신 허용 (443 포트)
+resource "aws_security_group_rule" "node_webhook_ingress" {
+  type                     = "ingress"
+  from_port                = 443
+  to_port                  = 443
+  protocol                 = "tcp"
+  self                     = true
+  security_group_id        = module.eks.node_group_security_group_id
+  description              = "Node to node webhook communication"
 }

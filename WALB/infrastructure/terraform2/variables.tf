@@ -37,15 +37,15 @@ variable "cost_center" {
 variable "vpc_cidr" {
   description = "VPC CIDR 블록"
   type        = string
-  default     = "10.0.0.0/16"
+  default     = "10.1.0.0/16"
 }
 
 variable "public_subnets" {
   description = "퍼블릭 서브넷 CIDR 블록들"
   type        = list(string)
   default     = [
-    "10.0.1.0/24",
-    "10.0.2.0/24"
+    "10.1.1.0/24",
+    "10.1.2.0/24"
   ]
 }
 
@@ -53,8 +53,8 @@ variable "private_subnets" {
   description = "프라이빗 서브넷 CIDR 블록들"
   type        = list(string)
   default     = [
-    "10.0.10.0/24",
-    "10.0.11.0/24"
+    "10.1.10.0/24",
+    "10.1.11.0/24"
   ]
 }
 
@@ -62,8 +62,8 @@ variable "database_subnets" {
   description = "데이터베이스 서브넷 CIDR 블록들"
   type        = list(string)
   default     = [
-    "10.0.20.0/24",
-    "10.0.21.0/24"
+    "10.1.20.0/24",
+    "10.1.21.0/24"
   ]
 }
 
@@ -85,7 +85,7 @@ variable "db_name" {
 variable "db_username" {
   description = "데이터베이스 사용자명"
   type        = string
-  default     = "dbadmin"
+  default     = "msadmin"
 }
 
 variable "db_password" {
@@ -117,7 +117,7 @@ variable "ec2_key_pair_name" {
 variable "allowed_ssh_cidrs" {
   description = "SSH 접근을 허용할 CIDR 블록들"
   type        = list(string)
-  default     = ["10.0.0.0/16"]  # VPC 내부만 허용
+  default     = ["10.1.0.0/16"]  # VPC 내부만 허용
 }
 
 # =========================================
@@ -557,7 +557,7 @@ variable "availability_zones" {
 variable "db_user" {
   description = "데이터베이스 사용자명"
   type        = string
-  default     = "dbadmin"
+  default     = "msadmin"
 }
 
 # GitHub Repository 설정
@@ -565,4 +565,43 @@ variable "github_repository" {
   description = "GitHub 리포지토리 (owner/repo 형식)"
   type        = string
   default     = "foiscs/HyundaiAWS_Project"  # 실제 리포지토리로 변경 필요
+}
+
+# =========================================
+# DNS Resolve 모듈 설정
+# =========================================
+variable "hosted_zone_id" {
+  description = "Route 53 Hosted Zone ID for DNS query logging"
+  type        = string
+  default     = ""  # 실제 Hosted Zone ID로 설정 필요
+}
+
+variable "enable_s3_lifecycle" {
+  description = "Enable S3 lifecycle management for DNS logs"
+  type        = bool
+  default     = true
+}
+
+variable "transition_to_ia_days" {
+  description = "Days to transition to Standard-IA"
+  type        = number
+  default     = 30
+}
+
+variable "transition_to_glacier_days" {
+  description = "Days to transition to Glacier"
+  type        = number
+  default     = 90
+}
+
+variable "transition_to_deep_archive_days" {
+  description = "Days to transition to Deep Archive"
+  type        = number
+  default     = 365
+}
+
+variable "dns_log_retention_days" {
+  description = "Days to retain DNS logs before deletion"
+  type        = number
+  default     = 2555  # 7 years for compliance
 }

@@ -17,23 +17,24 @@ image:
 # 서비스 계정 설정 (Terraform에서 미리 생성)
 serviceAccount:
   create: false
-  name: aws-load-balancer-controller
+  name: aws-load-balancer-controller-app2
 
 # cert-manager 사용 설정 (비활성화하여 자체 서명 인증서 사용)
 enableCertManager: false
 
-# Ingress Class 생성
+# Ingress Class 생성 - app2 전용 클래스 생성
 createIngressClassResource: true
-defaultIngressClass: true
+defaultIngressClass: false
+ingressClass: alb-app2
 
 # 리소스 설정 - 웹훅 성능 개선을 위해 리소스 증가
 resources:
   limits:
+    cpu: 1000m
+    memory: 2Gi
+  requests:
     cpu: 500m
     memory: 1Gi
-  requests:
-    cpu: 200m
-    memory: 500Mi
 
 # 로깅 설정
 logLevel: info
@@ -42,6 +43,9 @@ logLevel: info
 enableShield: false
 enableWaf: false
 enableWafv2: false
+
+# Service Mutator Webhook 비활성화 (타임아웃 문제 해결)
+enableServiceMutatorWebhook: false
 
 # Node Selector (EKS 노드에만 배치)
 nodeSelector:
@@ -75,7 +79,7 @@ env:
 # 공통 라벨 설정
 commonLabels:
   app.kubernetes.io/managed-by: "Terraform"
-  app.kubernetes.io/instance: "walb2-alb-controller"
+  app.kubernetes.io/instance: "walb2-alb-controller-app2"
 
 # 서비스 모니터 (Prometheus 연동 시)
 serviceMonitor:
@@ -86,14 +90,13 @@ webhook:
   certManager:
     enabled: false
   port: 9443
-  timeoutSeconds: 30
-  # 웹훅 실패 정책 - 타임아웃 시에도 리소스 생성 허용
-  failurePolicy: Ignore
   # 웹훅 성능 최적화
   resources:
     limits:
-      cpu: 200m
-      memory: 256Mi
+      cpu: 1000m
+      memory: 1Gi
     requests:
-      cpu: 100m
-      memory: 128Mi
+      cpu: 500m
+      memory: 512Mi
+
+# ValidatingAdmissionWebhook 설정은 terraform null_resource에서 kubectl patch로 처리됨

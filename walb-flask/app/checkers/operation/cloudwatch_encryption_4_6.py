@@ -27,7 +27,7 @@ class CloudwatchEncryptionChecker(BaseChecker):
         - CloudWatch Logs 로그 그룹이 KMS로 암호화되었는지 점검하고 미암호화 그룹 목록 반환
         """
         print("[INFO] 4.6 CloudWatch 암호화 설정 체크 중...")
-        logs = boto3.client('logs')
+        logs = self.session.client('logs')
         unencrypted_log_groups = []
 
         try:
@@ -105,14 +105,14 @@ class CloudwatchEncryptionChecker(BaseChecker):
             return {'status': 'no_action', 'message': 'CloudWatch 암호화 조치가 필요한 항목이 없습니다.'}
 
         unencrypted_log_groups = diagnosis_result['unencrypted_groups']
-        logs = boto3.client('logs')
-        kms = boto3.client('kms')
+        logs = self.session.client('logs')
+        kms = self.session.client('kms')
         results = []
         
         print("[FIX] 4.6 CloudWatch 로그 그룹 암호화 조치를 시작합니다.")
 
         try:
-            account_id = boto3.client('sts').get_caller_identity()['Account']
+            account_id = self.session.client('sts').get_caller_identity()['Account']
             region = boto3.session.Session().region_name
             alias_name = "alias/cloudwatch-autokey"
             key_arn = None

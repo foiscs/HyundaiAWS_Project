@@ -1,0 +1,1557 @@
+# .github/workflows/deploy-app1.yml
+# PHP 애플리케이션 배포 워크플로우 (server1 폴더 변경시만 실행)
+
+name: Deploy PHP Application 1
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'WALB/server1/**'
+      - '.github/workflows/deploy-app1.yml'
+  
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    
+    # 워킹 디렉토리를 WALB로 설정
+    defaults:
+      run:
+        working-directory: ./WALB
+    
+    permissions:
+      id-token: write
+      contents: read
+    
+    steps:
+    # ===============================================
+    # 소스코드 체크아웃
+    # ===============================================
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    # ===============================================
+    # app1-config.yml에서 설정값 로드
+    # ===============================================
+    - name: Load config from app1-config.yml
+      run: |
+        echo "📋 app1-config.yml에서 설정값 로드 중.."
+        
+        # yq 설치
+        sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
+        sudo chmod +x /usr/local/bin/yq
+        
+        # app1-config.yml에서 값 읽기
+        PROJECT_NAME=$(yq eval '.app1_config.project_name' ../.github/workflows/config/app1-config.yml)
+        DB_NAME=$(yq eval '.app1_config.database.name' ../.github/workflows/config/app1-config.yml)
+        DB_USER=$(yq eval '.app1_config.database.user' ../.github/workflows/config/app1-config.yml)
+        DB_PORT=$(yq eval '.app1_config.database.port' ../.github/workflows/config/app1-config.yml)
+        DB_RDS_IDENTIFIER=$(yq eval '.app1_config.database.rds_identifier' ../.github/workflows/config/app1-config.yml)
+        EKS_CLUSTER_NAME=$(yq eval '.app1_config.eks.cluster_name' ../.github/workflows/config/app1-config.yml)
+        S3_BUCKET_NAME=$(yq eval '.app1_config.s3.bucket_name' ../.github/workflows/config/app1-config.yml)
+        IAM_ROLE_NAME=$(yq eval '.app1_config.iam.role_name' ../.github/workflows/config/app1-config.yml)
+        BASTION_HOST_TAG=$(yq eval '.app1_config.bastion.host_tag_name' ../.github/workflows/config/app1-config.yml)
+        DEPLOYMENT_NAME=$(yq eval '.app1_config.application.deployment_name' ../.github/workflows/config/app1-config.yml)
+        IMAGE_NAME=$(yq eval '.app1_config.application.image_name' ../.github/workflows/config/app1-config.yml)
+        HEALTH_CHECK_PATH=$(yq eval '.app1_config.application.health_check_path' ../.github/workflows/config/app1-config.yml)
+        AWS_REGION=$(yq eval '.app1_config.network.region' ../.github/workflows/config/app1-config.yml)
+        
+        # 환경변수로 설정
+        echo "PROJECT_NAME=$PROJECT_NAME" >> $GITHUB_ENV
+        echo "DB_NAME=$DB_NAME" >> $GITHUB_ENV
+        echo "DB_USER=$DB_USER" >> $GITHUB_ENV
+        echo "DB_PORT=$DB_PORT" >> $GITHUB_ENV
+        echo "DB_RDS_IDENTIFIER=$DB_RDS_IDENTIFIER" >> $GITHUB_ENV
+        echo "EKS_CLUSTER_NAME=$EKS_CLUSTER_NAME" >> $GITHUB_ENV
+        echo "S3_BUCKET_NAME=$S3_BUCKET_NAME" >> $GITHUB_ENV
+        echo "IAM_ROLE_NAME=$IAM_ROLE_NAME" >> $GITHUB_ENV
+        echo "BASTION_HOST_TAG=$BASTION_HOST_TAG" >> $GITHUB_ENV
+        echo "DEPLOYMENT_NAME=$DEPLOYMENT_NAME" >> $GITHUB_ENV
+        echo "IMAGE_NAME=$IMAGE_NAME" >> $GITHUB_ENV
+        echo "HEALTH_CHECK_PATH=$HEALTH_CHECK_PATH" >> $GITHUB_ENV
+        echo "AWS_REGION=$AWS_REGION" >> $GITHUB_ENV
+        
+        echo "✅ 설정값 로드 완료"
+        echo "PROJECT_NAME: $PROJECT_NAME"
+        echo "DB_NAME: $DB_NAME"
+        echo "AWS_REGION: $AWS_REGION"
+    
+    # ===============================================
+    # PHP 및 Composer 환경 설정
+    # ===============================================
+    - name: Set up PHP
+      uses: shivammathur/setup-php@v2
+      with:
+        php-version: '8.1'
+        extensions: pdo, pdo_pgsql, mbstring, xml, zip, gd
+        coverage: none
+    
+    - name: Validate Composer
+      run: |
+        echo "🔍 PHP 애플리케이션 검증 중.."
+        if [ -f "server1/composer.json" ]; then
+          cd server1
+          composer validate --no-check-publish
+          composer install --no-dev --optimize-autoloader --no-interaction
+          echo "✅ Composer 검증 완료"
+        else
+          echo "ℹ️ Composer 파일이 없습니다. Docker 빌드만 실행합니다"
+        fi
+    
+    # ===============================================
+    # AWS 인증 (OIDC 방식)
+    # ===============================================
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: ${{ secrets.AWS_ROLE_ARN_APP1 }}
+        aws-region: ${{ secrets.AWS_REGION }}
+        role-session-name: GitHubActions-Application-${{ github.run_id }}
+
+    # ===============================================
+    # 기존 인프라 정보 조회
+    # ===============================================
+    - name: Get Infrastructure Resources
+      run: |
+        echo "🔍 기존 인프라 리소스 정보 조회 중..."
+        
+        # ECR 리포지토리 URI 조회
+        ECR_REPO=$(aws ecr describe-repositories --repository-names ${PROJECT_NAME}-ecr --query 'repositories[0].repositoryUri' --output text 2>/dev/null || echo "")
+        if [ -z "$ECR_REPO" ]; then
+          echo "❌ ECR 리포지토리를 찾을 수 없습니다: ${PROJECT_NAME}-ecr"
+          echo "먼저 인프라 배포가 필요합니다."
+          exit 1
+        fi
+        echo "ECR_REPOSITORY=$ECR_REPO" >> $GITHUB_ENV
+        echo "✅ ECR Repository: $ECR_REPO"
+        
+        # EKS 클러스터 이름 조회  
+        EKS_CLUSTER=$(aws eks describe-cluster --name $EKS_CLUSTER_NAME --query 'cluster.name' --output text 2>/dev/null || echo "")
+        if [ -z "$EKS_CLUSTER" ] || [ "$EKS_CLUSTER" == "None" ]; then
+          echo "❌ EKS 클러스터를 찾을 수 없습니다: ${PROJECT_NAME}-eks"
+          echo "먼저 인프라 배포가 필요합니다."
+          exit 1
+        fi
+        echo "EKS_CLUSTER_NAME=$EKS_CLUSTER" >> $GITHUB_ENV
+        echo "✅ EKS Cluster: $EKS_CLUSTER"
+        
+        # RDS 엔드포인트 조회
+        RDS_ENDPOINT=$(aws rds describe-db-instances --db-instance-identifier $DB_RDS_IDENTIFIER --query 'DBInstances[0].Endpoint.Address' --output text 2>/dev/null || echo "")
+        if [ -z "$RDS_ENDPOINT" ] || [ "$RDS_ENDPOINT" == "None" ]; then
+          echo "❌ RDS 인스턴스를 찾을 수 없습니다"
+          echo "먼저 인프라 배포가 필요합니다."
+          exit 1
+        fi
+        echo "RDS_ENDPOINT=$RDS_ENDPOINT" >> $GITHUB_ENV
+        echo "✅ RDS Endpoint: $RDS_ENDPOINT"
+        
+        # EKS 클러스터 상태 확인
+        EKS_STATUS=$(aws eks describe-cluster --name $EKS_CLUSTER --query 'cluster.status' --output text)
+        if [ "$EKS_STATUS" != "ACTIVE" ]; then
+          echo "❌ EKS 클러스터가 활성 상태가 아닙니다: $EKS_STATUS"
+          exit 1
+        fi
+        echo "✅ EKS Cluster Status: $EKS_STATUS"
+
+    # ===============================================
+    # EKS 보안그룹 규칙 확인 및 자동 수정 (kubelet 통신용)
+    # ===============================================
+    - name: Check and fix EKS security group rules
+      run: |
+        echo "🔍 EKS 보안그룹 10250 포트 규칙 확인 중..."
+        
+        # 워커노드 보안그룹 ID 조회
+        NODE_SG_ID=$(aws ec2 describe-instances \
+          --filters "Name=tag:kubernetes.io/cluster/$EKS_CLUSTER_NAME,Values=owned" \
+          --query "Reservations[*].Instances[*].SecurityGroups[*].GroupId" \
+          --output text | tr '\t' '\n' | sort | uniq | head -1)
+        
+        # 클러스터 보안그룹 ID 조회  
+        CLUSTER_SG_ID=$(aws eks describe-cluster --name $EKS_CLUSTER_NAME \
+          --query "cluster.resourcesVpcConfig.securityGroupIds[0]" --output text)
+        
+        if [ -z "$NODE_SG_ID" ] || [ -z "$CLUSTER_SG_ID" ]; then
+          echo "⚠️ 보안그룹 ID를 찾을 수 없습니다. 스킵합니다."
+          echo "NODE_SG_ID: $NODE_SG_ID"
+          echo "CLUSTER_SG_ID: $CLUSTER_SG_ID"
+        else
+          echo "📋 보안그룹 정보:"
+          echo "  Worker Node SG: $NODE_SG_ID"
+          echo "  Cluster SG: $CLUSTER_SG_ID"
+          
+          # 10250 포트 규칙 존재 여부 확인
+          RULE_EXISTS=$(aws ec2 describe-security-groups --group-ids $NODE_SG_ID \
+            --query "SecurityGroups[0].GroupRules[?FromPort==\`10250\` && ToPort==\`10250\` && IsEgress==\`false\`]" \
+            --output text)
+          
+          if [ -z "$RULE_EXISTS" ]; then
+            echo "⚠️ kubelet 통신용 10250 포트 규칙이 없습니다. 추가 중..."
+            
+            # 10250 포트 인바운드 규칙 추가 (클러스터에서 노드로)
+            aws ec2 authorize-security-group-ingress \
+              --group-id $NODE_SG_ID \
+              --protocol tcp \
+              --port 10250 \
+              --source-group $CLUSTER_SG_ID \
+              --description "Allow kubelet communication from control plane (auto-added by GitHub Actions)" \
+              2>/dev/null && echo "✅ 10250 포트 규칙 추가 완료" || echo "⚠️ 규칙 추가 실패 (이미 존재할 수 있음)"
+            
+          else
+            echo "✅ kubelet 통신용 10250 포트 규칙이 이미 존재합니다"
+          fi
+        fi
+    
+    # ===============================================
+    # ECR 로그인
+    # ===============================================
+    - name: Login to Amazon ECR
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v2
+    
+    # ===============================================
+    # Docker 이미지 빌드 및 푸시
+    # ===============================================
+    - name: Build and push Docker image
+      id: build-image
+      run: |
+        echo "🐳 Docker 이미지 빌드 중..."
+        
+        # Git 커밋 해시를 태그로 사용
+        IMAGE_TAG=${{ github.sha }}
+        IMAGE_URI=${{ env.ECR_REPOSITORY }}:$IMAGE_TAG
+        
+        # server1 폴더로 이동해서 Docker 빌드
+        cd server1
+        docker build -t $IMAGE_URI .
+        docker tag $IMAGE_URI ${{ env.ECR_REPOSITORY }}:latest
+        
+        echo "📤 ECR에 이미지 푸시 중..."
+        docker push $IMAGE_URI
+        docker push ${{ env.ECR_REPOSITORY }}:latest
+        
+        echo "✅ 이미지 푸시 완료: $IMAGE_URI"
+        echo "image=$IMAGE_URI" >> $GITHUB_OUTPUT
+
+    - name: Test Database Connection via Bastion
+      run: |
+        # AWS CLI를 사용해서 리소스 정보 직접 조회
+        PROJECT_NAME="${{ env.PROJECT_NAME }}"
+        
+        echo "🔍 설정된 환경변수:"
+        echo "  PROJECT_NAME: $PROJECT_NAME"
+        
+        # RDS 엔드포인트 조회 (walb-app 프로젝트용)
+        echo "🔍 RDS 인스턴스 조회 중..."
+        DB_HOST=$(aws rds describe-db-instances \
+          --db-instance-identifier $DB_RDS_IDENTIFIER \
+          --query "DBInstances[0].Endpoint.Address" \
+          --output text 2>/dev/null || echo "")
+        
+        if [ -z "$DB_HOST" ] || [ "$DB_HOST" == "None" ]; then
+          # 직접 식별자로 안 되면 태그 기반으로 조회
+          DB_HOST=$(aws rds describe-db-instances \
+            --query "DBInstances[?contains(keys(TagList[?Key=='Project']), 'Project') && TagList[?Key=='Project'].Value[0]=='${PROJECT_NAME}'].Endpoint.Address" \
+            --output text 2>/dev/null || echo "")
+        fi
+        
+        # Bastion Host IP 조회 (여러 방법으로 시도)
+        echo "🔍 Bastion Host 조회 중..."
+        
+        # 방법 1: 정확한 태그 이름으로 조회
+        BASTION_IP=$(aws ec2 describe-instances \
+          --filters "Name=tag:Name,Values=${PROJECT_NAME}-bastion-host" "Name=instance-state-name,Values=running" \
+          --query "Reservations[0].Instances[0].PublicIpAddress" \
+          --output text 2>/dev/null || echo "")
+        
+        if [ -z "$BASTION_IP" ] || [ "$BASTION_IP" == "None" ]; then
+          echo "⚠️ 방법 1 실패. 대체 방법 시도 중..."
+          
+          # 방법 2: Component 태그로 조회
+          BASTION_IP=$(aws ec2 describe-instances \
+            --filters "Name=tag:Component,Values=Bastion" "Name=instance-state-name,Values=running" "Name=tag:Project,Values=${PROJECT_NAME}" \
+            --query "Reservations[0].Instances[0].PublicIpAddress" \
+            --output text 2>/dev/null || echo "")
+        fi
+        
+        if [ -z "$BASTION_IP" ] || [ "$BASTION_IP" == "None" ]; then
+          echo "❌ Bastion Host를 찾을 수 없습니다."
+          echo "🔍 디버깅 정보:"
+          echo "  찾고 있는 태그: Name=${PROJECT_NAME}-bastion-host"
+          echo "  또는 Component=Bastion, Project=${PROJECT_NAME}"
+          
+          echo "🔍 현재 실행 중인 인스턴스들:"
+          aws ec2 describe-instances \
+            --filters "Name=instance-state-name,Values=running" \
+            --query "Reservations[*].Instances[*].[InstanceId,Tags[?Key=='Name'].Value[0] | [0],Tags[?Key=='Component'].Value[0] | [0],Tags[?Key=='Project'].Value[0] | [0],PublicIpAddress]" \
+            --output table || echo "인스턴스 조회 실패"
+          
+          exit 1
+        fi
+        
+        # DB 사용자명과 DB 이름 (하드코딩된 값 사용)
+        DB_NAME="mydb"
+        DB_USER="dbadmin"
+        
+        # Parameter Store에서 DB 패스워드 조회
+        echo "🔍 DB 패스워드 조회 중..."
+        DB_PASSWORD=$(aws ssm get-parameter \
+          --name "/${PROJECT_NAME}/rds/master-password" \
+          --with-decryption \
+          --query 'Parameter.Value' \
+          --output text 2>/dev/null || echo "")
+        
+        # 값 검증
+        if [ -z "$DB_HOST" ] || [ "$DB_HOST" == "None" ]; then
+          echo "❌ RDS 엔드포인트를 찾을 수 없습니다."
+          echo "사용 가능한 RDS 인스턴스:"
+          aws rds describe-db-instances --query "DBInstances[*].[DBInstanceIdentifier,Endpoint.Address,DBName]" --output table
+          exit 1
+        fi
+        
+        if [ -z "$BASTION_IP" ] || [ "$BASTION_IP" == "None" ]; then
+          echo "❌ Bastion Host를 찾을 수 없습니다."
+          echo "실행 중인 EC2 인스턴스:"
+          aws ec2 describe-instances \
+            --filters "Name=instance-state-name,Values=running" \
+            --query "Reservations[*].Instances[*].[InstanceId,PublicIpAddress,Tags[?Key=='Name'].Value[0]]" \
+            --output table
+          exit 1
+        fi
+        
+        if [ -z "$DB_PASSWORD" ]; then
+          echo "❌ DB 패스워드를 Parameter Store에서 찾을 수 없습니다."
+          exit 1
+        fi
+        
+        echo "✅ DB Host: '$DB_HOST'"
+        echo "✅ Bastion IP: '$BASTION_IP'"
+        echo "✅ DB User: '$DB_USER'"
+        echo "✅ DB Name: '$DB_NAME'"
+        
+        # SSH 키를 Parameter Store에서 가져오기
+        echo "🔑 SSH 키 조회 중..."
+        aws ssm get-parameter \
+          --name "/${PROJECT_NAME}/bastion/ssh-private-key" \
+          --with-decryption \
+          --query 'Parameter.Value' \
+          --output text > bastion_key.pem
+        chmod 600 bastion_key.pem
+        
+        echo "🔍 SSH 연결 테스트 중..."
+        # SSH 연결 테스트 (타임아웃 설정)
+        if ! ssh -i bastion_key.pem -o StrictHostKeyChecking=no -o ConnectTimeout=10 -o BatchMode=yes ec2-user@$BASTION_IP "echo 'SSH connection successful'" 2>/dev/null; then
+          echo "❌ SSH 연결 실패. Bastion Host 상태 확인:"
+          aws ec2 describe-instances \
+            --filters "Name=tag:Component,Values=Bastion" \
+            --query "Reservations[*].Instances[*].[InstanceId,State.Name,PublicIpAddress,PrivateIpAddress]" \
+            --output table
+          exit 1
+        fi
+        
+        echo "🔗 SSH 터널을 통한 PostgreSQL 연결 테스트 중..."
+        
+        # PostgreSQL 클라이언트 설치 (먼저 설치)
+        if ! command -v psql &> /dev/null; then
+          echo "📦 PostgreSQL 클라이언트 설치 중..."
+          sudo apt-get update -qq && sudo apt-get install -y postgresql-client
+        fi
+        
+        # 로컬 포트가 사용 중인지 확인
+        if netstat -tuln | grep -q ":${{ env.DB_PORT }} "; then
+          echo "⚠️ 포트 ${{ env.DB_PORT }}이 이미 사용 중입니다. 다른 포트를 사용합니다."
+          LOCAL_PORT=$((${{ env.DB_PORT }} + 1))
+        else
+          LOCAL_PORT=${{ env.DB_PORT }}
+        fi
+        
+        # DB_HOST에서 와일드카드 제거 (보안상 마스킹된 부분 처리)
+        DB_HOST_CLEAN=$(echo "$DB_HOST" | sed 's/\*\*\*[^.]*//g' | sed 's/\.\././g')
+        if [[ "$DB_HOST_CLEAN" != "$DB_HOST" ]]; then
+          echo "⚠️ DB_HOST에 마스킹된 값이 포함되어 있습니다. 실제 엔드포인트로 대체합니다."
+          DB_HOST="$RDS_ENDPOINT"
+        fi
+        
+        echo "🔍 사용할 DB 엔드포인트: $DB_HOST"
+        
+        echo "🔗 SSH 터널 생성 중... (로컬 포트: $LOCAL_PORT)"
+        # SSH 터널 생성 with 더 많은 옵션
+        ssh -i bastion_key.pem \
+            -o StrictHostKeyChecking=no \
+            -o UserKnownHostsFile=/dev/null \
+            -o ExitOnForwardFailure=yes \
+            -o ServerAliveInterval=60 \
+            -o ServerAliveCountMax=3 \
+            -o ConnectTimeout=30 \
+            -L $LOCAL_PORT:$DB_HOST:5432 \
+            ec2-user@$BASTION_IP \
+            -N &
+        SSH_PID=$!
+        
+        # SSH 터널이 정상적으로 시작되었는지 확인
+        echo "⏳ SSH 터널 설정 확인 중..."
+        sleep 5
+        
+        # SSH 프로세스가 아직 실행 중인지 확인
+        if ! kill -0 $SSH_PID 2>/dev/null; then
+          echo "❌ SSH 터널 생성 실패"
+          echo "SSH 연결 로그 확인:"
+          ssh -i bastion_key.pem -o StrictHostKeyChecking=no ec2-user@$BASTION_IP "echo 'SSH 연결 테스트 성공'" || echo "SSH 기본 연결 실패"
+          rm -f bastion_key.pem
+          exit 1
+        fi
+        
+        # 터널 포트가 열렸는지 확인
+        echo "🔍 터널 포트 확인 중..."
+        for i in {1..30}; do
+          if netstat -tuln | grep -q ":$LOCAL_PORT "; then
+            echo "✅ SSH 터널이 성공적으로 설정되었습니다 (포트: $LOCAL_PORT)"
+            break
+          fi
+          if [ $i -eq 30 ]; then
+            echo "❌ SSH 터널 포트 설정 시간 초과"
+            kill $SSH_PID 2>/dev/null
+            rm -f bastion_key.pem
+            exit 1
+          fi
+          sleep 2
+        done
+        
+        # Bastion Host에서 직접 DB 연결 테스트
+        echo "🔍 Bastion Host에서 DB 직접 연결 테스트 중..."
+        ssh -i bastion_key.pem -o StrictHostKeyChecking=no ec2-user@$BASTION_IP "
+          # PostgreSQL 클라이언트 설치 확인
+          if ! command -v psql &> /dev/null; then
+            echo '📦 Bastion에 PostgreSQL 클라이언트 설치 중...'
+            sudo yum update -y
+            sudo yum install -y postgresql15
+          fi
+          
+          # DB 연결 테스트
+          echo '🔍 Bastion에서 RDS 직접 연결 테스트...'
+          if PGPASSWORD='$DB_PASSWORD' psql -h $DB_HOST -p 5432 -U $DB_USER -d $DB_NAME -c 'SELECT version();' 2>/dev/null; then
+            echo '✅ Bastion에서 RDS 직접 연결 성공'
+          else
+            echo '❌ Bastion에서 RDS 직접 연결 실패'
+            echo '🔍 네트워크 연결 확인:'
+            telnet $DB_HOST 5432 < /dev/null 2>&1 | head -5
+            echo '🔍 보안 그룹 확인이 필요합니다.'
+            exit 1
+          fi
+        "
+        
+        # 터널을 통한 연결 테스트 (재시도 로직 추가)
+        echo "🔍 SSH 터널을 통한 데이터베이스 연결 테스트 중..."
+        DB_CONNECTED=false
+        for i in {1..5}; do
+          if PGPASSWORD=$DB_PASSWORD psql -h localhost -p $LOCAL_PORT -U $DB_USER -d $DB_NAME -c "SELECT 1;" 2>/dev/null; then
+            echo "✅ 데이터베이스 연결 성공 (시도 $i/5)"
+            DB_CONNECTED=true
+            break
+          else
+            echo "⚠️ 데이터베이스 연결 실패 (시도 $i/5)"
+            # 자세한 오류 정보 출력
+            echo "🔍 상세 오류 정보:"
+            PGPASSWORD=$DB_PASSWORD psql -h localhost -p $LOCAL_PORT -U $DB_USER -d $DB_NAME -c "SELECT 1;" 2>&1 || true
+            
+            if [ $i -lt 5 ]; then
+              echo "3초 후 재시도..."
+              sleep 3
+            fi
+          fi
+        done
+        
+        if [ "$DB_CONNECTED" != "true" ]; then
+          echo "❌ 데이터베이스 연결 최종 실패"
+          echo "🔍 연결 정보 확인:"
+          echo "  로컬 포트: $LOCAL_PORT"
+          echo "  DB 호스트: $DB_HOST"
+          echo "  DB 사용자: $DB_USER"
+          echo "  DB 이름: $DB_NAME"
+          echo "🔍 네트워크 상태:"
+          netstat -tuln | grep ":$LOCAL_PORT"
+          echo "🔍 SSH 터널 상태:"
+          ps aux | grep ssh | grep $BASTION_IP || echo "SSH 프로세스 없음"
+          kill $SSH_PID 2>/dev/null
+          rm -f bastion_key.pem
+          exit 1
+        fi
+        
+        # SSH 터널 종료 및 정리
+        echo "🧹 SSH 터널 정리 중..."
+        kill $SSH_PID 2>/dev/null
+        rm -f bastion_key.pem
+        
+        echo "✅ 데이터베이스 연결 테스트 완료"
+      env:
+        PROJECT_NAME: ${{ env.PROJECT_NAME }}
+        
+    # ===============================================
+    # PostgreSQL 클라이언트 설치 및 스키마 적용
+    # ===============================================
+    - name: Apply Database Schema
+      if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+      run: |
+        echo "🗄️ 데이터베이스 스키마 적용 중..."
+        
+        # PostgreSQL 클라이언트 설치
+        sudo apt-get update && sudo apt-get install -y postgresql-client
+        
+        # 환경 변수 설정
+        PROJECT_NAME="${{ env.PROJECT_NAME }}"
+        DB_HOST="${{ env.RDS_ENDPOINT }}"
+        DB_NAME="mydb"
+        DB_USER="dbadmin"
+        
+        echo "🔍 설정된 환경변수:"
+        echo "  PROJECT_NAME: $PROJECT_NAME"
+        echo "  DB_HOST: $DB_HOST"
+        
+        # Bastion Host IP 조회 (여러 방법으로 시도)
+        echo "🔍 Bastion Host 조회 중..."
+        
+        # 방법 1: 정확한 태그 이름으로 조회
+        BASTION_IP=$(aws ec2 describe-instances \
+          --filters "Name=tag:Name,Values=${PROJECT_NAME}-bastion-host" "Name=instance-state-name,Values=running" \
+          --query "Reservations[0].Instances[0].PublicIpAddress" \
+          --output text 2>/dev/null || echo "")
+        
+        if [ -z "$BASTION_IP" ] || [ "$BASTION_IP" == "None" ]; then
+          echo "⚠️ 방법 1 실패. 대체 방법 시도 중..."
+          
+          # 방법 2: Component 태그로 조회
+          BASTION_IP=$(aws ec2 describe-instances \
+            --filters "Name=tag:Component,Values=Bastion" "Name=instance-state-name,Values=running" "Name=tag:Project,Values=${PROJECT_NAME}" \
+            --query "Reservations[0].Instances[0].PublicIpAddress" \
+            --output text 2>/dev/null || echo "")
+        fi
+        
+        if [ -z "$BASTION_IP" ] || [ "$BASTION_IP" == "None" ]; then
+          echo "❌ Bastion Host를 찾을 수 없습니다."
+          echo "🔍 디버깅 정보:"
+          echo "  찾고 있는 태그: Name=${PROJECT_NAME}-bastion-host"
+          echo "  또는 Component=Bastion, Project=${PROJECT_NAME}"
+          
+          echo "🔍 현재 실행 중인 인스턴스들:"
+          aws ec2 describe-instances \
+            --filters "Name=instance-state-name,Values=running" \
+            --query "Reservations[*].Instances[*].[InstanceId,Tags[?Key=='Name'].Value[0] | [0],Tags[?Key=='Component'].Value[0] | [0],Tags[?Key=='Project'].Value[0] | [0],PublicIpAddress]" \
+            --output table || echo "인스턴스 조회 실패"
+          
+          exit 1
+        fi
+        
+        echo "🔍 연결 정보:"
+        echo "  RDS 엔드포인트: $DB_HOST"
+        echo "  Bastion IP: $BASTION_IP"
+        echo "  DB 이름: $DB_NAME"
+        echo "  DB 사용자: $DB_USER"
+        
+        # SSH 키를 Parameter Store에서 가져오기
+        echo "🔑 SSH 키 가져오는 중..."
+        aws ssm get-parameter \
+          --name "/${PROJECT_NAME}/bastion/ssh-private-key" \
+          --with-decryption \
+          --query 'Parameter.Value' \
+          --output text > bastion_key.pem
+        chmod 600 bastion_key.pem
+        
+        # 로컬 포트가 사용 중인지 확인
+        if netstat -tuln | grep -q ":${{ env.DB_PORT }} "; then
+          echo "⚠️ 포트 ${{ env.DB_PORT }}이 이미 사용 중입니다. 다른 포트를 사용합니다."
+          LOCAL_PORT=$((${{ env.DB_PORT }} + 1))
+        else
+          LOCAL_PORT=${{ env.DB_PORT }}
+        fi
+        
+        # SSH 터널 생성 (백그라운드에서 실행)
+        echo "🔗 SSH 터널 생성 중... (로컬 포트: $LOCAL_PORT)"
+        ssh -i bastion_key.pem \
+            -o StrictHostKeyChecking=no \
+            -o UserKnownHostsFile=/dev/null \
+            -o ExitOnForwardFailure=yes \
+            -o ServerAliveInterval=60 \
+            -o ServerAliveCountMax=3 \
+            -o ConnectTimeout=30 \
+            -L $LOCAL_PORT:$DB_HOST:5432 \
+            ec2-user@$BASTION_IP \
+            -N &
+        SSH_PID=$!
+        
+        # 터널 설정 대기 및 확인
+        echo "⏳ SSH 터널 설정 확인 중..."
+        sleep 5
+        
+        # SSH 터널 상태 확인
+        if ! kill -0 $SSH_PID 2>/dev/null; then
+          echo "❌ SSH 터널 생성 실패"
+          echo "SSH 연결 로그 확인:"
+          ssh -i bastion_key.pem -o StrictHostKeyChecking=no ec2-user@$BASTION_IP "echo 'SSH 연결 테스트 성공'" || echo "SSH 기본 연결 실패"
+          rm -f bastion_key.pem
+          exit 1
+        fi
+        
+        # 터널 포트가 열렸는지 확인
+        echo "🔍 터널 포트 확인 중..."
+        for i in {1..30}; do
+          if netstat -tuln | grep -q ":$LOCAL_PORT "; then
+            echo "✅ SSH 터널이 성공적으로 설정되었습니다 (포트: $LOCAL_PORT)"
+            break
+          fi
+          if [ $i -eq 30 ]; then
+            echo "❌ SSH 터널 포트 설정 시간 초과"
+            kill $SSH_PID 2>/dev/null
+            rm -f bastion_key.pem
+            exit 1
+          fi
+          sleep 2
+        done
+        
+        echo "✅ SSH 터널 생성 완료"
+        
+        # Bastion Host에서 직접 DB 연결 테스트
+        echo "🔍 Bastion Host에서 DB 직접 연결 테스트 중..."
+        ssh -i bastion_key.pem -o StrictHostKeyChecking=no ec2-user@$BASTION_IP "
+          # PostgreSQL 클라이언트 설치 확인
+          if ! command -v psql &> /dev/null; then
+            echo '📦 Bastion에 PostgreSQL 클라이언트 설치 중...'
+            sudo yum update -y
+            sudo yum install -y postgresql15
+          fi
+          
+          # DB 연결 테스트
+          echo '🔍 Bastion에서 RDS 직접 연결 테스트...'
+          if PGPASSWORD='${{ secrets.DB_PASSWORD }}' psql -h $DB_HOST -p 5432 -U $DB_USER -d $DB_NAME -c 'SELECT version();' 2>/dev/null; then
+            echo '✅ Bastion에서 RDS 직접 연결 성공'
+          else
+            echo '❌ Bastion에서 RDS 직접 연결 실패'
+            echo '🔍 네트워크 연결 확인:'
+            nc -zv $DB_HOST 5432 2>&1 || telnet $DB_HOST 5432 < /dev/null 2>&1 | head -5
+            echo '🔍 보안 그룹 확인이 필요합니다.'
+            exit 1
+          fi
+        "
+        
+        # 로컬 포트를 통해 RDS 연결 테스트 (재시도 로직)
+        echo "🔍 SSH 터널을 통한 데이터베이스 연결 테스트 중..."
+        DB_CONNECTED=false
+        for i in {1..5}; do
+          if PGPASSWORD="${{ secrets.DB_PASSWORD }}" psql \
+            -h localhost \
+            -p $LOCAL_PORT \
+            -U "$DB_USER" \
+            -d "$DB_NAME" \
+            -c "SELECT version();" \
+            -v ON_ERROR_STOP=1 2>/dev/null; then
+            echo "✅ 데이터베이스 연결 성공 (시도 $i/5)"
+            DB_CONNECTED=true
+            break
+          else
+            echo "⚠️ 데이터베이스 연결 실패 (시도 $i/5)"
+            # 자세한 오류 정보 출력
+            echo "🔍 상세 오류 정보:"
+            PGPASSWORD="${{ secrets.DB_PASSWORD }}" psql \
+              -h localhost \
+              -p $LOCAL_PORT \
+              -U "$DB_USER" \
+              -d "$DB_NAME" \
+              -c "SELECT version();" 2>&1 || true
+            
+            if [ $i -lt 5 ]; then
+              echo "3초 후 재시도..."
+              sleep 3
+            fi
+          fi
+        done
+        
+        if [ "$DB_CONNECTED" != "true" ]; then
+          echo "❌ 데이터베이스 연결 최종 실패"
+          echo "🔍 연결 정보:"
+          echo "  로컬 포트: $LOCAL_PORT"
+          echo "  DB 호스트: $DB_HOST"
+          echo "  DB 사용자: $DB_USER"
+          echo "  DB 이름: $DB_NAME"
+          kill $SSH_PID 2>/dev/null
+          rm -f bastion_key.pem
+          exit 1
+        fi
+        
+        # 기존 테이블 확인
+        echo "🔍 기존 테이블 확인 중..."
+        EXISTING_TABLES=$(PGPASSWORD="${{ secrets.DB_PASSWORD }}" psql \
+          -h localhost \
+          -p $LOCAL_PORT \
+          -U "$DB_USER" \
+          -d "$DB_NAME" \
+          -t -c "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_name IN ('users', 'posts', 'images', 'files');" \
+          -v ON_ERROR_STOP=1 | tr -d ' ')
+        
+        echo "📊 기존 테이블 개수: $EXISTING_TABLES/4"
+        
+        if [ "$EXISTING_TABLES" -lt "4" ]; then
+          echo "📝 스키마 파일 적용 중..."
+          if PGPASSWORD="${{ secrets.DB_PASSWORD }}" psql \
+            -h localhost \
+            -p $LOCAL_PORT \
+            -U "$DB_USER" \
+            -d "$DB_NAME" \
+            -f server1/files/schema.sql \
+            -v ON_ERROR_STOP=1; then
+            echo "✅ 스키마 적용 완료"
+          else
+            echo "❌ 스키마 적용 실패"
+            kill $SSH_PID 2>/dev/null
+            rm -f bastion_key.pem
+            exit 1
+          fi
+
+        else
+          echo "ℹ️ 모든 테이블이 이미 존재합니다 ($EXISTING_TABLES/4). 스키마 적용을 건너뜁니다."
+        fi
+
+        # 정리 작업
+        echo "🧹 정리 작업 중..."
+        kill $SSH_PID 2>/dev/null
+        rm -f bastion_key.pem
+
+        echo "✅ 데이터베이스 스키마 작업 완료"
+
+    # ===============================================
+    # kubectl 및 Helm 설치
+    # ===============================================
+    - name: Install kubectl and Helm
+      run: |
+          echo "🔧 kubectl 및 Helm 설치 중..."
+
+          # kubectl 설치
+          curl -LO "https://dl.k8s.io/release/v1.28.0/bin/linux/amd64/kubectl"
+          chmod +x kubectl
+          sudo mv kubectl /usr/local/bin/
+
+          # Helm 설치
+          curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+
+          echo "✅ kubectl 및 Helm 설치 완료"
+          kubectl version --client
+          helm version
+
+    - name: Update kubeconfig for EKS
+      run: |
+          echo "🔧 EKS 클러스터 kubeconfig 업데이트 중..."
+
+          # 현재 AWS 자격 증명 확인
+          echo "🔍 현재 AWS 자격 증명 확인..."
+          aws sts get-caller-identity
+
+          # EKS 클러스터 이름 조회 (여러 방법 시도)
+          echo "🔍 EKS 클러스터 조회 중..."
+
+          # 방법 1: 클러스터 목록에서 첫 번째 조회
+          EKS_CLUSTER_NAME=$(aws eks list-clusters --query 'clusters[0]' --output text 2>/dev/null || echo "")
+
+          # 방법 2: 특정 이름으로 조회
+          if [ -z "$EKS_CLUSTER_NAME" ] || [ "$EKS_CLUSTER_NAME" == "None" ]; then
+            EKS_CLUSTER_NAME="${{ env.EKS_CLUSTER_NAME }}"
+            echo "기본 클러스터 이름 사용: $EKS_CLUSTER_NAME"
+          fi
+
+          # 클러스터 존재 확인
+          if ! aws eks describe-cluster --name "$EKS_CLUSTER_NAME" --region ${{ secrets.AWS_REGION }} >/dev/null 2>&1; then
+            echo "❌ EKS 클러스터 '$EKS_CLUSTER_NAME'를 찾을 수 없습니다."
+            echo "사용 가능한 클러스터 목록:"
+            aws eks list-clusters --region ${{ secrets.AWS_REGION }}
+            exit 1
+          fi
+
+          echo "✅ EKS 클러스터: $EKS_CLUSTER_NAME"
+          echo "EKS_CLUSTER_NAME=$EKS_CLUSTER_NAME" >> $GITHUB_ENV
+
+          # 클러스터 상태 확인
+          CLUSTER_STATUS=$(aws eks describe-cluster --name "$EKS_CLUSTER_NAME" --region ${{ secrets.AWS_REGION }} --query 'cluster.status' --output text)
+          echo "클러스터 상태: $CLUSTER_STATUS"
+
+          if [ "$CLUSTER_STATUS" != "ACTIVE" ]; then
+            echo "❌ 클러스터가 ACTIVE 상태가 아닙니다: $CLUSTER_STATUS"
+            exit 1
+          fi
+
+          # IAM 역할과 OIDC 공급자 정보 확인
+          echo "🔍 IAM 역할과 OIDC 설정 확인 중..."
+          CLUSTER_OIDC_ISSUER=$(aws eks describe-cluster --name "$EKS_CLUSTER_NAME" --region ${{ secrets.AWS_REGION }} --query 'cluster.identity.oidc.issuer' --output text)
+          echo "OIDC 발행자: $CLUSTER_OIDC_ISSUER"
+          
+          # kubeconfig 업데이트 (현재 OIDC 자격 증명 사용)
+          echo "🔧 kubeconfig 업데이트 중 (OIDC 자격 증명 사용)..."
+          aws eks update-kubeconfig \
+            --region ${{ secrets.AWS_REGION }} \
+            --name "$EKS_CLUSTER_NAME" \
+            --verbose
+
+          # AWS 자격 증명 확인
+          echo "🔍 현재 AWS 자격 증명 확인..."
+          aws sts get-caller-identity
+          
+          # 클러스터 연결 테스트 (자세한 오류 정보 포함)
+          echo "🔍 클러스터 연결 테스트..."
+          if ! kubectl cluster-info --request-timeout=30s; then
+            echo "❌ kubectl cluster-info 실패. 추가 진단 정보:"
+            
+            # kubectl 설정 확인
+            echo "kubectl 설정 확인:"
+            kubectl config view --minify
+            
+            # 현재 컨텍스트 확인
+            echo "현재 컨텍스트:"
+            kubectl config current-context
+            
+            # 클러스터 엔드포인트 직접 테스트
+            CLUSTER_ENDPOINT=$(aws eks describe-cluster --name "$EKS_CLUSTER_NAME" --region ${{ secrets.AWS_REGION }} --query 'cluster.endpoint' --output text)
+            echo "클러스터 엔드포인트: $CLUSTER_ENDPOINT"
+            
+            # kubeconfig 다시 설정
+            echo "🔧 kubeconfig 재설정..."
+            aws eks update-kubeconfig --region ${{ secrets.AWS_REGION }} --name "$EKS_CLUSTER_NAME" --verbose
+            
+            # aws-auth ConfigMap 상태 확인
+            echo "🔍 aws-auth ConfigMap 확인..."
+            kubectl get configmap aws-auth -n kube-system -o yaml || echo "aws-auth ConfigMap 없음"
+            
+            exit 1
+          fi
+
+          # aws-auth ConfigMap 상태 확인 (정보성)
+          echo "🔍 aws-auth ConfigMap 상태 확인..."
+          kubectl get configmap aws-auth -n kube-system -o yaml | head -20 || echo "aws-auth ConfigMap 조회 실패"
+          
+          echo "✅ EKS 클러스터 연결 성공"
+
+          echo "🔍 노드 상태 확인..."
+          kubectl get nodes --show-labels
+
+      # ===============================================
+      # 퍼블릭 서브넷 정보 조회
+      # ===============================================
+    - name: Get Subnet Information
+      run: |
+          echo "🔍 서브넷 정보 조회 중..."
+          
+          # 퍼블릭 서브넷 조회 (ALB용) - 여러 방법으로 시도
+          echo "🔍 퍼블릭 서브넷 조회 중..."
+          
+          # EKS 클러스터의 VPC 조회
+          echo "🔍 EKS 클러스터 VPC 조회 중..."
+          EKS_VPC_ID=$(aws eks describe-cluster --name ${{ env.EKS_CLUSTER_NAME }} --query "cluster.resourcesVpcConfig.vpcId" --output text 2>/dev/null || echo "")
+          
+          if [ -z "$EKS_VPC_ID" ] || [ "$EKS_VPC_ID" == "None" ]; then
+            echo "⚠️ EKS 클러스터 VPC를 찾을 수 없습니다. 전체 계정에서 검색합니다."
+            VPC_FILTER=""
+          else
+            echo "✅ EKS VPC 발견: $EKS_VPC_ID"
+            VPC_FILTER="Name=vpc-id,Values=$EKS_VPC_ID"
+          fi
+          
+          # 방법 1: Type=public 태그로 조회 (EKS VPC 내에서, 최대 3개)
+          if [ -n "$VPC_FILTER" ]; then
+            PUBLIC_SUBNETS=$(aws ec2 describe-subnets \
+              --filters "Name=tag:Type,Values=public" "Name=state,Values=available" "$VPC_FILTER" \
+              --query "Subnets[:3].SubnetId" \
+              --output text | tr '\t' ',' | sed 's/,$//')
+          else
+            PUBLIC_SUBNETS=$(aws ec2 describe-subnets \
+              --filters "Name=tag:Type,Values=public" "Name=state,Values=available" \
+              --query "Subnets[:3].SubnetId" \
+              --output text | tr '\t' ',' | sed 's/,$//')
+          fi
+          
+          if [ -z "$PUBLIC_SUBNETS" ]; then
+            # 방법 2: kubernetes.io/role/elb 태그로 조회 (EKS VPC 내에서)
+            echo "⚠️ Type=public 태그로 찾지 못함. kubernetes.io/role/elb 태그로 재시도..."
+            if [ -n "$VPC_FILTER" ]; then
+              PUBLIC_SUBNETS=$(aws ec2 describe-subnets \
+                --filters "Name=tag:kubernetes.io/role/elb,Values=1" "Name=state,Values=available" "$VPC_FILTER" \
+                --query "Subnets[:3].SubnetId" \
+                --output text | tr '\t' ',' | sed 's/,$//')
+            else
+              PUBLIC_SUBNETS=$(aws ec2 describe-subnets \
+                --filters "Name=tag:kubernetes.io/role/elb,Values=1" "Name=state,Values=available" \
+                --query "Subnets[:3].SubnetId" \
+                --output text | tr '\t' ',' | sed 's/,$//')
+            fi
+          fi
+          
+          if [ -z "$PUBLIC_SUBNETS" ]; then
+            # 방법 3: 라우트 테이블을 통해 인터넷 게이트웨이가 있는 서브넷 찾기 (EKS VPC 내에서)
+            echo "⚠️ 태그로 찾지 못함. 라우트 테이블 분석으로 퍼블릭 서브넷 찾는 중..."
+            if [ -n "$EKS_VPC_ID" ]; then
+              PUBLIC_SUBNETS_RAW=$(aws ec2 describe-route-tables \
+                --filters "Name=route.gateway-id,Values=igw-*" "Name=vpc-id,Values=$EKS_VPC_ID" \
+                --query "RouteTables[*].Associations[?SubnetId!=null].SubnetId" \
+                --output text | tr '\n' ' ' | tr '\t' ' ')
+            else
+              PUBLIC_SUBNETS_RAW=$(aws ec2 describe-route-tables \
+                --filters "Name=route.gateway-id,Values=igw-*" \
+                --query "RouteTables[*].Associations[?SubnetId!=null].SubnetId" \
+                --output text | tr '\n' ' ' | tr '\t' ' ')
+            fi
+            
+            # 가용영역별로 서브넷 선택 (중복 AZ 방지)
+            if [ -n "$PUBLIC_SUBNETS_RAW" ]; then
+              UNIQUE_AZ_SUBNETS=""
+              USED_AZS=""
+              for subnet in $PUBLIC_SUBNETS_RAW; do
+                AZ=$(aws ec2 describe-subnets --subnet-ids $subnet --query 'Subnets[0].AvailabilityZone' --output text 2>/dev/null)
+                if [ -n "$AZ" ] && [[ ! "$USED_AZS" == *"$AZ"* ]]; then
+                  UNIQUE_AZ_SUBNETS="$UNIQUE_AZ_SUBNETS $subnet"
+                  USED_AZS="$USED_AZS $AZ"
+                  # 최대 3개 AZ까지만
+                  if [ $(echo $UNIQUE_AZ_SUBNETS | wc -w) -ge 3 ]; then
+                    break
+                  fi
+                fi
+              done
+              PUBLIC_SUBNETS=$(echo "$UNIQUE_AZ_SUBNETS" | tr ' ' ',' | sed 's/^,//' | sed 's/,$//')
+            fi
+          fi
+          
+          if [ -z "$PUBLIC_SUBNETS" ]; then
+            # 방법 4: 모든 퍼블릭 서브넷에서 가용영역별로 1개씩 선택
+            echo "⚠️ 태그 기반 조회 실패. 모든 퍼블릭 서브넷에서 가용영역별로 선택 중..."
+            
+            # EKS VPC 내에서 우선 조회, 실패하면 전체 계정에서 조회
+            VPC_FILTER_OPTION=""
+            if [ -n "$EKS_VPC_ID" ] && [ "$EKS_VPC_ID" != "None" ]; then
+              VPC_FILTER_OPTION="Name=vpc-id,Values=$EKS_VPC_ID"
+              echo "🔍 EKS VPC($EKS_VPC_ID) 내에서 퍼블릭 서브넷 조회 중..."
+            else
+              echo "🔍 전체 계정에서 퍼블릭 서브넷 조회 중..."
+            fi
+            
+            # 모든 서브넷 조회 (State=available만)
+            ALL_SUBNETS=$(aws ec2 describe-subnets \
+              --filters "Name=state,Values=available" $VPC_FILTER_OPTION \
+              --query "Subnets[*].[SubnetId,AvailabilityZone,MapPublicIpOnLaunch]" \
+              --output text)
+            
+            if [ -n "$ALL_SUBNETS" ]; then
+              UNIQUE_AZ_SUBNETS=""
+              USED_AZS=""
+              
+              echo "$ALL_SUBNETS" | while read subnet_id az map_public; do
+                # MapPublicIpOnLaunch가 true인 서브넷만 (퍼블릭 서브넷)
+                if [ "$map_public" = "True" ] && [[ ! "$USED_AZS" == *"$az"* ]]; then
+                  UNIQUE_AZ_SUBNETS="$UNIQUE_AZ_SUBNETS $subnet_id"
+                  USED_AZS="$USED_AZS $az"
+                  echo "✅ 가용영역 $az에서 서브넷 $subnet_id 선택"
+                  
+                  # 최대 3개 AZ까지만
+                  if [ $(echo $UNIQUE_AZ_SUBNETS | wc -w) -ge 3 ]; then
+                    break
+                  fi
+                fi
+              done
+              
+              if [ -n "$UNIQUE_AZ_SUBNETS" ]; then
+                PUBLIC_SUBNETS=$(echo "$UNIQUE_AZ_SUBNETS" | tr ' ' ',' | sed 's/^,//' | sed 's/,$//')
+                echo "✅ 자동 선택된 퍼블릭 서브넷: $PUBLIC_SUBNETS"
+              fi
+            fi
+            
+            if [ -z "$PUBLIC_SUBNETS" ]; then
+              echo "❌ 사용 가능한 퍼블릭 서브넷을 찾을 수 없습니다."
+              echo "🔍 VPC에 퍼블릭 서브넷이 생성되어 있는지 확인하세요."
+              echo "🔍 또는 서브넷에 다음 태그를 추가하세요:"
+              echo "   - Type=public 또는"
+              echo "   - kubernetes.io/role/elb=1"
+              exit 1
+            fi
+          else
+            echo "✅ 퍼블릭 서브넷 발견: $PUBLIC_SUBNETS"
+          fi
+          
+          # 환경변수 안전하게 저장
+          if [ -n "$PUBLIC_SUBNETS" ] && [ "$PUBLIC_SUBNETS" != "null" ]; then
+            # 서브넷 개수 확인
+            SUBNET_COUNT=$(echo "$PUBLIC_SUBNETS" | tr ',' '\n' | wc -l)
+            echo "📊 선택된 서브넷 개수: $SUBNET_COUNT개"
+            echo "📋 서브넷 목록: $PUBLIC_SUBNETS"
+            
+            # GITHUB_ENV에 안전하게 저장
+            echo "PUBLIC_SUBNETS=$PUBLIC_SUBNETS" >> "$GITHUB_ENV"
+          else
+            echo "❌ 유효한 퍼블릭 서브넷을 찾을 수 없습니다."
+            exit 1
+          fi
+
+      # ===============================================
+      # Kubernetes 매니페스트 파일 생성
+      # ===============================================
+    - name: Generate Kubernetes manifests
+      run: |
+          echo "📝 Kubernetes 매니페스트 생성 중..."
+
+          # Namespace 생성
+          echo "apiVersion: v1" > namespace.yaml
+          echo "kind: Namespace" >> namespace.yaml
+          echo "metadata:" >> namespace.yaml
+          echo "  name: ${{ env.PROJECT_NAME }}" >> namespace.yaml
+          
+          # ConfigMap 생성 (환경변수)
+          echo "apiVersion: v1" > configmap.yaml
+          echo "kind: ConfigMap" >> configmap.yaml
+          echo "metadata:" >> configmap.yaml
+          echo "  name: ${{ env.PROJECT_NAME }}-config" >> configmap.yaml
+          echo "  namespace: ${{ env.PROJECT_NAME }}" >> configmap.yaml
+          echo "data:" >> configmap.yaml
+          echo '  DB_HOST: "${{ env.RDS_ENDPOINT }}"' >> configmap.yaml
+          echo "  DB_PORT: \"${{ env.DB_PORT }}\"" >> configmap.yaml
+          echo "  DB_NAME: \"${{ env.DB_NAME }}\"" >> configmap.yaml
+          echo "  DB_USER: \"${{ env.DB_USER }}\"" >> configmap.yaml
+          echo '  AWS_REGION: "${{ secrets.AWS_REGION }}"' >> configmap.yaml
+          echo "  AWS_S3_BUCKET: \"${{ env.S3_BUCKET_NAME }}\"" >> configmap.yaml
+          echo '  AWS_S3_REGION: "${{ secrets.AWS_REGION }}"' >> configmap.yaml
+          echo '  STORAGE_TYPE: "s3"' >> configmap.yaml
+          echo '  APP_ENV: "production"' >> configmap.yaml
+          echo '  APP_DEBUG: "false"' >> configmap.yaml
+          echo '  PHP_MEMORY_LIMIT: "256M"' >> configmap.yaml
+          echo '  PHP_MAX_EXECUTION_TIME: "30"' >> configmap.yaml
+          echo '  PHP_TIMEZONE: "Asia/Seoul"' >> configmap.yaml
+          echo '  UPLOAD_MAX_SIZE: "10M"' >> configmap.yaml
+          echo '  SESSION_LIFETIME: "7200"' >> configmap.yaml
+        
+          # Secret 생성 (DB 패스워드)
+          echo "apiVersion: v1" > secret.yaml
+          echo "kind: Secret" >> secret.yaml
+          echo "metadata:" >> secret.yaml
+          echo "  name: ${{ env.PROJECT_NAME }}-secret" >> secret.yaml
+          echo "  namespace: ${{ env.PROJECT_NAME }}" >> secret.yaml
+          echo "type: Opaque" >> secret.yaml
+          echo "data:" >> secret.yaml
+          echo "  DB_PASSWORD: $(echo -n '${{ secrets.DB_PASSWORD }}' | base64)" >> secret.yaml
+          
+          # Deployment 생성
+          echo "apiVersion: apps/v1" > deployment.yaml
+          echo "kind: Deployment" >> deployment.yaml
+          echo "metadata:" >> deployment.yaml
+          echo "  name: ${{ env.PROJECT_NAME }}-app" >> deployment.yaml
+          echo "  namespace: ${{ env.PROJECT_NAME }}" >> deployment.yaml
+          echo "  labels:" >> deployment.yaml
+          echo "    app: ${{ env.PROJECT_NAME }}-app" >> deployment.yaml
+          echo "spec:" >> deployment.yaml
+          echo "  replicas: 2" >> deployment.yaml
+          echo "  selector:" >> deployment.yaml
+          echo "    matchLabels:" >> deployment.yaml
+          echo "      app: ${{ env.PROJECT_NAME }}-app" >> deployment.yaml
+          echo "  template:" >> deployment.yaml
+          echo "    metadata:" >> deployment.yaml
+          echo "      labels:" >> deployment.yaml
+          echo "        app: ${{ env.PROJECT_NAME }}-app" >> deployment.yaml
+          echo "    spec:" >> deployment.yaml
+          echo "      serviceAccountName: ${{ env.PROJECT_NAME }}-service-account" >> deployment.yaml
+          echo "      containers:" >> deployment.yaml
+          echo "      - name: php-app" >> deployment.yaml
+          echo "        image: ${{ steps.build-image.outputs.image }}" >> deployment.yaml
+          echo "        ports:" >> deployment.yaml
+          echo "        - containerPort: 80" >> deployment.yaml  
+          echo "          name: http" >> deployment.yaml
+          echo "        envFrom:" >> deployment.yaml
+          echo "        - configMapRef:" >> deployment.yaml
+          echo "            name: ${{ env.PROJECT_NAME }}-config" >> deployment.yaml
+          echo "        - secretRef:" >> deployment.yaml
+          echo "            name: ${{ env.PROJECT_NAME }}-secret" >> deployment.yaml
+          echo "        livenessProbe:" >> deployment.yaml
+          echo "          httpGet:" >> deployment.yaml
+          echo "            path: ${{ env.HEALTH_CHECK_PATH }}" >> deployment.yaml
+          echo "            port: 80" >> deployment.yaml
+          echo "          initialDelaySeconds: 60" >> deployment.yaml
+          echo "          periodSeconds: 30" >> deployment.yaml
+          echo "          timeoutSeconds: 10" >> deployment.yaml
+          echo "        readinessProbe:" >> deployment.yaml
+          echo "          httpGet:" >> deployment.yaml
+          echo "            path: ${{ env.HEALTH_CHECK_PATH }}" >> deployment.yaml
+          echo "            port: 80" >> deployment.yaml
+          echo "          initialDelaySeconds: 30" >> deployment.yaml
+          echo "          periodSeconds: 10" >> deployment.yaml
+          echo "          timeoutSeconds: 5" >> deployment.yaml
+          echo "        resources:" >> deployment.yaml
+          echo "          requests:" >> deployment.yaml
+          echo '            memory: "256Mi"' >> deployment.yaml
+          echo '            cpu: "250m"' >> deployment.yaml
+          echo "          limits:" >> deployment.yaml
+          echo '            memory: "512Mi"' >> deployment.yaml
+          echo '            cpu: "500m"' >> deployment.yaml
+          echo "        securityContext:" >> deployment.yaml
+          echo "          runAsNonRoot: false" >> deployment.yaml
+          echo "          allowPrivilegeEscalation: false" >> deployment.yaml
+          echo "          readOnlyRootFilesystem: false" >> deployment.yaml
+
+          # Service 생성 (Ingress 기반이므로 ClusterIP 사용)
+          echo "apiVersion: v1" > service.yaml
+          echo "kind: Service" >> service.yaml
+          echo "metadata:" >> service.yaml
+          echo "  name: ${{ env.PROJECT_NAME }}-service" >> service.yaml
+          echo "  namespace: ${{ env.PROJECT_NAME }}" >> service.yaml
+          echo "  labels:" >> service.yaml
+          echo "    app: ${{ env.PROJECT_NAME }}-app" >> service.yaml
+          echo "spec:" >> service.yaml
+          echo "  type: ClusterIP" >> service.yaml
+          echo "  ports:" >> service.yaml
+          echo "  - port: 80" >> service.yaml
+          echo "    targetPort: 80" >> service.yaml
+          echo "    protocol: TCP" >> service.yaml
+          echo "    name: http" >> service.yaml
+          echo "  selector:" >> service.yaml
+          echo "    app: ${{ env.PROJECT_NAME }}-app" >> service.yaml
+
+          # Ingress 생성 (AWS Load Balancer Controller 사용)
+          echo "apiVersion: networking.k8s.io/v1" > ingress.yaml
+          echo "kind: Ingress" >> ingress.yaml
+          echo "metadata:" >> ingress.yaml
+          echo "  name: ${{ env.PROJECT_NAME }}-ingress" >> ingress.yaml
+          echo "  namespace: ${{ env.PROJECT_NAME }}" >> ingress.yaml
+          echo "  annotations:" >> ingress.yaml
+          echo "    # AWS Application Load Balancer 설정" >> ingress.yaml
+          echo "    alb.ingress.kubernetes.io/scheme: internet-facing" >> ingress.yaml
+          echo "    alb.ingress.kubernetes.io/target-type: ip" >> ingress.yaml
+          echo '    alb.ingress.kubernetes.io/listen-ports: '"'"'[{"HTTP": 80}]'"'"'' >> ingress.yaml
+          echo "    alb.ingress.kubernetes.io/subnets: ${{ env.PUBLIC_SUBNETS }}" >> ingress.yaml
+          echo "    " >> ingress.yaml
+          echo "    # Health Check 설정 (PHP 애플리케이션)" >> ingress.yaml
+          echo "    alb.ingress.kubernetes.io/healthcheck-path: ${{ env.HEALTH_CHECK_PATH }}" >> ingress.yaml
+          echo "    alb.ingress.kubernetes.io/healthcheck-interval-seconds: '30'" >> ingress.yaml
+          echo "    alb.ingress.kubernetes.io/healthcheck-timeout-seconds: '10'" >> ingress.yaml
+          echo "    alb.ingress.kubernetes.io/healthy-threshold-count: '2'" >> ingress.yaml
+          echo "    alb.ingress.kubernetes.io/unhealthy-threshold-count: '3'" >> ingress.yaml
+          echo "    alb.ingress.kubernetes.io/healthcheck-protocol: HTTP" >> ingress.yaml
+          echo "    alb.ingress.kubernetes.io/healthcheck-port: '80'" >> ingress.yaml
+          echo "    " >> ingress.yaml
+          echo "    # Load Balancer 설정" >> ingress.yaml
+          echo "    alb.ingress.kubernetes.io/load-balancer-name: ${{ env.PROJECT_NAME }}-ingress-alb" >> ingress.yaml
+          echo '    alb.ingress.kubernetes.io/target-group-attributes: "stickiness.enabled=false,deregistration_delay.timeout_seconds=60,load_balancing.algorithm.type=round_robin,slow_start.duration_seconds=30"' >> ingress.yaml
+          echo "spec:" >> ingress.yaml
+          echo "  ingressClassName: alb" >> ingress.yaml
+          echo "  rules:" >> ingress.yaml
+          echo "  - http:" >> ingress.yaml
+          echo "      paths:" >> ingress.yaml
+          echo "      - path: /" >> ingress.yaml
+          echo "        pathType: Prefix" >> ingress.yaml
+          echo "        backend:" >> ingress.yaml
+          echo "          service:" >> ingress.yaml
+          echo "            name: ${{ env.PROJECT_NAME }}-service" >> ingress.yaml
+          echo "            port:" >> ingress.yaml
+          echo "              number: 80" >> ingress.yaml
+
+          echo "✅ Ingress 기반 매니페스트 생성 완료"
+
+          # ServiceAccount 생성 (IRSA용)
+          echo "apiVersion: v1" > serviceaccount.yaml
+          echo "kind: ServiceAccount" >> serviceaccount.yaml
+          echo "metadata:" >> serviceaccount.yaml
+          echo "  name: ${{ env.PROJECT_NAME }}-service-account" >> serviceaccount.yaml
+          echo "  namespace: ${{ env.PROJECT_NAME }}" >> serviceaccount.yaml
+          echo "  annotations:" >> serviceaccount.yaml
+          echo "    eks.amazonaws.com/role-arn: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/${{ env.IAM_ROLE_NAME }}" >> serviceaccount.yaml
+
+          echo "✅ 매니페스트 파일 생성 완료"
+
+      # ===============================================
+      # EKS에 애플리케이션 배포 (main 브랜치일 때만)
+      # ===============================================
+    - name: Deploy to EKS
+      if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+      run: |
+          echo "🚀 EKS에 애플리케이션 배포 중..."
+
+          # Namespace 먼저 생성
+          kubectl apply -f namespace.yaml
+
+          # 나머지 리소스 배포
+          kubectl apply -f serviceaccount.yaml
+          kubectl apply -f configmap.yaml
+          kubectl apply -f secret.yaml
+          kubectl apply -f deployment.yaml
+          kubectl apply -f service.yaml
+
+          # Ingress 배포 (AWS Load Balancer Controller로 ALB 생성)
+          echo "🔗 Ingress 리소스 배포 중..."
+          
+          # Ingress 배포 전 사전 검증
+          echo "🔍 Ingress 배포 전 사전 검증..."
+          echo "Namespace 확인:"
+          kubectl get namespace ${{ env.PROJECT_NAME }} || true
+          echo "Service 확인:"
+          kubectl get service ${{ env.PROJECT_NAME }}-service -n ${{ env.PROJECT_NAME }} || true
+          echo "IngressClass 확인:"
+          kubectl get ingressclass alb || true
+          echo "ValidatingWebhookConfiguration 확인:"
+          kubectl get validatingwebhookconfigurations | grep -E "(ingress|elb|load-balancer|aws)" || echo "AWS LB Controller Webhook 없음"
+          
+          # Ingress 매니페스트 내용 확인
+          echo "🔍 Ingress 매니페스트 내용:"
+          cat ingress.yaml
+          
+          # Ingress 배포
+          echo "🚀 Ingress 배포 시작..."
+          if kubectl apply -f ingress.yaml; then
+            echo "✅ Ingress 리소스 생성 성공"
+            
+            # 생성된 Ingress 즉시 확인
+            echo "🔍 생성된 Ingress 상태 확인:"
+            kubectl get ingress ${{ env.PROJECT_NAME }}-ingress -n ${{ env.PROJECT_NAME }} -o yaml || echo "Ingress 조회 실패"
+            
+            # Ingress와 ALB 동기화 상태 체크
+            echo "🔍 Ingress와 ALB 동기화 상태 체크 중..."
+            
+            # Ingress finalizer 상태 확인
+            ingress_finalizers=$(kubectl get ingress ${{ env.PROJECT_NAME }}-ingress -n ${{ env.PROJECT_NAME }} -o jsonpath='{.metadata.finalizers}' 2>/dev/null || echo "")
+            if [[ -z "$ingress_finalizers" ]]; then
+              echo "⚠️ Ingress finalizer가 설정되지 않았습니다. AWS Load Balancer Controller 상태 확인 중..."
+              kubectl describe ingress ${{ env.PROJECT_NAME }}-ingress -n ${{ env.PROJECT_NAME }} | grep -A 10 "Events:" || true
+              
+              # Controller 로그 확인
+              echo "🔍 Controller 로그 확인:"
+              kubectl logs -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller --tail=10 || true
+            else
+              echo "✅ Ingress finalizer 설정됨: $ingress_finalizers"
+            fi
+            
+            # ALB 생성 대기 (총 20분)
+            echo "⏳ AWS Load Balancer Controller에 의한 ALB 생성 대기 중..."
+            echo "ℹ️ ALB 생성 및 프로비저닝에는 5-10분 정도 소요될 수 있습니다."
+            ALB_CREATED=false
+            ALB_PROVISIONING=false
+            for i in {1..40}; do
+              ALB_DNS=$(kubectl get ingress ${{ env.PROJECT_NAME }}-ingress -n ${{ env.PROJECT_NAME }} -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "")
+              
+              if [ -n "$ALB_DNS" ] && [ "$ALB_DNS" != "null" ]; then
+                if [ "$ALB_PROVISIONING" != "true" ]; then
+                  echo "🎯 ALB DNS 주소 할당 완료: $ALB_DNS"
+                  echo "⏳ 이제 ALB 프로비저닝 및 헬스체크 완료를 기다립니다..."
+                  ALB_PROVISIONING=true
+                fi
+                
+                # ALB가 실제로 응답하는지 확인
+                if curl -s --connect-timeout 5 --max-time 10 -o /dev/null -w "%{http_code}" "http://$ALB_DNS${{ env.HEALTH_CHECK_PATH }}" | grep -E "^(200|404)$" >/dev/null; then
+                  echo "✅ ALB 프로비저닝 완료 및 연결 가능: $ALB_DNS"
+                  echo "ALB_HOSTNAME=$ALB_DNS" >> $GITHUB_ENV
+                  echo "DEPLOYMENT_METHOD=Ingress" >> $GITHUB_ENV
+                  ALB_CREATED=true
+                  break
+                else
+                  echo "⏳ ALB는 생성되었지만 아직 프로비저닝 중입니다... ($i/40)"
+                fi
+              else
+                echo "⏳ ALB 생성 대기 중... ($i/40)"
+              fi
+              
+              # 진행 상황 상세 확인 (3번마다)
+              if [ $((i % 3)) -eq 0 ]; then
+                echo "🔍 Ingress 상태 확인 (${i}/40)..."
+                kubectl get ingress ${{ env.PROJECT_NAME }}-ingress -n ${{ env.PROJECT_NAME }} || true
+                
+                # AWS Load Balancer Controller 상태 확인
+                if [ $((i % 6)) -eq 0 ]; then
+                  echo "🔍 AWS Load Balancer Controller Pod 상태:"
+                  kubectl get pods -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller || true
+                  
+                  # 최근 이벤트 확인
+                  echo "🔍 최근 Ingress 이벤트:"
+                  kubectl describe ingress ${{ env.PROJECT_NAME }}-ingress -n ${{ env.PROJECT_NAME }} | grep -A 10 "Events:" || true
+                fi
+              fi
+              
+              sleep 30
+            done
+            
+            if [ "$ALB_CREATED" != "true" ]; then
+              echo "⚠️ ALB 생성/프로비저닝 시간 초과 (20분) - 상세 진단 실행"
+              
+              # 현재 시간 로깅
+              echo "🕐 진단 시작 시간: $(date)"
+              
+              echo "🔍 최종 Ingress 상태:"
+              kubectl get ingress ${{ env.PROJECT_NAME }}-ingress -n ${{ env.PROJECT_NAME }} -o yaml || true
+              kubectl describe ingress ${{ env.PROJECT_NAME }}-ingress -n ${{ env.PROJECT_NAME }} || true
+              
+              echo "🔍 Ingress finalizer 상태 재확인:"
+              final_finalizers=$(kubectl get ingress ${{ env.PROJECT_NAME }}-ingress -n ${{ env.PROJECT_NAME }} -o jsonpath='{.metadata.finalizers}' 2>/dev/null || echo "NONE")
+              echo "Finalizers: $final_finalizers"
+              
+              if [[ "$final_finalizers" == *"ingress.k8s.aws/resources"* ]]; then
+                echo "✅ Finalizer가 설정되어 있음 - Controller가 인식했음"
+              else
+                echo "❌ Finalizer가 없음 - Controller가 Ingress를 처리하지 못했음"
+              fi
+              
+              echo "🔍 AWS Load Balancer Controller 상세 상태:"
+              kubectl get pods -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller -o wide || true
+              kubectl describe pods -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller || true
+              
+              echo "🔍 AWS Load Balancer Controller 최근 로그 (실패 관련):"
+              kubectl logs -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller --tail=200 | grep -i "error\|fail\|denied\|invalid\|timeout" || echo "관련 에러 로그 없음"
+              
+              echo "🔍 AWS Load Balancer Controller 전체 로그 (최근 50줄):"
+              kubectl logs -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller --tail=50 || true
+              
+              echo "🔍 IngressClass 확인:"
+              kubectl get ingressclass || true
+              kubectl describe ingressclass alb || true
+              
+              echo "🔍 ValidatingWebhookConfiguration 확인:"
+              webhook_status=$(kubectl get validatingwebhookconfigurations | grep -E "(ingress|elb|load-balancer|aws)" || echo "웹훅 없음")
+              echo "Webhook 상태: $webhook_status"
+              
+              if [[ "$webhook_status" == "웹훅 없음" ]]; then
+                echo "❌ ValidatingWebhookConfiguration이 없습니다!"
+                echo "🔧 이는 Ingress 생성이 차단되지 않았지만 Controller가 처리하지 못했음을 의미합니다."
+              else
+                echo "✅ ValidatingWebhookConfiguration이 있습니다."
+              fi
+              
+              echo "🔍 모든 네임스페이스의 Ingress 확인:"
+              kubectl get ingress -A || true
+              
+              echo "🔍 AWS CLI를 통한 ALB 확인:"
+              aws elbv2 describe-load-balancers --query "LoadBalancers[?contains(LoadBalancerName, \`${{ env.PROJECT_NAME }}\`) || contains(LoadBalancerName, \`k8s\`)].{Name:LoadBalancerName,State:State.Code,DNS:DNSName}" --output table 2>/dev/null || echo "AWS CLI로 ALB 조회 실패"
+              
+              # ALB가 생성되었지만 프로비저닝이 완료되지 않은 경우 환경변수 설정
+              if [ -n "$ALB_DNS" ] && [ "$ALB_DNS" != "null" ]; then
+                echo "DEPLOYMENT_METHOD=Ingress-Provisioning" >> $GITHUB_ENV
+                echo "ALB_HOSTNAME=$ALB_DNS" >> $GITHUB_ENV
+                echo "ℹ️ ALB가 생성되었지만 프로비저닝이 완료되지 않았습니다: $ALB_DNS"
+                echo "ℹ️ 수동으로 ALB 상태를 확인하거나 잠시 후 다시 시도해주세요."
+              else
+                echo "DEPLOYMENT_METHOD=Ingress-Failed" >> $GITHUB_ENV
+                echo "ALB_HOSTNAME=failed" >> $GITHUB_ENV
+                echo "❌ ALB 생성 자체가 실패했습니다."
+              fi
+            fi
+            
+          else
+            echo "❌ Ingress 배포 실패"
+            echo "🔍 진단 정보:"
+            kubectl get pods -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller
+            kubectl logs -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller --tail=50 || true
+            kubectl get validatingwebhookconfigurations | grep -E "(ingress|aws-load-balancer)" || echo "웹훅 없음"
+            kubectl get ingressclass || true
+            exit 1
+          fi
+          
+          echo "✅ Ingress 기반 ALB 배포 완료"
+
+          echo "⏳ 배포 완료 대기 중..."
+          echo "🔍 배포 전 상태 확인:"
+          kubectl get pods -n ${{ env.PROJECT_NAME }} -o wide || true
+          kubectl describe deployment ${{ env.PROJECT_NAME }}-app -n ${{ env.PROJECT_NAME }} || true
+          
+          # 더 긴 timeout으로 배포 대기
+          if ! kubectl rollout status deployment/${{ env.PROJECT_NAME }}-app -n ${{ env.PROJECT_NAME }} --timeout=600s; then
+            echo "❌ 배포 timeout 발생. 상세 진단 시작..."
+            
+            echo "🔍 Pod 상태 확인:"
+            kubectl get pods -n ${{ env.PROJECT_NAME }} -o wide
+            
+            echo "🔍 실패한 Pod 로그 확인:"
+            failed_pods=$(kubectl get pods -n ${{ env.PROJECT_NAME }} --field-selector=status.phase!=Running --no-headers -o custom-columns=":metadata.name" 2>/dev/null || echo "")
+            if [ -n "$failed_pods" ]; then
+              for pod in $failed_pods; do
+                echo "=== Pod $pod 로그 ==="
+                kubectl logs $pod -n ${{ env.PROJECT_NAME }} --tail=50 || true
+                echo "=== Pod $pod 상세 정보 ==="
+                kubectl describe pod $pod -n ${{ env.PROJECT_NAME }} || true
+              done
+            fi
+            
+            echo "🔍 Deployment 이벤트 확인:"
+            kubectl describe deployment ${{ env.PROJECT_NAME }}-app -n ${{ env.PROJECT_NAME }}
+            
+            echo "🔍 ConfigMap 및 Secret 확인:"
+            kubectl get configmap -n ${{ env.PROJECT_NAME }} || true
+            kubectl get secret -n ${{ env.PROJECT_NAME }} || true
+            
+            exit 1
+          fi
+
+      # ===============================================
+      # 배포 결과 확인
+      # ===============================================
+    - name: Verify Deployment
+      if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+      run: |
+          echo "🔍 배포 상태 확인 중..."
+          echo "네임스페이스: ${{ env.PROJECT_NAME }}"
+          echo "앱 라벨: ${{ env.PROJECT_NAME }}-app"
+
+          # 네임스페이스 존재 확인
+          if ! kubectl get namespace ${{ env.PROJECT_NAME }} >/dev/null 2>&1; then
+            echo "❌ 네임스페이스 '${{ env.PROJECT_NAME }}'가 존재하지 않습니다."
+            kubectl get namespaces
+            exit 1
+          fi
+
+          # 기본 리소스 상태 확인
+          echo "📋 Pod 상태:"
+          kubectl get pods -n ${{ env.PROJECT_NAME }} -o wide || echo "Pod를 찾을 수 없습니다."
+
+          echo "📋 Service 상태:"
+          kubectl get services -n ${{ env.PROJECT_NAME }} || echo "Service를 찾을 수 없습니다."
+
+          echo "📋 Deployment 상태:"
+          kubectl get deployments -n ${{ env.PROJECT_NAME }} || echo "Deployment를 찾을 수 없습니다."
+
+          echo "📋 Ingress 상태:"
+          kubectl get ingress -n ${{ env.PROJECT_NAME }} || echo "Ingress를 찾을 수 없습니다."
+
+          # Deployment 존재 확인 후 대기
+          if kubectl get deployment ${{ env.PROJECT_NAME }}-app -n ${{ env.PROJECT_NAME }} >/dev/null 2>&1; then
+            echo "⏳ Pod 준비 상태 대기 중..."
+            kubectl wait --for=condition=ready pod -l app=${{ env.PROJECT_NAME }}-app -n ${{ env.PROJECT_NAME }} --timeout=300s || echo "Pod 준비 상태 대기 시간 초과"
+            
+            echo "📝 Deployment 상세 정보:"
+            kubectl describe deployment ${{ env.PROJECT_NAME }}-app -n ${{ env.PROJECT_NAME }}
+            
+          else
+            echo "❌ Deployment '${{ env.PROJECT_NAME }}-app'를 찾을 수 없습니다."
+            echo "사용 가능한 Deployment 목록:"
+            kubectl get deployments -n ${{ env.PROJECT_NAME }}
+            exit 1
+          fi
+
+      # ===============================================
+      # 배포 방법별 접속 URL 제공
+      # ===============================================
+    - name: Get Application URL
+      if: success() && ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+      run: |
+          echo "🔗 애플리케이션 접속 정보 확인 중..."
+          echo "배포 방법: ${DEPLOYMENT_METHOD:-Unknown}"
+
+          if [ "${DEPLOYMENT_METHOD:-}" = "Ingress" ]; then
+            echo "✅ Ingress ALB 배포 완료!"
+            echo "🌐 애플리케이션 접속 URL: http://${ALB_HOSTNAME:-확인불가}"
+            
+            # 실제 연결 테스트
+            echo "🔍 ALB 연결 테스트 중..."
+            if curl -s --connect-timeout 10 --max-time 15 -o /dev/null -w "%{http_code}" "http://${ALB_HOSTNAME}${{ env.HEALTH_CHECK_PATH }}" | grep -E "^(200|404)$" >/dev/null; then
+              echo "✅ ALB 연결 성공 - 애플리케이션 접속 가능"
+            else
+              echo "⚠️ ALB 연결 실패 - 헬스체크 문제일 수 있습니다"
+              echo "🔍 타겟 그룹 헬스 상태 확인을 권장합니다."
+            fi
+            
+            echo "🔍 Ingress 상태:"
+            kubectl describe ingress ${{ env.PROJECT_NAME }}-ingress -n ${{ env.PROJECT_NAME }}
+            
+          elif [ "${DEPLOYMENT_METHOD:-}" = "Ingress-Provisioning" ]; then
+            echo "⚠️ ALB가 생성되었지만 아직 프로비저닝 중입니다"
+            echo "🌐 ALB DNS: http://${ALB_HOSTNAME:-확인불가}"
+            echo "ℹ️ 5-10분 후 접속이 가능할 예정입니다."
+            
+            echo "🔍 현재 ALB 연결 상태:"
+            curl -s --connect-timeout 5 --max-time 10 -w "HTTP 상태코드: %{http_code}, 응답시간: %{time_total}s\n" "http://${ALB_HOSTNAME}${{ env.HEALTH_CHECK_PATH }}" || echo "아직 연결 불가"
+            
+            echo "🔍 Ingress 상태:"
+            kubectl describe ingress ${{ env.PROJECT_NAME }}-ingress -n ${{ env.PROJECT_NAME }}
+            
+          elif [ "${DEPLOYMENT_METHOD:-}" = "Ingress-Failed" ]; then
+            echo "❌ ALB 생성에 실패했습니다"
+            echo "🔍 현재 Ingress 상태:"
+            kubectl get ingress ${{ env.PROJECT_NAME }}-ingress -n ${{ env.PROJECT_NAME }}
+            kubectl describe ingress ${{ env.PROJECT_NAME }}-ingress -n ${{ env.PROJECT_NAME }}
+            
+            echo "🔧 문제 해결을 위한 체크리스트:"
+            echo "1. AWS Load Balancer Controller가 정상 실행 중인지 확인"
+            echo "2. IngressClass 'alb'가 존재하는지 확인"
+            echo "3. AWS IAM 권한이 올바른지 확인"
+            echo "4. 서브넷 태그가 올바른지 확인"
+            
+          elif [ "${DEPLOYMENT_METHOD:-}" = "Ingress-Pending" ]; then
+            echo "⚠️ ALB 생성이 아직 시작되지 않았습니다"
+            echo "🔍 현재 Ingress 상태:"
+            kubectl get ingress ${{ env.PROJECT_NAME }}-ingress -n ${{ env.PROJECT_NAME }}
+            kubectl describe ingress ${{ env.PROJECT_NAME }}-ingress -n ${{ env.PROJECT_NAME }}
+            
+            echo "잠시 후 ALB가 생성되면 다음 명령어로 URL을 확인하세요:"
+            echo "kubectl get ingress ${{ env.PROJECT_NAME }}-ingress -n ${{ env.PROJECT_NAME }}"
+            
+          else
+            echo "❓ 배포 방법을 확인할 수 없습니다."
+            echo "배포 방법: ${DEPLOYMENT_METHOD:-Unknown}"
+            echo "ALB 호스트명: ${ALB_HOSTNAME:-Unknown}"
+            echo "사용 가능한 서비스 확인:"
+            kubectl get services -n ${{ env.PROJECT_NAME }}
+            echo "사용 가능한 Ingress 확인:"
+            kubectl get ingress -n ${{ env.PROJECT_NAME }}
+          fi
+
+          # 공통 디버깅 정보
+          echo ""
+          echo "📋 전체 리소스 상태:"
+          kubectl get all -n ${{ env.PROJECT_NAME }}
+
+      # ===============================================
+      # 배포 완료 알림
+      # ===============================================
+    - name: Application Deployment Notification
+      if: success() && ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+      run: |
+          echo "🎉 PHP 애플리케이션 배포 완료!"
+          echo "프로젝트: ${{ env.PROJECT_NAME }}"
+          echo "이미지: ${{ steps.build-image.outputs.image }}"
+          echo "클러스터: ${{ env.EKS_CLUSTER_NAME }}"
+          echo "네임스페이스: ${{ env.PROJECT_NAME }}"
+          echo "데이터베이스: ${{ env.RDS_ENDPOINT }}"
+          echo "커밋: ${{ github.sha }}"
+          echo "배포 시간: $(date)"
+
+          # 배포된 서비스 정보 출력
+          echo "📋 배포된 리소스 목록:"
+          kubectl get all -n ${{ env.PROJECT_NAME }} || echo "리소스 조회 실패"
+
+      # ===============================================
+      # 배포 실패 시 롤백 및 정리
+      # ===============================================
+    - name: Rollback on failure
+      if: ${{ failure() && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+      run: |
+          echo "❌ 배포 실패 - 롤백 및 정리 시작..."
+          
+          # Ingress finalizer 체크 및 정리 함수 재정의
+          check_and_clean_ingress() {
+            local namespace="$1"
+            local ingress_name="$2"
+            
+            echo "🔍 실패한 Ingress '$ingress_name' (네임스페이스: $namespace) 정리 중..."
+            
+            # Ingress 존재 확인
+            if ! kubectl get ingress "$ingress_name" -n "$namespace" >/dev/null 2>&1; then
+              echo "ℹ️ Ingress '$ingress_name'이 존재하지 않습니다."
+              return 0
+            fi
+            
+            # finalizer 확인
+            local finalizers=$(kubectl get ingress "$ingress_name" -n "$namespace" -o jsonpath='{.metadata.finalizers}' 2>/dev/null || echo "")
+            
+            if [[ "$finalizers" == *"ingress.k8s.aws/resources"* ]]; then
+              echo "⚠️ Ingress '$ingress_name'에 finalizer가 남아있습니다. 강제 정리 시작..."
+              
+              # 자신의 앱 네임스페이스 내의 Ingress만 정상 삭제 시도
+              echo "🗑️ 자기 앱의 Ingress만 정상 삭제 시도..."
+              kubectl delete ingress "$ingress_name" -n "$namespace" --timeout=30s || echo "Ingress 삭제 실패"
+            else
+              echo "✅ Ingress '$ingress_name'에 문제되는 finalizer 없음"
+              # 정상 삭제 시도
+              kubectl delete ingress "$ingress_name" -n "$namespace" --timeout=30s || echo "Ingress 삭제 실패"
+            fi
+          }
+          
+          # 실패한 Ingress 정리
+          if kubectl get ingress -n ${{ env.PROJECT_NAME }} >/dev/null 2>&1; then
+            echo "🗑️ 실패한 Ingress 리소스 정리 중..."
+            check_and_clean_ingress "${{ env.PROJECT_NAME }}" "${{ env.PROJECT_NAME }}-ingress"
+          fi
+          
+          # 애플리케이션 롤백
+          echo "🔄 애플리케이션 롤백 중..."
+          kubectl rollout undo deployment/${{ env.PROJECT_NAME }}-app -n ${{ env.PROJECT_NAME }} || true
+          kubectl rollout status deployment/${{ env.PROJECT_NAME }}-app -n ${{ env.PROJECT_NAME }} --timeout=300s || true
+        
+          echo "✅ 롤백 및 정리 완료"

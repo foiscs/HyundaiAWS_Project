@@ -122,6 +122,17 @@
                         </div>
                     </div>
                 </div>
+                
+                <!-- 진단 안내문구 -->
+                <div class="diagnosis-guide">
+                    <div class="guide-content">
+                        <div class="guide-icon">💡</div>
+                        <div class="guide-text">
+                            <strong>진단 안정성 안내:</strong> AWS API 응답 지연으로 인해 일부 진단 항목이 간헐적으로 실패할 수 있습니다. 
+                            실패 시 개별 재진단 또는 전체 재진단을 수행해주세요. (타임아웃: 60초)
+                        </div>
+                    </div>
+                </div>
             </div>
             
             <!-- 진단 결과 대시보드 -->
@@ -695,7 +706,7 @@
                                                 </label>
                                             `).join('')}
                                         </div>
-                                        <button class="btn btn-warning btn-fix" onclick="executeFix('${itemCode}', '${option.id}')">
+                                        <button class="btn btn-warning btn-fix" onclick="executeFix('${itemCode}', '${option.id}', this)">
                                             <span>⚡</span> ${option.title} 실행
                                         </button>
                                     </div>
@@ -791,7 +802,7 @@
 
 
                 // 자동 조치 실행
-                async function executeFix(itemCode, optionId) {
+                async function executeFix(itemCode, optionId, buttonElement) {
                     if (!selectedAccountId) {
                         alert('계정을 선택해주세요.');
                         return;
@@ -819,13 +830,21 @@
                         return;
                     }
 
-                    try {
-                        // 실행 버튼 비활성화
-                        const executeButton = event.target;
-                        const originalText = executeButton.innerHTML;
+                    // 버튼이 전달되지 않았다면 찾기
+                    let executeButton = buttonElement;
+                    if (!executeButton) {
+                        executeButton = document.querySelector(`button[onclick*="executeFix('${itemCode}', '${optionId}')"]`);
+                    }
+
+                    // 버튼 상태 저장
+                    let originalText = '';
+                    if (executeButton) {
+                        originalText = executeButton.innerHTML;
                         executeButton.disabled = true;
                         executeButton.innerHTML = '<span>⏳</span> 실행 중...';
+                    }
 
+                    try {
                         const response = await fetch('/diagnosis/api/fix', {
                             method: 'POST',
                             headers: {
@@ -868,17 +887,14 @@
                             alert(`❌ 자동 조치 실패\n${result.message}`);
                         }
 
-                        // 버튼 복구
-                        executeButton.disabled = false;
-                        executeButton.innerHTML = originalText;
-
                     } catch (error) {
                         alert(`자동 조치 실행 중 오류가 발생했습니다: ${error.message}`);
-
+                    } finally {
                         // 버튼 복구
-                        const executeButton = event.target;
-                        executeButton.disabled = false;
-                        executeButton.innerHTML = originalText;
+                        if (executeButton && originalText) {
+                            executeButton.disabled = false;
+                            executeButton.innerHTML = originalText;
+                        }
                     }
                 }
 
@@ -962,41 +978,14 @@
                     document.getElementById('currentStatusText').textContent = message;
                 }
 
-                // 디버그 로그 추가
+                // 로그 기능 제거됨 - 빈 함수로 유지 (기존 호출 코드 호환성)
                 function addDebugLog(message) {
-                    const logContainer = document.getElementById('debugLogList');
-                    const logEntry = document.createElement('div');
-
-                    // 메시지 타입에 따라 색상 결정
-                    let colorClass = 'text-gray-300'; // 기본
-                    if (message.includes('✅') || message.includes('완료')) {
-                        colorClass = 'text-green-400';
-                    } else if (message.includes('❌') || message.includes('실패')) {
-                        colorClass = 'text-red-400';
-                    } else if (message.includes('📋') || message.includes('시작')) {
-                        colorClass = 'text-blue-400';
-                    } else if (message.includes('🎉')) {
-                        colorClass = 'text-yellow-400';
-                    }
-
-                    logEntry.className = `${colorClass} font-mono mb-1 text-xs`;
-                    logEntry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
-                    logContainer.appendChild(logEntry);
-
-                    // 스크롤을 맨 아래로
-                    logContainer.scrollTop = logContainer.scrollHeight;
-
-                    // 로그 항목이 너무 많으면 오래된 것 제거
-                    const logEntries = logContainer.children;
-                    if (logEntries.length > 20) {
-                        logContainer.removeChild(logEntries[0]);
-                    }
+                    // 로그 기능 제거됨
                 }
 
-                // 디버그 로그 초기화
+                // 로그 기능 제거됨 - 빈 함수로 유지 (기존 호출 코드 호환성)
                 function clearDebugLog() {
-                    const logContainer = document.getElementById('debugLogList');
-                    logContainer.innerHTML = '<div class="text-green-400 font-mono">진단 시작 준비 중...</div>';
+                    // 로그 기능 제거됨
                 }
 
                 // 항목 상태 설정

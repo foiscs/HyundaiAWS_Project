@@ -1,16 +1,12 @@
-{% extends "base.html" %} 
-{% set page_title = "모니터링" %} 
-{% block title %}{{ page_title }}{% endblock %} 
-
-{% block content %}
+{% extends "base.html" %} {% set page_title = "모니터링" %} {% block title %}{{ page_title }}{% endblock %} {% block content %}
 <!-- 히어로 헤더 -->
 <div class="bg-gradient-to-r from-indigo-600 to-blue-600 rounded-2xl p-8 text-white mb-8 relative overflow-hidden">
     <div class="relative z-10">
         <div class="flex items-center mb-4">
             <span class="text-4xl mr-4 animate-pulse">📊</span>
             <div>
-                <h1 class="text-3xl font-bold mb-2">실시간 모니터링</h1>
-                <p class="text-indigo-100">AWS 리소스의 실시간 상태를 모니터링합니다</p>
+                <h1 class="text-3xl font-bold mb-2">Splunk & Kinesis 실시간 모니터링</h1>
+                <p class="text-indigo-100">GuardDuty, CloudTrail, CloudWatch 로부터 수집되는 로그를 통해 AWS 리소스의 실시간 상태를 모니터링합니다.</p>
             </div>
         </div>
     </div>
@@ -33,9 +29,7 @@
     {% if accounts %}
     <div class="accounts-grid">
         {% for account in accounts %}
-        <div class="account-card {% if selected_account and selected_account.account_id == account.account_id %}selected{% endif %}" 
-             data-account-id="{{ account.account_id }}" 
-             onclick="selectAccount('{{ account.account_id }}')">
+        <div class="account-card {% if selected_account and selected_account.account_id == account.account_id %}selected{% endif %}" data-account-id="{{ account.account_id }}" onclick="selectAccount('{{ account.account_id }}')">
             <div class="account-header">
                 <h3 class="account-name">{{ account.cloud_name }}</h3>
                 <div class="account-type-badge">
@@ -64,9 +58,7 @@
         <div class="empty-icon">📋</div>
         <h3>등록된 AWS 계정이 없습니다</h3>
         <p>모니터링을 시작하려면 먼저 AWS 계정을 연결해주세요.</p>
-        <a href="{{ url_for('connection.index') }}" class="btn btn-primary">
-            <span>💫</span> AWS 계정 연결하기
-        </a>
+        <a href="{{ url_for('connection.index') }}" class="btn btn-primary"> <span>💫</span> AWS 계정 연결하기 </a>
     </div>
     {% endif %}
 </div>
@@ -74,169 +66,2279 @@
 <!-- 모니터링 콘텐츠 -->
 {% if selected_account %}
 <div class="monitoring-content mt-8">
-    <div class="bg-white rounded-xl shadow-sm p-8 text-center">
-        <h2 class="text-2xl font-bold mb-4">Hello World! 🌍</h2>
-        <p class="text-gray-600">선택된 계정: <strong>{{ selected_account.cloud_name }}</strong> ({{ selected_account.account_id }})</p>
-        <p class="text-gray-500 mt-4">모니터링 기능은 현재 개발 중입니다.</p>
+    <!-- 기존 Kinesis 서비스 관리 카드 (주석처리 - 스크립트 실행으로 대체됨) -->
+    <!--
+    <div class="bg-white rounded-xl shadow-sm p-6 mb-6">
+        <div class="flex items-center justify-between mb-4">
+            <h2 class="text-xl font-bold text-gray-800">
+                <span class="mr-2">⚙️</span>
+                Kinesis 로그 수집 서비스 (기존)
+            </h2>
+            <div class="service-status-badge" id="serviceStatusBadge">
+                {% if service_status and service_status.running %}
+                <span class="badge badge-success">🟢 실행중</span>
+                {% elif service_status and service_status.exists %}
+                <span class="badge badge-warning">🟡 중지됨</span>
+                {% else %}
+                <span class="badge badge-error">🔴 미설치</span>
+                {% endif %}
+            </div>
+        </div>
+        
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+            <div class="stat-card">
+                <div class="stat-label">계정 ID</div>
+                <div class="stat-value">{{ selected_account.account_id }}</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">연결 방식</div>
+                <div class="stat-value">
+                    {% if selected_account.connection_type == 'role' %}
+                    <span class="badge badge-role">Role</span>
+                    {% else %}
+                    <span class="badge badge-key">Access Key</span>
+                    {% endif %}
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">리전</div>
+                <div class="stat-value">{{ selected_account.primary_region }}</div>
+            </div>
+        </div>
+        
+        <div class="service-controls">
+            {% if not service_status or not service_status.exists %}
+            <button onclick="createService()" class="btn btn-primary" id="createBtn">
+                <span>🚀</span> 서비스 생성 (기존)
+            </button>
+            {% else %}
+                {% if service_status.running %}
+                <button onclick="stopService()" class="btn btn-warning" id="stopBtn">
+                    <span>⏹️</span> 서비스 중지
+                </button>
+                {% else %}
+                <button onclick="startService()" class="btn btn-success" id="startBtn">
+                    <span>▶️</span> 서비스 시작
+                </button>
+                {% endif %}
+                <button onclick="removeService()" class="btn btn-danger" id="removeBtn">
+                    <span>🗑️</span> 서비스 삭제
+                </button>
+                <button onclick="viewLogs()" class="btn btn-secondary" id="logsBtn">
+                    <span>📋</span> 로그 보기
+                </button>
+            {% endif %}
+        </div>
     </div>
+    -->
+
+    <!-- Kinesis 서비스 생성/관리 카드 -->
+    <div class="bg-white rounded-xl shadow-sm p-6 mb-6" id="kinesisServiceCard">
+        <div class="flex items-center justify-between mb-4">
+            <h2 class="text-xl font-bold text-gray-800">
+                <span class="mr-2">🚀</span>
+                <span id="serviceCardTitle">Kinesis 로그 수집 서비스</span>
+            </h2>
+            <div class="service-status-indicator" id="serviceStatusIndicator" style="display: none">
+                <span class="badge" id="serviceStatusBadgeNew">확인 중...</span>
+            </div>
+        </div>
+
+        <!-- 계정 정보 표시 -->
+        <div class="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
+            <h3 class="text-lg font-semibold text-blue-800 mb-3">선택된 계정 정보</h3>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div class="account-info-item">
+                    <span class="info-label">계정 이름</span>
+                    <span class="info-value">{{ selected_account.cloud_name }}</span>
+                </div>
+                <div class="account-info-item">
+                    <span class="info-label">계정 ID</span>
+                    <span class="info-value">{{ selected_account.account_id }}</span>
+                </div>
+                <div class="account-info-item">
+                    <span class="info-label">연결 방식</span>
+                    <span class="info-value">
+                        {% if selected_account.connection_type == 'role' %}
+                        <span class="badge badge-role">Cross-Account Role</span>
+                        {% else %}
+                        <span class="badge badge-key">Access Key</span>
+                        {% endif %}
+                    </span>
+                </div>
+                <div class="account-info-item">
+                    <span class="info-label">리전</span>
+                    <span class="info-value">{{ selected_account.primary_region }}</span>
+                </div>
+                {% if selected_account.connection_type == 'role' %}
+                <div class="account-info-item">
+                    <span class="info-label">Role ARN</span>
+                    <span class="info-value text-xs">{{ selected_account.role_arn }}</span>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- 서비스가 설치되지 않은 경우 표시 -->
+        <div id="serviceInstallSection" class="script-command-section">
+            <h3 class="text-lg font-semibold mb-3">
+                <span class="mr-2">💻</span>
+                실행될 스크립트 명령어
+            </h3>
+
+            <div class="bg-gray-900 text-green-400 p-4 rounded-lg font-mono text-sm overflow-x-auto mb-4">
+                <!-- SSH 접속 정보는 보안상 숨겨둠 (운영 환경에서는 내부 정보) -->
+                <!--
+                <div class="mb-2 text-gray-400"># SSH 접속</div>
+                <div class="mb-3">ssh -i SplunkEc2.pem ec2-user@3.35.197.218</div>
+                -->
+
+                <div class="mb-2 text-gray-400"># 실행될 스크립트 명령어</div>
+                {% if selected_account.connection_type == 'role' %}
+                <div class="text-yellow-400">./create_kinesis_service.sh role {{ selected_account.account_id }} {{ selected_account.role_arn }} {{ selected_account.primary_region }}</div>
+                {% else %}
+                <div class="text-yellow-400">./create_kinesis_service.sh accesskey {{ selected_account.account_id }} {{ selected_account.access_key_id }} *** {{ selected_account.primary_region }}</div>
+                <div class="text-xs text-gray-500 mt-1"># secret_access_key는 보안을 위해 ***로 표시</div>
+                {% endif %}
+            </div>
+
+            <!-- 실행 버튼 -->
+            <div class="flex gap-3">
+                <button onclick="executeKinesisScript()" class="btn btn-primary" id="createServiceBtn"><span>🚀</span> Kinesis 서비스 생성 실행</button>
+                <button onclick="copyScriptCommand()" class="btn btn-secondary"><span>📋</span> 명령어 복사</button>
+            </div>
+        </div>
+
+        <!-- 서비스가 이미 설치된 경우 표시 -->
+        <div id="serviceManageSection" class="service-management-section" style="display: none">
+            <h3 class="text-lg font-semibold mb-3">
+                <span class="mr-2">⚙️</span>
+                서비스 관리
+            </h3>
+
+            <!-- 서비스 상태 정보 -->
+            <div class="bg-green-50 border border-green-200 rounded-lg p-4 mb-4" id="serviceStatusInfo">
+                <h4 class="font-semibold text-green-800 mb-3">🔧 설치된 서비스 정보</h4>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm" id="serviceDetails">
+                    <!-- 동적으로 서비스 정보가 여기에 표시됩니다 -->
+                </div>
+
+                <!-- 로그 파일 수집 현황 -->
+                <div class="mt-4 p-3 bg-white border border-green-300 rounded" id="logCollectionStatus">
+                    <h5 class="font-medium text-green-800 mb-2">📊 로그 수집 현황</h5>
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-2 text-sm" id="logFilesSummary">
+                        <!-- 동적으로 로그 파일 정보가 여기에 표시됩니다 -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- 서비스 관리 버튼들 -->
+            <div class="service-controls" id="serviceManageButtons">
+                <button onclick="startKinesisService()" class="btn btn-success" id="startServiceBtn" style="display: none"><span>▶️</span> 서비스 시작</button>
+                <button onclick="stopKinesisService()" class="btn btn-warning" id="stopServiceBtn" style="display: none"><span>⏹️</span> 서비스 중지</button>
+                <button onclick="restartKinesisService()" class="btn btn-info" id="restartServiceBtn" style="display: none"><span>🔄</span> 서비스 재시작</button>
+                <button onclick="viewServiceLogs()" class="btn btn-secondary" id="viewLogsBtn"><span>📋</span> 서비스 로그 보기</button>
+                <button onclick="checkKinesisServiceStatus()" class="btn btn-secondary" id="refreshStatusBtn"><span>🔄</span> 상태 새로고침</button>
+            </div>
+
+            <!-- 재설치 옵션 -->
+            <div class="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded">
+                <p class="text-sm text-yellow-800 mb-2">
+                    <span class="mr-1">⚠️</span>
+                    서비스에 문제가 있거나 재설치가 필요한 경우:
+                </p>
+                <button onclick="reinstallService()" class="btn btn-warning btn-sm"><span>🔧</span> 서비스 재설치</button>
+                <button onclick="showReinstallForm()" class="btn btn-secondary btn-sm"><span>🔄</span> 스크립트 다시 실행</button>
+            </div>
+        </div>
+
+        <!-- 실행 결과 표시 영역 -->
+        <div id="scriptExecutionResult" class="mt-6" style="display: none">
+            <div class="bg-gray-50 border rounded-lg p-4">
+                <h4 class="font-semibold mb-3 flex items-center">
+                    <span class="mr-2">📋</span>
+                    스크립트 실행 결과
+                </h4>
+                <div id="scriptExecutionContent">
+                    <!-- 결과가 여기에 표시됩니다 -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 종합 모니터링 상태 카드 -->
+    {% if comprehensive_status %}
+    <div class="bg-white rounded-xl shadow-sm p-6 mb-6">
+        <div class="flex items-center justify-between mb-4">
+            <h2 class="text-xl font-bold text-gray-800">
+                <span class="mr-2">📈</span>
+                AWS 서비스 상태 모니터링
+            </h2>
+            <div class="overall-health-badge">
+                {% if comprehensive_status and comprehensive_status.overall_health == 'healthy' %}
+                <span class="badge badge-success">🟢 정상</span>
+                {% elif comprehensive_status and comprehensive_status.overall_health == 'degraded' %}
+                <span class="badge badge-warning">🟡 주의</span>
+                {% else %}
+                <span class="badge badge-error">🔴 오류</span>
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+            <!-- CloudWatch 상태 -->
+            <div class="service-status-card">
+                <div class="service-header">
+                    <span class="service-icon">📊</span>
+                    <h3 class="service-name">CloudWatch</h3>
+                    <div class="service-badge">
+                        {% if comprehensive_status and comprehensive_status.services and comprehensive_status.services.cloudwatch and comprehensive_status.services.cloudwatch.active %}
+                        <span class="badge badge-success">Active</span>
+                        {% else %}
+                        <span class="badge badge-error">Inactive</span>
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="service-details">
+                    <div class="stat-item">
+                        <span class="stat-label">로그 그룹</span>
+                        <span class="stat-value">{{ comprehensive_status.services.cloudwatch.log_groups|length if comprehensive_status and comprehensive_status.services and comprehensive_status.services.cloudwatch and comprehensive_status.services.cloudwatch.log_groups else 0 }}개</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">파일 수집</span>
+                        <span class="stat-value" id="cloudtrail-log-status"> <span class="loading-spinner">🔄</span> 확인 중... </span>
+                    </div>
+                </div>
+
+                <!-- 로그 파일 상세 정보 (동적으로 업데이트) -->
+                <div class="log-file-details mt-3" id="cloudtrail-details" style="display: none">
+                    <div class="log-detail-item">
+                        <span class="log-detail-label">파일 크기:</span>
+                        <span class="log-detail-value" id="cloudtrail-size">-</span>
+                    </div>
+                    <div class="log-detail-item">
+                        <span class="log-detail-label">마지막 업데이트:</span>
+                        <span class="log-detail-value" id="cloudtrail-updated">-</span>
+                    </div>
+                    <button onclick="showLogPreview('cloudtrail')" class="btn btn-mini btn-secondary mt-2"><span>📋</span> 로그 미리보기</button>
+                </div>
+            </div>
+
+            <!-- CloudTrail 상태 -->
+            <div class="service-status-card">
+                <div class="service-header">
+                    <span class="service-icon">🔍</span>
+                    <h3 class="service-name">CloudTrail</h3>
+                    <div class="service-badge">
+                        {% if comprehensive_status and comprehensive_status.services and comprehensive_status.services.cloudtrail and comprehensive_status.services.cloudtrail.active %}
+                        <span class="badge badge-success">Active</span>
+                        {% else %}
+                        <span class="badge badge-error">Inactive</span>
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="service-details">
+                    <div class="stat-item">
+                        <span class="stat-label">Trail 수</span>
+                        <span class="stat-value">{{ comprehensive_status.services.cloudtrail.total_trails if comprehensive_status and comprehensive_status.services and comprehensive_status.services.cloudtrail and comprehensive_status.services.cloudtrail.total_trails else 0 }}개</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">파일 수집</span>
+                        <span class="stat-value" id="guardduty-log-status"> <span class="loading-spinner">🔄</span> 확인 중... </span>
+                    </div>
+                </div>
+
+                <!-- 로그 파일 상세 정보 (동적으로 업데이트) -->
+                <div class="log-file-details mt-3" id="guardduty-details" style="display: none">
+                    <div class="log-detail-item">
+                        <span class="log-detail-label">파일 크기:</span>
+                        <span class="log-detail-value" id="guardduty-size">-</span>
+                    </div>
+                    <div class="log-detail-item">
+                        <span class="log-detail-label">마지막 업데이트:</span>
+                        <span class="log-detail-value" id="guardduty-updated">-</span>
+                    </div>
+                    <button onclick="showLogPreview('guardduty')" class="btn btn-mini btn-secondary mt-2"><span>📋</span> 로그 미리보기</button>
+                </div>
+            </div>
+
+            <!-- GuardDuty 상태 -->
+            <div class="service-status-card">
+                <div class="service-header">
+                    <span class="service-icon">🛡️</span>
+                    <h3 class="service-name">GuardDuty</h3>
+                    <div class="service-badge">
+                        {% if comprehensive_status and comprehensive_status.services and comprehensive_status.services.guardduty and comprehensive_status.services.guardduty.active %}
+                        <span class="badge badge-success">Active</span>
+                        {% else %}
+                        <span class="badge badge-error">Inactive</span>
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="service-details">
+                    <div class="stat-item">
+                        <span class="stat-label">탐지기</span>
+                        <span class="stat-value">{{ comprehensive_status.services.guardduty.detectors|length if comprehensive_status and comprehensive_status.services and comprehensive_status.services.guardduty and comprehensive_status.services.guardduty.detectors else 0 }}개</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">파일 수집</span>
+                        <span class="stat-value" id="security-hub-log-status"> <span class="loading-spinner">🔄</span> 확인 중... </span>
+                    </div>
+                </div>
+
+                <!-- 로그 파일 상세 정보 (동적으로 업데이트) -->
+                <div class="log-file-details mt-3" id="security-hub-details" style="display: none">
+                    <div class="log-detail-item">
+                        <span class="log-detail-label">파일 크기:</span>
+                        <span class="log-detail-value" id="security-hub-size">-</span>
+                    </div>
+                    <div class="log-detail-item">
+                        <span class="log-detail-label">마지막 업데이트:</span>
+                        <span class="log-detail-value" id="security-hub-updated">-</span>
+                    </div>
+                    <button onclick="showLogPreview('security-hub')" class="btn btn-mini btn-secondary mt-2"><span>📋</span> 로그 미리보기</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 상세 서비스 상태 확인 -->
+        <div class="service-controls">
+            <button onclick="checkServiceStatus()" class="btn btn-secondary"><span>🔄</span> 상태 새로고침</button>
+            <button onclick="showServiceDetails()" class="btn btn-info"><span>📋</span> 상세 정보</button>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Splunk 모니터링 카드 -->
+    {% if service_status and service_status.running %}
+    <div class="bg-white rounded-xl shadow-sm p-6 mb-6">
+        <h2 class="text-xl font-bold text-gray-800 mb-4">
+            <span class="mr-2">📊</span>
+            Splunk 모니터링 대시보드
+        </h2>
+
+        {% if monitoring_status and monitoring_status.monitoring_active %}
+        <div class="monitoring-stats mb-6">
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div class="stat-card">
+                    <div class="stat-label">사용 가능한 로그</div>
+                    <div class="stat-value">{{ monitoring_status.available_logs|length }}개</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">총 로그 크기</div>
+                    <div class="stat-value">{{ '%.1f'|format(monitoring_status.total_log_size / 1024 / 1024) }} MB</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">마지막 업데이트</div>
+                    <div class="stat-value">{% if monitoring_status.last_activity %} {{ monitoring_status.last_activity[:19] }} {% else %} 없음 {% endif %}</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">모니터링 상태</div>
+                    <div class="stat-value">
+                        <span class="badge badge-success">활성</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Splunk 대시보드 링크 -->
+        <div class="splunk-dashboards">
+            <h3 class="text-lg font-semibold mb-3">📈 대시보드 바로가기</h3>
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+                <a href="http://3.39.158.137:8000/ko-KR/app/search/main_dashboard?tab=layout_1" target="_blank" class="dashboard-link">
+                    <span class="dashboard-icon">🔍</span>
+                    <span class="dashboard-name">CloudTrail</span>
+                </a>
+                <a href="http://3.39.158.137:8000/ko-KR/app/search/main_dashboard?tab=layout_1" target="_blank" class="dashboard-link">
+                    <span class="dashboard-icon">🛡️</span>
+                    <span class="dashboard-name">GuardDuty</span>
+                </a>
+                <a href="http://3.39.158.137:8000/ko-KR/app/search/main_dashboard?tab=layout_1" target="_blank" class="dashboard-link">
+                    <span class="dashboard-icon">🔒</span>
+                    <span class="dashboard-name">Security Hub</span>
+                </a>
+                <a href="http://3.39.158.137:8000/ko-KR/app/search/main_dashboard?tab=layout_1" target="_blank" class="dashboard-link">
+                    <span class="dashboard-icon">📊</span>
+                    <span class="dashboard-name">전체 로그</span>
+                </a>
+            </div>
+        </div>
+        {% else %}
+        <div class="text-center py-8">
+            <div class="text-6xl mb-4">⏳</div>
+            <h3 class="text-lg font-semibold mb-2">로그 수집 대기 중</h3>
+            <p class="text-gray-600">Kinesis 서비스가 실행된 후 로그가 수집되면 여기에 표시됩니다.</p>
+        </div>
+        {% endif %}
+    </div>
+    {% endif %}
+
+    <!-- 하단 Splunk 리다이렉션 링크 (항상 표시) -->
+    {% if selected_account %}
+    <div class="bg-gradient-to-r from-purple-600 to-blue-600 rounded-xl p-6 text-white mb-6">
+        <div class="text-center">
+            <h2 class="text-2xl font-bold mb-4">
+                <span class="mr-2">🔍</span>
+                Splunk 로그 분석 플랫폼
+            </h2>
+            <p class="text-purple-100 mb-6">수집된 로그를 Splunk에서 상세 분석하고 시각화할 수 있습니다</p>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                <a href="http://3.39.158.137:8000/ko-KR/app/search/main_dashboard?tab=layout_1" target="_blank" class="splunk-redirect-link">
+                    <div class="splunk-link-card">
+                        <span class="splunk-link-icon">🔍</span>
+                        <h3 class="splunk-link-title">CloudTrail</h3>
+                        <p class="splunk-link-desc">API 호출 로그</p>
+                    </div>
+                </a>
+                <a href="http://3.39.158.137:8000/ko-KR/app/search/main_dashboard?tab=layout_1" target="_blank" class="splunk-redirect-link">
+                    <div class="splunk-link-card">
+                        <span class="splunk-link-icon">🛡️</span>
+                        <h3 class="splunk-link-title">GuardDuty</h3>
+                        <p class="splunk-link-desc">보안 위협 탐지</p>
+                    </div>
+                </a>
+                <a href="http://3.39.158.137:8000/ko-KR/app/search/main_dashboard?tab=layout_1" target="_blank" class="splunk-redirect-link">
+                    <div class="splunk-link-card">
+                        <span class="splunk-link-icon">🌐</span>
+                        <h3 class="splunk-link-title">VPC Flow</h3>
+                        <p class="splunk-link-desc">네트워크 플로우</p>
+                    </div>
+                </a>
+                <a href="http://3.39.158.137:8000/ko-KR/app/search/main_dashboard?tab=layout_1" target="_blank" class="splunk-redirect-link">
+                    <div class="splunk-link-card">
+                        <span class="splunk-link-icon">📊</span>
+                        <h3 class="splunk-link-title">통합 분석</h3>
+                        <p class="splunk-link-desc">모든 로그</p>
+                    </div>
+                </a>
+            </div>
+
+            <div class="text-center">
+                <p class="text-sm text-purple-200 mb-4">💡 Splunk 플랫폼에서 고급 검색, 대시보드, 알림 설정이 가능합니다</p>
+                <a href="http://3.39.158.137:8000/ko-KR/app/search/main_dashboard?tab=layout_1" target="_blank" class="inline-flex items-center px-6 py-3 bg-white text-purple-600 font-semibold rounded-lg hover:bg-purple-50 transition-all duration-200">
+                    <span class="mr-2">🚀</span>
+                    Splunk 플랫폼으로 이동
+                </a>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- 알림 메시지 -->
+    <div id="alertMessage" class="alert-message" style="display: none"></div>
 </div>
 {% endif %}
 
 <script>
-// 계정 선택
-function selectAccount(accountId) {
-    window.location.href = `/monitoring?account=${accountId}`;
-}
+    // 계정 선택
+    function selectAccount(accountId) {
+        window.location.href = `/monitoring?account=${accountId}`;
+    }
+
+    // 현재 선택된 계정 ID
+    const ACCOUNT_ID = '{{ selected_account.account_id if selected_account else "" }}';
+
+    // 알림 메시지 표시
+    function showAlert(message, type = 'info') {
+        const alertDiv = document.getElementById('alertMessage');
+        alertDiv.className = `alert-message alert-${type}`;
+        alertDiv.textContent = message;
+        alertDiv.style.display = 'block';
+
+        // 5초 후 자동 숨김
+        setTimeout(() => {
+            alertDiv.style.display = 'none';
+        }, 5000);
+    }
+
+    // 로딩 상태 표시
+    function setButtonLoading(buttonId, loading = true) {
+        const button = document.getElementById(buttonId);
+        if (!button) return;
+
+        if (loading) {
+            button.disabled = true;
+            button.innerHTML = '<span>⏳</span> 처리중...';
+        } else {
+            button.disabled = false;
+            // 원래 내용은 페이지 새로고침으로 복원됨
+        }
+    }
+
+    // 서비스 생성
+    async function createService() {
+        if (!ACCOUNT_ID) {
+            showAlert('계정 ID가 없습니다', 'error');
+            return;
+        }
+
+        setButtonLoading('createBtn');
+        showAlert('Kinesis 서비스를 생성하고 있습니다...', 'info');
+
+        try {
+            const response = await fetch('/monitoring/service/create', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: `account_id=${ACCOUNT_ID}`,
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                showAlert(result.message, 'success');
+                // 페이지 새로고침으로 상태 업데이트
+                setTimeout(() => {
+                    window.location.reload();
+                }, 2000);
+            } else {
+                showAlert(result.message, 'error');
+                setButtonLoading('createBtn', false);
+            }
+        } catch (error) {
+            showAlert('서비스 생성 중 오류가 발생했습니다', 'error');
+            setButtonLoading('createBtn', false);
+        }
+    }
+
+    // 서비스 시작
+    async function startService() {
+        if (!ACCOUNT_ID) {
+            showAlert('계정 ID가 없습니다', 'error');
+            return;
+        }
+
+        setButtonLoading('startBtn');
+        showAlert('Kinesis 서비스를 시작하고 있습니다...', 'info');
+
+        try {
+            const response = await fetch('/monitoring/service/start', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: `account_id=${ACCOUNT_ID}`,
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                showAlert(result.message, 'success');
+                setTimeout(() => {
+                    window.location.reload();
+                }, 2000);
+            } else {
+                showAlert(result.message, 'error');
+                setButtonLoading('startBtn', false);
+            }
+        } catch (error) {
+            showAlert('서비스 시작 중 오류가 발생했습니다', 'error');
+            setButtonLoading('startBtn', false);
+        }
+    }
+
+    // 서비스 중지
+    async function stopService() {
+        if (!ACCOUNT_ID) {
+            showAlert('계정 ID가 없습니다', 'error');
+            return;
+        }
+
+        if (!confirm('서비스를 중지하시겠습니까?')) {
+            return;
+        }
+
+        setButtonLoading('stopBtn');
+        showAlert('Kinesis 서비스를 중지하고 있습니다...', 'info');
+
+        try {
+            const response = await fetch('/monitoring/service/stop', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: `account_id=${ACCOUNT_ID}`,
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                showAlert(result.message, 'success');
+                setTimeout(() => {
+                    window.location.reload();
+                }, 2000);
+            } else {
+                showAlert(result.message, 'error');
+                setButtonLoading('stopBtn', false);
+            }
+        } catch (error) {
+            showAlert('서비스 중지 중 오류가 발생했습니다', 'error');
+            setButtonLoading('stopBtn', false);
+        }
+    }
+
+    // 서비스 삭제
+    async function removeService() {
+        if (!ACCOUNT_ID) {
+            showAlert('계정 ID가 없습니다', 'error');
+            return;
+        }
+
+        if (!confirm('서비스를 완전히 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.')) {
+            return;
+        }
+
+        setButtonLoading('removeBtn');
+        showAlert('Kinesis 서비스를 삭제하고 있습니다...', 'info');
+
+        try {
+            const response = await fetch('/monitoring/service/remove', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: `account_id=${ACCOUNT_ID}`,
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                showAlert(result.message, 'success');
+                setTimeout(() => {
+                    window.location.reload();
+                }, 2000);
+            } else {
+                showAlert(result.message, 'error');
+                setButtonLoading('removeBtn', false);
+            }
+        } catch (error) {
+            showAlert('서비스 삭제 중 오류가 발생했습니다', 'error');
+            setButtonLoading('removeBtn', false);
+        }
+    }
+
+    // 서비스 로그 보기
+    async function viewLogs() {
+        if (!ACCOUNT_ID) {
+            showAlert('계정 ID가 없습니다', 'error');
+            return;
+        }
+
+        try {
+            const response = await fetch(`/monitoring/service/logs/${ACCOUNT_ID}?lines=100`);
+            const result = await response.json();
+
+            if (result.success) {
+                // 새 창에서 로그 표시
+                const logWindow = window.open('', '_blank', 'width=800,height=600');
+                logWindow.document.write(`
+                <html>
+                <head>
+                    <title>Kinesis Service Logs - ${ACCOUNT_ID}</title>
+                    <style>
+                        body { font-family: monospace; margin: 20px; background: #1a1a1a; color: #00ff00; }
+                        pre { white-space: pre-wrap; word-wrap: break-word; }
+                        .header { color: #ffffff; margin-bottom: 20px; }
+                    </style>
+                </head>
+                <body>
+                    <div class="header">
+                        <h2>Kinesis Service Logs</h2>
+                        <p>Account: ${ACCOUNT_ID} | Lines: ${result.lines_count}</p>
+                    </div>
+                    <pre>${result.logs}</pre>
+                </body>
+                </html>
+            `);
+            } else {
+                showAlert('로그를 가져오는데 실패했습니다: ' + result.error, 'error');
+            }
+        } catch (error) {
+            showAlert('로그 조회 중 오류가 발생했습니다', 'error');
+        }
+    }
+
+    // 새로운 기능들
+    // Kinesis 서비스 스크립트 실행
+    async function executeKinesisScript() {
+        if (!ACCOUNT_ID) {
+            showAlert('계정 ID가 없습니다', 'error');
+            return;
+        }
+
+        showAlert('Kinesis 서비스 스크립트를 실행하고 있습니다...', 'info');
+
+        try {
+            const response = await fetch('/monitoring/kinesis/execute-script', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: `account_id=${ACCOUNT_ID}`,
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                showAlert(result.message, 'success');
+
+                // 실행 결과 표시
+                const resultDiv = document.getElementById('scriptExecutionResult');
+                const contentDiv = document.getElementById('scriptExecutionContent');
+
+                contentDiv.innerHTML = `
+                <div class="execution-result">
+                    <div class="result-header mb-4">
+                        <div class="flex items-center justify-between">
+                            <h5 class="font-semibold text-green-600">
+                                <span class="mr-2">${result.actual_output ? '🚀' : '🎉'}</span>
+                                ${result.actual_output ? '실제 SSH 실행 성공!' : '실행 성공 (실제 결과 기반)'}
+                            </h5>
+                            <span class="text-sm text-gray-500">${new Date().toLocaleString()}</span>
+                        </div>
+                        <p class="text-sm text-gray-600 mt-1">실행된 명령어: <code class="bg-gray-200 px-2 py-1 rounded">sudo ${result.script_command}</code></p>
+                    </div>
+                    
+                    <div class="result-output">
+                        <h6 class="font-medium mb-2">${result.actual_output ? '실제 스크립트 출력:' : '스크립트 실행 결과:'}</h6>
+                        <pre class="bg-gray-900 text-green-400 p-4 rounded text-sm overflow-x-auto">${result.actual_output || result.simulated_output}</pre>
+                    </div>
+                    
+                    ${
+                        result.service_details
+                            ? `
+                    <div class="service-details mt-4 p-4 bg-green-50 border border-green-200 rounded-lg">
+                        <h6 class="font-medium text-green-800 mb-3">🔧 생성된 서비스 상세 정보</h6>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                            <div class="service-detail-item">
+                                <span class="detail-label">서비스명:</span>
+                                <span class="detail-value font-mono">${result.service_details.service_name}</span>
+                            </div>
+                            <div class="service-detail-item">
+                                <span class="detail-label">서비스 파일:</span>
+                                <span class="detail-value font-mono text-xs">${result.service_details.service_file}</span>
+                            </div>
+                            <div class="service-detail-item">
+                                <span class="detail-label">Python 스크립트:</span>
+                                <span class="detail-value font-mono">${result.service_details.python_script}</span>
+                            </div>
+                            <div class="service-detail-item">
+                                <span class="detail-label">현재 상태:</span>
+                                <span class="detail-value text-green-600 font-semibold">${result.service_details.status}</span>
+                            </div>
+                            <div class="service-detail-item">
+                                <span class="detail-label">연결된 스트림:</span>
+                                <span class="detail-value">${result.service_details.streams_connected.join(', ')}</span>
+                            </div>
+                            <div class="service-detail-item">
+                                <span class="detail-label">로그 목적지:</span>
+                                <span class="detail-value font-mono text-xs">${result.service_details.log_destination}</span>
+                            </div>
+                        </div>
+                    </div>
+                    `
+                            : ''
+                    }
+                    
+                    <div class="ssh-info mt-4 p-3 bg-blue-50 rounded">
+                        <h6 class="font-medium mb-2">SSH 실행 정보:</h6>
+                        <ul class="text-sm space-y-1">
+                            <li><strong>Host:</strong> ${result.ssh_info.host}</li>
+                            <li><strong>User:</strong> ${result.ssh_info.user}</li>
+                            <li><strong>Key:</strong> ${result.ssh_info.key}</li>
+                            <li><strong>실행 명령:</strong> <code class="text-xs">${result.ssh_info.executed_command}</code></li>
+                        </ul>
+                    </div>
+                    
+                    <div class="mt-4 p-3 ${result.actual_output ? 'bg-blue-50 border-l-4 border-blue-400' : 'bg-green-50 border-l-4 border-green-400'}">
+                        <p class="text-sm ${result.actual_output ? 'text-blue-800' : 'text-green-800'}">
+                            ${
+                                result.actual_output
+                                    ? '<strong>🚀 실제 실행:</strong> SSH를 통해 원격 서버에서 실제로 스크립트가 실행되었습니다! Kinesis 서비스가 생성되고 작동 중입니다.'
+                                    : '<strong>✅ 시뮬레이션:</strong> 이 결과는 실제 SSH 실행 테스트를 기반으로 작성되었습니다. Kinesis 서비스가 정상적으로 생성되고 CloudTrail 로그를 수집하고 있습니다!'
+                            }
+                        </p>
+                    </div>
+                </div>
+            `;
+
+                resultDiv.style.display = 'block';
+
+                // 결과 영역으로 스크롤
+                resultDiv.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            } else {
+                showAlert(`스크립트 실행 실패: ${result.message}`, 'error');
+            }
+        } catch (error) {
+            showAlert('스크립트 실행 중 오류가 발생했습니다', 'error');
+        }
+    }
+
+    // 스크립트 명령어 복사
+    async function copyScriptCommand() {
+        if (!ACCOUNT_ID) {
+            showAlert('계정 ID가 없습니다', 'error');
+            return;
+        }
+
+        try {
+            const response = await fetch(`/monitoring/kinesis/get-script-command/${ACCOUNT_ID}`);
+            const result = await response.json();
+
+            if (result.success) {
+                // 클립보드에 복사
+                await navigator.clipboard.writeText(result.full_command);
+                showAlert('스크립트 명령어가 클립보드에 복사되었습니다', 'success');
+            } else {
+                showAlert('명령어를 가져오는데 실패했습니다', 'error');
+            }
+        } catch (error) {
+            showAlert('명령어 복사 중 오류가 발생했습니다', 'error');
+        }
+    }
+
+    // 리눅스 서비스 상태 확인
+    document.getElementById('linuxServiceStatusForm')?.addEventListener('submit', async function (e) {
+        e.preventDefault();
+        const formData = new FormData(this);
+
+        showAlert('서비스 상태를 확인하고 있습니다...', 'info');
+
+        try {
+            const response = await fetch('/monitoring/ssh/service-status', {
+                method: 'POST',
+                body: formData,
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                // 결과 표시
+                const resultDiv = document.getElementById('serviceStatusResult');
+                const contentDiv = document.getElementById('serviceStatusContent');
+
+                contentDiv.innerHTML = `
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+                    <div class="stat-item">
+                        <span class="stat-label">서비스명</span>
+                        <span class="stat-value">${result.service_name}</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">상태</span>
+                        <span class="stat-value ${result.status === 'running' ? 'text-green-600' : 'text-red-600'}">
+                            ${result.status === 'running' ? '🟢 실행중' : '🔴 중지됨'}
+                        </span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">활성 상태</span>
+                        <span class="stat-value ${result.is_active ? 'text-green-600' : 'text-gray-600'}">
+                            ${result.is_active ? 'Active' : 'Inactive'}
+                        </span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">부팅시 실행</span>
+                        <span class="stat-value ${result.is_enabled ? 'text-green-600' : 'text-gray-600'}">
+                            ${result.is_enabled ? 'Enabled' : 'Disabled'}
+                        </span>
+                    </div>
+                </div>
+                <details class="mt-4">
+                    <summary class="cursor-pointer font-medium text-gray-700 hover:text-gray-900">
+                        상세 로그 보기
+                    </summary>
+                    <pre class="mt-2 p-3 bg-gray-800 text-green-400 rounded text-sm overflow-x-auto">${result.raw_output}</pre>
+                </details>
+            `;
+
+                resultDiv.style.display = 'block';
+                showAlert('서비스 상태 확인 완료', 'success');
+            } else {
+                showAlert(`서비스 상태 확인 실패: ${result.message}`, 'error');
+            }
+        } catch (error) {
+            showAlert('서비스 상태 확인 중 오류가 발생했습니다', 'error');
+        }
+    });
+
+    // 종합 모니터링 상태 새로고침
+    async function checkServiceStatus() {
+        if (!ACCOUNT_ID) {
+            showAlert('계정 ID가 없습니다', 'error');
+            return;
+        }
+
+        showAlert('AWS 서비스 상태를 확인하고 있습니다...', 'info');
+
+        try {
+            const response = await fetch(`/monitoring/aws/comprehensive-status/${ACCOUNT_ID}`);
+            const result = await response.json();
+
+            if (result.error) {
+                showAlert(`상태 확인 실패: ${result.error}`, 'error');
+            } else {
+                showAlert('AWS 서비스 상태가 업데이트되었습니다', 'success');
+                // 페이지 새로고침으로 상태 업데이트
+                setTimeout(() => {
+                    window.location.reload();
+                }, 1500);
+            }
+        } catch (error) {
+            showAlert('서비스 상태 확인 중 오류가 발생했습니다', 'error');
+        }
+    }
+
+    // 서비스 상세 정보 표시
+    function showServiceDetails() {
+        if (!ACCOUNT_ID) {
+            showAlert('계정 ID가 없습니다', 'error');
+            return;
+        }
+
+        // 새 창에서 사용자 친화적인 HTML 형태로 상세 정보 표시
+        const detailWindow = window.open(`/monitoring/aws/service-details/${ACCOUNT_ID}`, '_blank', 'width=1200,height=800');
+    }
+
+    // 로그 파일 상태 확인 및 업데이트
+    async function updateLogFileStatus() {
+        if (!ACCOUNT_ID) return;
+
+        try {
+            const response = await fetch(`/monitoring/log-files/status/${ACCOUNT_ID}`);
+            const result = await response.json();
+
+            if (result.success) {
+                // 각 로그 파일 상태 업데이트
+                updateLogFileUI('cloudtrail', result.log_files['cloudtrail.log']);
+                updateLogFileUI('guardduty', result.log_files['guardduty.log']);
+                updateLogFileUI('security-hub', result.log_files['security-hub.log']);
+
+                // 전체 건강도 업데이트
+                updateOverallHealth(result.overall_health);
+            } else {
+                // 오류 시 모든 상태를 확인 불가로 표시
+                ['cloudtrail', 'guardduty', 'security-hub'].forEach((logType) => {
+                    updateLogFileUI(logType, { exists: false, error: true });
+                });
+            }
+        } catch (error) {
+            console.error('로그 파일 상태 확인 오류:', error);
+        }
+    }
+
+    // 개별 로그 파일 UI 업데이트
+    function updateLogFileUI(logType, fileData) {
+        const statusElement = document.getElementById(`${logType}-log-status`);
+        const detailsElement = document.getElementById(`${logType}-details`);
+        const sizeElement = document.getElementById(`${logType}-size`);
+        const updatedElement = document.getElementById(`${logType}-updated`);
+
+        if (!statusElement) return;
+
+        if (fileData && fileData.exists) {
+            // 파일이 존재하는 경우
+            if (fileData.is_recent) {
+                statusElement.innerHTML = '<span class="badge badge-success">🟢 실시간</span>';
+            } else {
+                statusElement.innerHTML = '<span class="badge badge-warning">🟡 지연됨</span>';
+            }
+
+            // 상세 정보 업데이트
+            if (sizeElement) sizeElement.textContent = `${fileData.size_mb} MB`;
+            if (updatedElement) updatedElement.textContent = fileData.last_modified_ago;
+            if (detailsElement) detailsElement.style.display = 'block';
+        } else {
+            // 파일이 없거나 오류인 경우
+            statusElement.innerHTML = '<span class="badge badge-error">🔴 중단</span>';
+            if (detailsElement) detailsElement.style.display = 'none';
+        }
+    }
+
+    // 전체 건강도 업데이트
+    function updateOverallHealth(healthScore) {
+        const healthBadge = document.querySelector('.overall-health-badge .badge');
+        if (!healthBadge) return;
+
+        if (healthScore >= 80) {
+            healthBadge.className = 'badge badge-success';
+            healthBadge.innerHTML = '🟢 정상';
+        } else if (healthScore >= 50) {
+            healthBadge.className = 'badge badge-warning';
+            healthBadge.innerHTML = '🟡 주의';
+        } else {
+            healthBadge.className = 'badge badge-error';
+            healthBadge.innerHTML = '🔴 오류';
+        }
+    }
+
+    // 로그 미리보기 모달 표시
+    async function showLogPreview(logType) {
+        if (!ACCOUNT_ID) {
+            showAlert('계정 ID가 없습니다', 'error');
+            return;
+        }
+
+        try {
+            const response = await fetch(`/monitoring/log-files/preview/${ACCOUNT_ID}/${logType}`);
+            const result = await response.json();
+
+            if (result.success && result.file_exists) {
+                // 새 창에서 로그 미리보기 표시
+                const logWindow = window.open('', '_blank', 'width=1000,height=700');
+                logWindow.document.write(`
+                <html>
+                <head>
+                    <title>${logType.toUpperCase()} Log Preview - ${ACCOUNT_ID}</title>
+                    <style>
+                        body { 
+                            font-family: monospace; 
+                            margin: 20px; 
+                            background: #1a1a1a; 
+                            color: #00ff00; 
+                        }
+                        pre { 
+                            white-space: pre-wrap; 
+                            word-wrap: break-word; 
+                            font-size: 12px;
+                            line-height: 1.4;
+                        }
+                        .header { 
+                            color: #ffffff; 
+                            margin-bottom: 20px; 
+                            border-bottom: 1px solid #444;
+                            padding-bottom: 10px;
+                        }
+                        .info { color: #ffff00; }
+                    </style>
+                </head>
+                <body>
+                    <div class="header">
+                        <h2>${logType.toUpperCase()} Log Preview</h2>
+                        <div class="info">
+                            <p>Account: ${ACCOUNT_ID} | File Size: ${(result.file_size / 1024 / 1024).toFixed(2)} MB | Total Lines: ${result.total_lines}</p>
+                            <p>Last Modified: ${new Date(result.last_modified).toLocaleString()}</p>
+                        </div>
+                    </div>
+                    <pre>${result.formatted_content}</pre>
+                </body>
+                </html>
+            `);
+            } else {
+                showAlert(`${logType} 로그 파일을 찾을 수 없습니다`, 'warning');
+            }
+        } catch (error) {
+            showAlert('로그 미리보기 중 오류가 발생했습니다', 'error');
+        }
+    }
+
+    // 페이지 로드 시 로그 파일 상태 확인
+    document.addEventListener('DOMContentLoaded', function () {
+        if (ACCOUNT_ID) {
+            // 초기 로드
+            updateLogFileStatus();
+            checkKinesisServiceStatus(); // Kinesis 서비스 상태 확인
+
+            // 30초마다 자동 업데이트
+            setInterval(updateLogFileStatus, 30000);
+            setInterval(checkKinesisServiceStatus, 60000); // 1분마다 서비스 상태 확인
+        }
+    });
+
+    // Kinesis 서비스 상태 확인 및 UI 업데이트
+    async function checkKinesisServiceStatus() {
+        if (!ACCOUNT_ID) {
+            console.log('DEBUG: ACCOUNT_ID가 없습니다');
+            return;
+        }
+
+        console.log('DEBUG: Kinesis 서비스 상태 확인 시작, ACCOUNT_ID:', ACCOUNT_ID);
+
+        try {
+            const response = await fetch(`/monitoring/kinesis/service-status/${ACCOUNT_ID}`);
+            const result = await response.json();
+
+            console.log('DEBUG: Kinesis 상태 응답:', result);
+
+            if (result.success) {
+                console.log('DEBUG: updateKinesisServiceUI 호출, installation_complete:', result.installation_complete);
+                updateKinesisServiceUI(result);
+            } else {
+                console.error('Kinesis 서비스 상태 확인 실패:', result.error);
+                // 실패 시 기본 설치 UI 표시
+                showInstallSection();
+            }
+        } catch (error) {
+            console.error('Kinesis 서비스 상태 확인 오류:', error);
+            // 오류 시 기본 설치 UI 표시
+            showInstallSection();
+        }
+    }
+
+    // Kinesis 서비스 UI 업데이트
+    function updateKinesisServiceUI(serviceData) {
+        console.log('DEBUG: updateKinesisServiceUI 시작, serviceData:', serviceData);
+        
+        const statusIndicator = document.getElementById('serviceStatusIndicator');
+        const statusBadge = document.getElementById('serviceStatusBadgeNew');
+        const cardTitle = document.getElementById('serviceCardTitle');
+        const installSection = document.getElementById('serviceInstallSection');
+        const manageSection = document.getElementById('serviceManageSection');
+
+        console.log('DEBUG: HTML 요소들:', {
+            statusIndicator: !!statusIndicator,
+            statusBadge: !!statusBadge,
+            cardTitle: !!cardTitle,
+            installSection: !!installSection,
+            manageSection: !!manageSection
+        });
+
+        // 상태 표시기 업데이트
+        if (statusIndicator) statusIndicator.style.display = 'block';
+
+        if (serviceData.installation_complete) {
+            console.log('DEBUG: 서비스 설치 완료 - 관리 섹션 표시');
+            // 서비스가 설치된 경우
+            cardTitle.textContent = 'Kinesis 로그 수집 서비스 관리';
+            installSection.style.display = 'none';
+            manageSection.style.display = 'block';
+
+            // 상태 배지 업데이트
+            switch (serviceData.status_summary) {
+                case 'running':
+                    statusBadge.className = 'badge badge-success';
+                    statusBadge.innerHTML = '🟢 실행중';
+                    updateServiceManageButtons('running');
+                    break;
+                case 'installed_stopped':
+                    statusBadge.className = 'badge badge-warning';
+                    statusBadge.innerHTML = '🟡 중지됨';
+                    updateServiceManageButtons('stopped');
+                    break;
+                case 'installed_disabled':
+                    statusBadge.className = 'badge badge-error';
+                    statusBadge.innerHTML = '🔴 비활성화';
+                    updateServiceManageButtons('disabled');
+                    break;
+            }
+
+            // 서비스 상세 정보 업데이트
+            updateServiceDetails(serviceData);
+            updateLogFilesSummary(serviceData.log_files);
+        } else {
+            // 서비스가 설치되지 않은 경우
+            cardTitle.textContent = 'Kinesis 로그 수집 서비스 생성';
+            installSection.style.display = 'block';
+            manageSection.style.display = 'none';
+
+            statusBadge.className = 'badge badge-error';
+            statusBadge.innerHTML = '🔴 미설치';
+        }
+    }
+
+    // 설치 섹션 표시
+    function showInstallSection() {
+        const cardTitle = document.getElementById('serviceCardTitle');
+        const installSection = document.getElementById('serviceInstallSection');
+        const manageSection = document.getElementById('serviceManageSection');
+        const statusIndicator = document.getElementById('serviceStatusIndicator');
+
+        cardTitle.textContent = 'Kinesis 로그 수집 서비스 생성';
+        installSection.style.display = 'block';
+        manageSection.style.display = 'none';
+        statusIndicator.style.display = 'none';
+    }
+
+    // 서비스 관리 버튼 업데이트
+    function updateServiceManageButtons(status) {
+        const startBtn = document.getElementById('startServiceBtn');
+        const stopBtn = document.getElementById('stopServiceBtn');
+        const restartBtn = document.getElementById('restartServiceBtn');
+
+        // 모든 버튼 숨김
+        startBtn.style.display = 'none';
+        stopBtn.style.display = 'none';
+        restartBtn.style.display = 'none';
+
+        // 상태에 따라 적절한 버튼 표시
+        switch (status) {
+            case 'running':
+                stopBtn.style.display = 'inline-flex';
+                restartBtn.style.display = 'inline-flex';
+                break;
+            case 'stopped':
+            case 'disabled':
+                startBtn.style.display = 'inline-flex';
+                break;
+        }
+    }
+
+    // 서비스 상세 정보 업데이트
+    function updateServiceDetails(serviceData) {
+        const serviceDetails = document.getElementById('serviceDetails');
+
+        serviceDetails.innerHTML = `
+        <div class="service-detail-item">
+            <span class="detail-label">서비스명:</span>
+            <span class="detail-value font-mono">${serviceData.service_name}</span>
+        </div>
+        <div class="service-detail-item">
+            <span class="detail-label">실행 상태:</span>
+            <span class="detail-value ${serviceData.service_running ? 'text-green-600' : 'text-red-600'}">
+                ${serviceData.service_running ? '✅ 실행중' : '❌ 중지됨'}
+            </span>
+        </div>
+        <div class="service-detail-item">
+            <span class="detail-label">부팅시 실행:</span>
+            <span class="detail-value ${serviceData.service_enabled ? 'text-green-600' : 'text-gray-600'}">
+                ${serviceData.service_enabled ? '✅ 활성화' : '❌ 비활성화'}
+            </span>
+        </div>
+        <div class="service-detail-item">
+            <span class="detail-label">프로세스:</span>
+            <span class="detail-value ${serviceData.has_process ? 'text-green-600' : 'text-gray-600'}">
+                ${serviceData.has_process ? '✅ 실행중' : '❌ 중지됨'}
+            </span>
+        </div>
+        <div class="service-detail-item">
+            <span class="detail-label">Python 스크립트:</span>
+            <span class="detail-value ${serviceData.python_script_exists ? 'text-green-600' : 'text-red-600'}">
+                ${serviceData.python_script_exists ? '✅ 존재함' : '❌ 없음'}
+            </span>
+        </div>
+        <div class="service-detail-item">
+            <span class="detail-label">로그 디렉토리:</span>
+            <span class="detail-value ${serviceData.log_directory_exists ? 'text-green-600' : 'text-red-600'}">
+                ${serviceData.log_directory_exists ? '✅ 존재함' : '❌ 없음'}
+            </span>
+        </div>
+    `;
+    }
+
+    // 로그 파일 요약 업데이트
+    function updateLogFilesSummary(logFiles) {
+        const logFilesSummary = document.getElementById('logFilesSummary');
+
+        const logTypes = ['cloudtrail', 'guardduty', 'security-hub'];
+        const logIcons = {
+            cloudtrail: '🔍',
+            guardduty: '🛡️',
+            'security-hub': '🔒',
+        };
+
+        let summaryHTML = '';
+
+        logTypes.forEach((logType) => {
+            const logData = logFiles[logType] || { exists: false, size_mb: 0 };
+            const icon = logIcons[logType];
+            const name = logType.replace('-', ' ').toUpperCase();
+
+            summaryHTML += `
+            <div class="log-summary-item">
+                <span class="log-icon">${icon}</span>
+                <div class="log-info">
+                    <div class="log-name">${name}</div>
+                    <div class="log-status ${logData.exists ? 'text-green-600' : 'text-gray-500'}">
+                        ${logData.exists ? `${logData.size_mb} MB` : '파일 없음'}
+                    </div>
+                </div>
+            </div>
+        `;
+        });
+
+        logFilesSummary.innerHTML = summaryHTML;
+    }
+
+    // 서비스 관리 함수들
+    async function startKinesisService() {
+        if (!ACCOUNT_ID) {
+            showAlert('계정 ID가 없습니다', 'error');
+            return;
+        }
+
+        showAlert('Kinesis 서비스를 시작하고 있습니다...', 'info');
+
+        try {
+            const response = await fetch('/monitoring/kinesis/manage', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: `account_id=${ACCOUNT_ID}&action=start`,
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                showAlert('✅ Kinesis 서비스가 시작되었습니다', 'success');
+            } else {
+                showAlert(`서비스 시작 실패: ${result.message}`, 'error');
+            }
+
+            // 2초 후 상태 재확인
+            setTimeout(checkKinesisServiceStatus, 2000);
+        } catch (error) {
+            showAlert('서비스 시작 중 오류가 발생했습니다', 'error');
+        }
+    }
+
+    async function stopKinesisService() {
+        if (!ACCOUNT_ID) {
+            showAlert('계정 ID가 없습니다', 'error');
+            return;
+        }
+
+        if (!confirm('서비스를 중지하시겠습니까?')) {
+            return;
+        }
+
+        showAlert('Kinesis 서비스를 중지하고 있습니다...', 'info');
+
+        try {
+            const response = await fetch('/monitoring/kinesis/manage', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: `account_id=${ACCOUNT_ID}&action=stop`,
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                showAlert('⏹️ Kinesis 서비스가 중지되었습니다', 'success');
+            } else {
+                showAlert(`서비스 중지 실패: ${result.message}`, 'error');
+            }
+
+            // 2초 후 상태 재확인
+            setTimeout(checkKinesisServiceStatus, 2000);
+        } catch (error) {
+            showAlert('서비스 중지 중 오류가 발생했습니다', 'error');
+        }
+    }
+
+    async function restartKinesisService() {
+        if (!ACCOUNT_ID) {
+            showAlert('계정 ID가 없습니다', 'error');
+            return;
+        }
+
+        showAlert('Kinesis 서비스를 재시작하고 있습니다...', 'info');
+
+        try {
+            const response = await fetch('/monitoring/kinesis/manage', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: `account_id=${ACCOUNT_ID}&action=restart`,
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                showAlert('🔄 Kinesis 서비스가 재시작되었습니다', 'success');
+            } else {
+                showAlert(`서비스 재시작 실패: ${result.message}`, 'error');
+            }
+
+            // 3초 후 상태 재확인
+            setTimeout(checkKinesisServiceStatus, 3000);
+        } catch (error) {
+            showAlert('서비스 재시작 중 오류가 발생했습니다', 'error');
+        }
+    }
+
+    async function viewServiceLogs() {
+        if (!ACCOUNT_ID) {
+            showAlert('계정 ID가 없습니다', 'error');
+            return;
+        }
+
+        // 기존 로그 보기 함수 재사용
+        viewLogs();
+    }
+
+    async function reinstallService() {
+        if (!ACCOUNT_ID) {
+            showAlert('계정 ID가 없습니다', 'error');
+            return;
+        }
+
+        if (!confirm('서비스를 재설치하시겠습니까? 기존 설정이 초기화될 수 있습니다.')) {
+            return;
+        }
+
+        showAlert('서비스 재설치를 시작합니다...', 'info');
+
+        // 기존 스크립트 실행 함수 재사용
+        executeKinesisScript();
+    }
+
+    // 서비스 재설치 (기존 서비스 제거 후 새로 설치)
+    async function reinstallService() {
+        if (!ACCOUNT_ID) {
+            showAlert('계정 ID가 없습니다', 'error');
+            return;
+        }
+
+        if (!confirm('서비스를 완전히 재설치하시겠습니까?\n\n⚠️ 기존 서비스가 제거되고 새로 설치됩니다.\n📁 로그 데이터는 보존됩니다.')) {
+            return;
+        }
+
+        showAlert('Kinesis 서비스를 재설치하고 있습니다... (기존 서비스 제거 중)', 'info');
+
+        try {
+            const response = await fetch('/monitoring/kinesis/reinstall', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: `account_id=${ACCOUNT_ID}`,
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                showAlert('✅ 서비스 재설치 완료! 기존 서비스가 제거되고 새로 설치되었습니다.', 'success');
+
+                // 실행 결과 표시 (재설치 메시지 포함)
+                const resultDiv = document.getElementById('scriptExecutionResult');
+                const contentDiv = document.getElementById('scriptExecutionContent');
+
+                if (resultDiv && contentDiv) {
+                    contentDiv.innerHTML = `
+                        <div class="execution-result">
+                            <div class="result-header mb-4">
+                                <div class="flex items-center justify-between">
+                                    <h5 class="font-semibold text-green-600">
+                                        <span class="mr-2">🔄</span>
+                                        서비스 재설치 완료!
+                                    </h5>
+                                    <span class="text-sm text-gray-500">${new Date().toLocaleString()}</span>
+                                </div>
+                                <p class="text-sm text-gray-600 mt-1">기존 서비스 제거 후 새로 설치되었습니다</p>
+                            </div>
+                            
+                            <div class="result-output">
+                                <h6 class="font-medium mb-2">재설치 실행 결과:</h6>
+                                <pre class="bg-gray-900 text-green-400 p-4 rounded text-sm overflow-x-auto">${result.actual_output || result.simulated_output}</pre>
+                            </div>
+                            
+                            <div class="mt-4 p-3 bg-blue-50 border-l-4 border-blue-400">
+                                <p class="text-sm text-blue-800">
+                                    <strong>🔄 재설치 완료:</strong> 기존 서비스 파일과 Python 스크립트가 제거되고 새로 설치되었습니다. 로그 데이터는 보존되었습니다.
+                                </p>
+                            </div>
+                        </div>
+                    `;
+
+                    resultDiv.style.display = 'block';
+                    resultDiv.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }
+
+                // 2초 후 서비스 상태 재확인
+                setTimeout(checkKinesisServiceStatus, 2000);
+            } else {
+                showAlert(`서비스 재설치 실패: ${result.message}`, 'error');
+            }
+        } catch (error) {
+            showAlert('서비스 재설치 중 오류가 발생했습니다', 'error');
+        }
+    }
+
+    // 스크립트 다시 실행 (현재 상태에서 스크립트만 재실행)
+    function showReinstallForm() {
+        // 설치 섹션을 다시 표시
+        showInstallSection();
+        showAlert('💡 스크립트를 다시 실행할 수 있습니다. 기존 서비스 위에 덮어쓰기됩니다.', 'info');
+    }
 </script>
 
-{% endblock %}
-
-{% block extra_css %}
+{% endblock %} {% block extra_css %}
 <style>
-/* 계정 선택 섹션 스타일 재사용 */
-.account-selection-section {
-    margin-bottom: 2rem;
-}
-
-.section-title {
-    font-size: 1.5rem;
-    font-weight: 700;
-    color: #2d3748;
-    margin-bottom: 1.5rem;
-    display: flex;
-    align-items: center;
-}
-
-.section-icon {
-    font-size: 1.75rem;
-    margin-right: 0.5rem;
-}
-
-.accounts-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-    gap: 1.5rem;
-}
-
-.account-card {
-    background: white;
-    border: 2px solid #e2e8f0;
-    border-radius: 12px;
-    padding: 1.5rem;
-    cursor: pointer;
-    transition: all 0.3s ease;
-}
-
-.account-card:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
-    border-color: #cbd5e0;
-}
-
-.account-card.selected {
-    border-color: #4299e1;
-    background: #ebf8ff;
-}
-
-.account-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 1rem;
-}
-
-.account-name {
-    font-size: 1.25rem;
-    font-weight: 600;
-    color: #2d3748;
-}
-
-.account-type-badge .badge {
-    padding: 0.25rem 0.75rem;
-    border-radius: 9999px;
-    font-size: 0.75rem;
-    font-weight: 600;
-}
-
-.badge-role {
-    background: #e6fffa;
-    color: #00a896;
-}
-
-.badge-key {
-    background: #fef3c7;
-    color: #d97706;
-}
-
-.account-details {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-}
-
-.account-detail {
-    display: flex;
-    justify-content: space-between;
-    font-size: 0.875rem;
-}
-
-.detail-label {
-    color: #718096;
-}
-
-.detail-value {
-    color: #2d3748;
-    font-weight: 500;
-}
-
-.empty-state {
-    text-align: center;
-    padding: 4rem;
-    background: white;
-    border-radius: 12px;
-    border: 2px dashed #e2e8f0;
-}
-
-.empty-icon {
-    font-size: 4rem;
-    margin-bottom: 1rem;
-}
-
-.btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.75rem 1.5rem;
-    border-radius: 8px;
-    font-weight: 600;
-    text-decoration: none;
-    transition: all 0.2s ease;
-    margin-top: 1rem;
-}
-
-.btn-primary {
-    background: #4299e1;
-    color: white;
-}
-
-.btn-primary:hover {
-    background: #3182ce;
-    transform: translateY(-1px);
-}
-
-.monitoring-content {
-    animation: fadeIn 0.5s ease-in;
-}
-
-@keyframes fadeIn {
-    from {
-        opacity: 0;
-        transform: translateY(10px);
+    /* 계정 선택 섹션 스타일 재사용 */
+    .account-selection-section {
+        margin-bottom: 2rem;
     }
-    to {
-        opacity: 1;
-        transform: translateY(0);
+
+    .section-title {
+        font-size: 1.5rem;
+        font-weight: 700;
+        color: #2d3748;
+        margin-bottom: 1.5rem;
+        display: flex;
+        align-items: center;
     }
-}
+
+    .section-icon {
+        font-size: 1.75rem;
+        margin-right: 0.5rem;
+    }
+
+    .accounts-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+        gap: 1.5rem;
+    }
+
+    .account-card {
+        background: white;
+        border: 2px solid #e2e8f0;
+        border-radius: 12px;
+        padding: 1.5rem;
+        cursor: pointer;
+        transition: all 0.3s ease;
+    }
+
+    .account-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
+        border-color: #cbd5e0;
+    }
+
+    .account-card.selected {
+        border-color: #4299e1;
+        background: #ebf8ff;
+    }
+
+    .account-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 1rem;
+    }
+
+    .account-name {
+        font-size: 1.25rem;
+        font-weight: 600;
+        color: #2d3748;
+    }
+
+    .account-type-badge .badge {
+        padding: 0.25rem 0.75rem;
+        border-radius: 9999px;
+        font-size: 0.75rem;
+        font-weight: 600;
+    }
+
+    .badge-role {
+        background: #e6fffa;
+        color: #00a896;
+    }
+
+    .badge-key {
+        background: #fef3c7;
+        color: #d97706;
+    }
+
+    .account-details {
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+
+    .account-detail {
+        display: flex;
+        justify-content: space-between;
+        font-size: 0.875rem;
+    }
+
+    .detail-label {
+        color: #718096;
+    }
+
+    .detail-value {
+        color: #2d3748;
+        font-weight: 500;
+    }
+
+    .empty-state {
+        text-align: center;
+        padding: 4rem;
+        background: white;
+        border-radius: 12px;
+        border: 2px dashed #e2e8f0;
+    }
+
+    .empty-icon {
+        font-size: 4rem;
+        margin-bottom: 1rem;
+    }
+
+    .btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.75rem 1.5rem;
+        border-radius: 8px;
+        font-weight: 600;
+        text-decoration: none;
+        transition: all 0.2s ease;
+        margin-top: 1rem;
+    }
+
+    .btn-primary {
+        background: #4299e1;
+        color: white;
+    }
+
+    .btn-primary:hover {
+        background: #3182ce;
+        transform: translateY(-1px);
+    }
+
+    .monitoring-content {
+        animation: fadeIn 0.5s ease-in;
+    }
+
+    @keyframes fadeIn {
+        from {
+            opacity: 0;
+            transform: translateY(10px);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+
+    /* 새로 추가된 스타일 */
+    .stat-card {
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
+        padding: 1rem;
+        text-align: center;
+    }
+
+    .stat-label {
+        font-size: 0.875rem;
+        color: #64748b;
+        margin-bottom: 0.5rem;
+    }
+
+    .stat-value {
+        font-size: 1.125rem;
+        font-weight: 600;
+        color: #1e293b;
+    }
+
+    .service-controls {
+        display: flex;
+        gap: 0.75rem;
+        flex-wrap: wrap;
+    }
+
+    .badge {
+        padding: 0.25rem 0.75rem;
+        border-radius: 9999px;
+        font-size: 0.75rem;
+        font-weight: 600;
+    }
+
+    .badge-success {
+        background: #dcfce7;
+        color: #166534;
+    }
+
+    .badge-warning {
+        background: #fef3c7;
+        color: #d97706;
+    }
+
+    .badge-error {
+        background: #fee2e2;
+        color: #dc2626;
+    }
+
+    .btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.75rem 1.5rem;
+        border-radius: 8px;
+        font-weight: 600;
+        text-decoration: none;
+        border: none;
+        cursor: pointer;
+        transition: all 0.2s ease;
+    }
+
+    .btn:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+    }
+
+    .btn-primary {
+        background: #3b82f6;
+        color: white;
+    }
+
+    .btn-primary:hover:not(:disabled) {
+        background: #2563eb;
+        transform: translateY(-1px);
+    }
+
+    .btn-success {
+        background: #10b981;
+        color: white;
+    }
+
+    .btn-success:hover:not(:disabled) {
+        background: #059669;
+        transform: translateY(-1px);
+    }
+
+    .btn-warning {
+        background: #f59e0b;
+        color: white;
+    }
+
+    .btn-warning:hover:not(:disabled) {
+        background: #d97706;
+        transform: translateY(-1px);
+    }
+
+    .btn-danger {
+        background: #ef4444;
+        color: white;
+    }
+
+    .btn-danger:hover:not(:disabled) {
+        background: #dc2626;
+        transform: translateY(-1px);
+    }
+
+    .btn-secondary {
+        background: #6b7280;
+        color: white;
+    }
+
+    .btn-secondary:hover:not(:disabled) {
+        background: #4b5563;
+        transform: translateY(-1px);
+    }
+
+    .dashboard-link {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        padding: 1rem;
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
+        text-decoration: none;
+        color: #1e293b;
+        transition: all 0.2s ease;
+    }
+
+    .dashboard-link:hover {
+        background: #f1f5f9;
+        border-color: #cbd5e0;
+        transform: translateY(-1px);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    }
+
+    .dashboard-icon {
+        font-size: 1.5rem;
+    }
+
+    .dashboard-name {
+        font-weight: 600;
+    }
+
+    .alert-message {
+        padding: 1rem;
+        border-radius: 8px;
+        margin: 1rem 0;
+        font-weight: 500;
+    }
+
+    .alert-info {
+        background: #dbeafe;
+        color: #1e40af;
+        border: 1px solid #93c5fd;
+    }
+
+    .alert-success {
+        background: #dcfce7;
+        color: #166534;
+        border: 1px solid #86efac;
+    }
+
+    .alert-error {
+        background: #fee2e2;
+        color: #dc2626;
+        border: 1px solid #fca5a5;
+    }
+
+    .monitoring-stats {
+        background: #f8fafc;
+        border-radius: 12px;
+        padding: 1.5rem;
+    }
+
+    /* 새로 추가된 스타일들 */
+    .service-config-card {
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
+        border-radius: 12px;
+        padding: 1.5rem;
+    }
+
+    .form-input {
+        width: 100%;
+        padding: 0.75rem;
+        border: 1px solid #d1d5db;
+        border-radius: 6px;
+        font-size: 0.875rem;
+        transition: border-color 0.2s;
+    }
+
+    .form-input:focus {
+        outline: none;
+        border-color: #3b82f6;
+        box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+    }
+
+    .service-status-card {
+        background: #ffffff;
+        border: 1px solid #e5e7eb;
+        border-radius: 12px;
+        padding: 1.5rem;
+        transition: all 0.2s ease;
+    }
+
+    .service-status-card:hover {
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        border-color: #d1d5db;
+    }
+
+    .service-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 1rem;
+    }
+
+    .service-icon {
+        font-size: 1.5rem;
+        margin-right: 0.5rem;
+    }
+
+    .service-name {
+        flex: 1;
+        font-size: 1.125rem;
+        font-weight: 600;
+        color: #1f2937;
+    }
+
+    .service-badge {
+        flex-shrink: 0;
+    }
+
+    .service-details {
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+
+    .stat-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        font-size: 0.875rem;
+    }
+
+    .stat-label {
+        color: #6b7280;
+    }
+
+    .stat-value {
+        font-weight: 600;
+        color: #1f2937;
+    }
+
+    /* Splunk 리다이렉션 링크 스타일 */
+    .splunk-redirect-link {
+        text-decoration: none;
+        transition: transform 0.2s ease;
+    }
+
+    .splunk-redirect-link:hover {
+        transform: translateY(-2px);
+    }
+
+    .splunk-link-card {
+        background: rgba(255, 255, 255, 0.2);
+        border: 1px solid rgba(255, 255, 255, 0.3);
+        border-radius: 12px;
+        padding: 1.5rem;
+        text-align: center;
+        backdrop-filter: blur(10px);
+        transition: all 0.2s ease;
+    }
+
+    .splunk-link-card:hover {
+        background: rgba(255, 255, 255, 0.3);
+        border-color: rgba(255, 255, 255, 0.5);
+    }
+
+    .splunk-link-icon {
+        font-size: 2rem;
+        display: block;
+        margin-bottom: 0.75rem;
+    }
+
+    .splunk-link-title {
+        font-size: 1.125rem;
+        font-weight: 600;
+        color: white;
+        margin-bottom: 0.5rem;
+    }
+
+    .splunk-link-desc {
+        font-size: 0.875rem;
+        color: rgba(255, 255, 255, 0.8);
+        margin: 0;
+    }
+
+    .btn-info {
+        background: #06b6d4;
+        color: white;
+    }
+
+    .btn-info:hover:not(:disabled) {
+        background: #0891b2;
+        transform: translateY(-1px);
+    }
+
+    /* 상태 결과 스타일 개선 */
+    #serviceStatusResult .stat-item {
+        background: white;
+        border: 1px solid #e5e7eb;
+        border-radius: 8px;
+        padding: 1rem;
+        text-align: center;
+    }
+
+    #serviceStatusResult .stat-label {
+        display: block;
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: #6b7280;
+        margin-bottom: 0.5rem;
+    }
+
+    #serviceStatusResult .stat-value {
+        display: block;
+        font-size: 1.125rem;
+        font-weight: 600;
+        color: #1f2937;
+    }
+
+    /* Kinesis 서비스 생성 관련 스타일 */
+    .account-info-item {
+        display: flex;
+        flex-direction: column;
+        gap: 0.25rem;
+    }
+
+    .info-label {
+        font-size: 0.75rem;
+        font-weight: 500;
+        color: #6b7280;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+    }
+
+    .info-value {
+        font-size: 0.875rem;
+        font-weight: 600;
+        color: #1f2937;
+    }
+
+    .script-command-section {
+        border-top: 1px solid #e5e7eb;
+        padding-top: 1.5rem;
+    }
+
+    .execution-result {
+        animation: fadeIn 0.5s ease-in;
+    }
+
+    .result-header {
+        border-bottom: 1px solid #e5e7eb;
+        padding-bottom: 1rem;
+    }
+
+    .result-output pre {
+        max-height: 400px;
+        overflow-y: auto;
+    }
+
+    /* 서비스 상세 정보 스타일 */
+    .service-details {
+        background: linear-gradient(135deg, #f0fdf4 0%, #ecfdf5 100%);
+    }
+
+    .service-detail-item {
+        display: flex;
+        flex-direction: column;
+        gap: 0.25rem;
+        padding: 0.75rem;
+        background: white;
+        border-radius: 6px;
+        border: 1px solid #d1fae5;
+    }
+
+    .detail-label {
+        font-size: 0.75rem;
+        font-weight: 500;
+        color: #065f46;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+    }
+
+    .detail-value {
+        font-size: 0.875rem;
+        font-weight: 600;
+        color: #1f2937;
+        word-break: break-all;
+    }
+
+    /* 성공 메시지 스타일 개선 */
+    .border-l-4.border-green-400 {
+        background: linear-gradient(135deg, #f0fdf4 0%, #ecfdf5 100%);
+    }
+
+    /* 서비스 상태 표시기 */
+    .service-status-indicator {
+        display: flex;
+        align-items: center;
+    }
+
+    /* 서비스 관리 섹션 */
+    .service-management-section {
+        animation: fadeIn 0.5s ease-in;
+    }
+
+    .service-status-info {
+        background: linear-gradient(135deg, #f0fdf4 0%, #ecfdf5 100%);
+    }
+
+    /* 로그 요약 아이템 */
+    .log-summary-item {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        padding: 0.75rem;
+        background: white;
+        border-radius: 6px;
+        border: 1px solid #d1fae5;
+    }
+
+    .log-icon {
+        font-size: 1.25rem;
+        flex-shrink: 0;
+    }
+
+    .log-info {
+        flex: 1;
+    }
+
+    .log-name {
+        font-size: 0.75rem;
+        font-weight: 600;
+        color: #065f46;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        margin-bottom: 0.125rem;
+    }
+
+    .log-status {
+        font-size: 0.875rem;
+        font-weight: 500;
+    }
+
+    /* 작은 버튼 스타일 */
+    .btn-sm {
+        padding: 0.5rem 1rem;
+        font-size: 0.875rem;
+    }
+
+    .btn-mini {
+        padding: 0.375rem 0.75rem;
+        font-size: 0.75rem;
+    }
+
+    /* 서비스 관리 버튼 그룹 */
+    .service-controls {
+        display: flex;
+        gap: 0.75rem;
+        flex-wrap: wrap;
+        align-items: center;
+    }
+
+    /* 상태 요약 카드 */
+    .status-summary-card {
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
+        padding: 1rem;
+        transition: all 0.2s ease;
+    }
+
+    .status-summary-card:hover {
+        background: #f1f5f9;
+        border-color: #cbd5e0;
+    }
+
+    /* 설치 완료 표시 */
+    .installation-complete-badge {
+        background: linear-gradient(135deg, #dcfce7 0%, #bbf7d0 100%);
+        border: 1px solid #86efac;
+        border-radius: 12px;
+        padding: 1rem;
+        margin-bottom: 1rem;
+    }
+
+    .installation-complete-badge h4 {
+        color: #166534;
+        font-weight: 600;
+        margin-bottom: 0.5rem;
+    }
+
+    .installation-complete-badge p {
+        color: #15803d;
+        font-size: 0.875rem;
+        margin: 0;
+    }
+
+    /* 위험 경고 스타일 */
+    .warning-section {
+        background: #fefce8;
+        border: 1px solid #fde047;
+        border-left: 4px solid #eab308;
+        border-radius: 8px;
+        padding: 1rem;
+    }
+
+    .warning-section h5 {
+        color: #a16207;
+        font-weight: 600;
+        margin-bottom: 0.5rem;
+    }
+
+    .warning-section p {
+        color: #a16207;
+        font-size: 0.875rem;
+        margin-bottom: 0.75rem;
+    }
+
+    /* 최근 로그 표시 */
+    .recent-logs-section {
+        background: #f9fafb;
+        border: 1px solid #e5e7eb;
+        border-radius: 8px;
+        padding: 1rem;
+        margin-top: 1rem;
+    }
+
+    .recent-logs-section h5 {
+        color: #374151;
+        font-weight: 600;
+        margin-bottom: 0.75rem;
+    }
+
+    .recent-logs-content {
+        background: #1f2937;
+        color: #10b981;
+        padding: 0.75rem;
+        border-radius: 6px;
+        font-family: 'Courier New', monospace;
+        font-size: 0.75rem;
+        line-height: 1.4;
+        white-space: pre-wrap;
+        max-height: 200px;
+        overflow-y: auto;
+    }
+
+    /* 로딩 애니메이션 개선 */
+    .loading-spinner {
+        display: inline-block;
+        animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin {
+        from {
+            transform: rotate(0deg);
+        }
+        to {
+            transform: rotate(360deg);
+        }
+    }
+
+    /* 상태 전환 애니메이션 */
+    .status-transition {
+        transition: all 0.3s ease-in-out;
+    }
+
+    /* 서비스 카드 호버 효과 */
+    #kinesisServiceCard:hover {
+        box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
+        transform: translateY(-1px);
+    }
+
+    /* 반응형 개선 */
+    @media (max-width: 768px) {
+        .account-info-item {
+            text-align: center;
+        }
+
+        .script-command-section .bg-gray-900 {
+            font-size: 0.75rem;
+            padding: 0.75rem;
+        }
+
+        .flex.gap-3 {
+            flex-direction: column;
+            gap: 0.75rem;
+        }
+
+        .btn {
+            width: 100%;
+            justify-content: center;
+        }
+
+        .service-detail-item {
+            padding: 0.5rem;
+        }
+
+        .detail-value {
+            font-size: 0.75rem;
+        }
+
+        .service-controls {
+            flex-direction: column;
+            align-items: stretch;
+        }
+
+        .service-controls .btn {
+            width: 100%;
+        }
+
+        .log-summary-item {
+            padding: 0.5rem;
+            gap: 0.5rem;
+        }
+
+        .log-icon {
+            font-size: 1rem;
+        }
+    }
 </style>
 {% endblock %}

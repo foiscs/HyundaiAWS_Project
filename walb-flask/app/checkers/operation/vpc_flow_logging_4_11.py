@@ -28,7 +28,7 @@ class VpcFlowLoggingChecker(BaseChecker):
         - 모든 VPC에서 Flow Logs가 활성화되어 있는지 확인
         """
         print("[INFO] 4.11 VPC 플로우 로깅 설정 체크 중...")
-        ec2 = boto3.client('ec2')
+        ec2 = self.session.client('ec2')
 
         try:
             all_vpcs = {vpc['VpcId'] for vpc in ec2.describe_vpcs()['Vpcs']}
@@ -75,12 +75,12 @@ class VpcFlowLoggingChecker(BaseChecker):
         - 각 VPC에 대해 별도 로그 그룹을 생성하고, 공통 IAM 역할을 사용
         """
         if not selected_items:
-            return {'status': 'no_action', 'message': '선택된 항목이 없습니다.'}
+            return [{'item': 'no_selection', 'status': 'info', 'message': '선택된 항목이 없습니다.'}]
 
         # 진단 재실행으로 최신 데이터 확보
         diagnosis_result = self.run_diagnosis()
         if diagnosis_result['status'] != 'success' or not diagnosis_result.get('vpcs_without_logs'):
-            return {'status': 'no_action', 'message': 'VPC Flow Logs 조치가 필요한 항목이 없습니다.'}
+            return [{'item': 'no_action_needed', 'status': 'info', 'message': 'VPC Flow Logs 조치가 필요한 항목이 없습니다.'}]
 
         vpcs_without_logs = diagnosis_result['vpcs_without_logs']
         results = []
@@ -88,15 +88,15 @@ class VpcFlowLoggingChecker(BaseChecker):
         print("[FIX] 4.11 VPC Flow Logs 설정 조치를 시작합니다.")
         print("→ 각 VPC에 대해 별도 로그 그룹을 생성하고, 공통 IAM 역할을 사용합니다.\n")
 
-        ec2 = boto3.client('ec2')
+        ec2 = self.session.client('ec2')
         iam_role_arn = self._get_or_create_common_iam_role()
         if not iam_role_arn:
             print("     [ERROR] IAM 역할 생성 실패로 인해 조치를 중단합니다.")
-            return {
+            return [{
+                'item': 'system',
                 'status': 'error',
-                'message': 'IAM 역할 생성 실패로 인해 조치를 중단했습니다.',
-                'results': []
-            }
+                'message': 'IAM 역할 생성 실패로 인해 조치를 중단했습니다.'
+            }]
 
         for vpc_id in vpcs_without_logs:
             # 선택된 항목인지 확인
@@ -107,9 +107,8 @@ class VpcFlowLoggingChecker(BaseChecker):
                     log_group_created = self._create_log_group_if_needed(log_group_name)
                     if not log_group_created:
                         results.append({
+                            'item': f"VPC {vpc_id}",
                             'status': 'error',
-                            'resource': f"VPC {vpc_id}",
-                            'error': '로그 그룹 생성 실패',
                             'message': f"VPC '{vpc_id}'의 로그 그룹 생성에 실패했습니다."
                         })
                         continue
@@ -123,29 +122,24 @@ class VpcFlowLoggingChecker(BaseChecker):
                     )
                     print(f"     [SUCCESS] VPC '{vpc_id}'에 Flow Log 생성 완료.\n")
                     results.append({
+                        'item': f"VPC {vpc_id}",
                         'status': 'success',
-                        'resource': f"VPC {vpc_id}",
-                        'action': 'VPC Flow Logs 생성',
                         'message': f"VPC '{vpc_id}'에 Flow Log를 생성했습니다."
                     })
                 except ClientError as e:
                     print(f"     [ERROR] VPC '{vpc_id}'에 Flow Log 생성 실패: {e}\n")
                     results.append({
+                        'item': f"VPC {vpc_id}",
                         'status': 'error',
-                        'resource': f"VPC {vpc_id}",
-                        'error': str(e),
                         'message': f"VPC '{vpc_id}'에 Flow Log 생성 실패: {str(e)}"
                     })
 
-        return {
-            'status': 'success' if all(r['status'] == 'success' for r in results) else 'partial_success',
-            'results': results,
-            'message': f"{len(results)}개 VPC에 대한 Flow Logs 설정 조치가 완료되었습니다."
-        }
+        # 다른 체커들과 일관된 형식으로 results 배열 직접 반환
+        return results
 
     def _create_log_group_if_needed(self, log_group_name):
         """필요시 CloudWatch 로그 그룹 생성"""
-        logs = boto3.client('logs')
+        logs = self.session.client('logs')
         try:
             result = logs.describe_log_groups(logGroupNamePrefix=log_group_name)
             exists = any(g['logGroupName'] == log_group_name for g in result.get('logGroups', []))
@@ -160,7 +154,7 @@ class VpcFlowLoggingChecker(BaseChecker):
 
     def _get_or_create_common_iam_role(self):
         """공통 IAM 역할 생성 또는 기존 역할 사용"""
-        iam = boto3.client('iam')
+        iam = self.session.client('iam')
         role_name = "FlowLogsCommonRole"
         trust_policy = {
             "Version": "2012-10-17",
@@ -193,7 +187,7 @@ class VpcFlowLoggingChecker(BaseChecker):
 
         return iam.get_role(RoleName=role_name)['Role']['Arn']
 
-    def get_fix_options(self, diagnosis_result):
+    def _get_fix_options(self, diagnosis_result):
         """자동 조치 옵션 반환"""
         if not diagnosis_result.get('vpcs_without_logs'):
             return []

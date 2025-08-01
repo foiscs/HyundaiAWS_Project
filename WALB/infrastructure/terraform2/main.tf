@@ -308,7 +308,7 @@ module "rds" {
   
   # 데이터베이스 설정
   engine                 = "mysql"
-  engine_version         = "8.0.35"
+  engine_version         = "8.0.39"
   instance_class         = var.rds_instance_class
   allocated_storage      = 20
   max_allocated_storage  = 100
@@ -409,23 +409,6 @@ resource "aws_security_group" "bastion" {
     cidr_blocks = ["0.0.0.0/0"]  # 보안상 위험하지만 GitHub Actions용
   }
 
-  # MySQL 포트 포워딩을 위한 로컬 접근 (추가 필요)
-  ingress {
-    description = "MySQL port forwarding"
-    from_port   = 3306
-    to_port     = 3306
-    protocol    = "tcp"
-    cidr_blocks = ["127.0.0.1/32"]  # 로컬 루프백만 허용
-  }
-  
-  # RDS에 대한 outbound 접근 허용 (기존 egress 규칙을 보다 구체적으로)
-  egress {
-    description = "MySQL to RDS"
-    from_port   = 3306
-    to_port     = 3306
-    protocol    = "tcp"
-    cidr_blocks = [var.vpc_cidr]
-  }
 
   egress {
     description = "All outbound traffic"
@@ -474,7 +457,7 @@ resource "aws_iam_role" "eks_app_role" {
 # =========================================
 # aws-auth ConfigMap for GitHub Actions Access
 # =========================================
-resource "kubernetes_config_map_v1_data" "aws_auth" {
+resource "kubernetes_config_map" "aws_auth" {
   depends_on = [module.eks]
   
   metadata {
@@ -519,8 +502,6 @@ resource "kubernetes_config_map_v1_data" "aws_auth" {
       }
     ])
   }
-
-  force = true
 }
 
 # EKS 애플리케이션용 정책 연결
@@ -636,14 +617,14 @@ resource "aws_iam_openid_connect_provider" "github_actions" {
   ]
 
   tags = merge(local.common_tags, {
-    Name      = "${var.project_name}-github-oidc-provider"
+    Name      = "walb2-app-github-oidc-provider"
     Component = "CI/CD"
   })
 
   lifecycle {
     create_before_destroy = true
     ignore_changes        = [thumbprint_list]
-    prevent_destroy       = true
+    prevent_destroy       = false
   }
 }
 
@@ -829,10 +810,17 @@ resource "aws_iam_role_policy" "github_actions_app_policy" {
           "ssm:GetParameters",
           "ssm:GetParametersByPath",
           
-          # EC2 권한 추가 (Bastion Host 조회용)
+          # EC2 권한 추가 (Bastion Host 및 네트워크 조회용)
           "ec2:DescribeInstances",
           "ec2:DescribeInstanceStatus",
           "ec2:DescribeTags",
+          "ec2:DescribeSubnets",
+          "ec2:DescribeRouteTables",
+          "ec2:DescribeVpcs",
+          
+          # 보안그룹 권한 추가 (kubelet 통신 규칙 확인/수정용)
+          "ec2:DescribeSecurityGroups",
+          "ec2:AuthorizeSecurityGroupIngress",
           
           # 계정 정보 조회
           "sts:GetCallerIdentity"
@@ -897,11 +885,16 @@ resource "aws_instance" "bastion" {
   vpc_security_group_ids = [aws_security_group.bastion.id]
   subnet_id             = module.vpc.public_subnet_ids[0]
   
-  # MySQL 클라이언트 설치를 위한 user data
+  # MySQL 클라이언트 및 네트워크 도구 설치를 위한 user data
   user_data = base64encode(<<-EOF
     #!/bin/bash
     yum update -y
+    
+    # MySQL 클라이언트 설치
     yum install -y mysql
+    
+    # 네트워크 진단 도구 설치
+    yum install -y telnet nc nmap-ncat
     
     # AWS CLI 설치 (최신 버전)
     curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
@@ -937,4 +930,189 @@ data "aws_ami" "amazon_linux" {
     name   = "virtualization-type"
     values = ["hvm"]
   }
+}
+
+# IAM Security Module  
+module "iam_security" {                             
+  source = "./modules/iam-security"                 
+  project_name        = var.project_name            
+  s3_logs_bucket_name = module.s3.logs_bucket_name  
+  #s3_logs_bucket_name = "walb2-app-logs-walb-87d08755"
+  create_access_keys  = true  # 보안상 기본값 false
+  common_tags = merge(local.common_tags, {          
+    Component = "Security"                          
+    Purpose   = "User Management"                   
+  })
+  depends_on = [module.s3]
+}
+
+# CloudTrail Hub Module
+module "cloudtrail" {
+  source = "./modules/cloudtrail"
+  project_name                    = var.project_name
+  s3_bucket_name                  = module.s3.logs_bucket_name
+  cloudtrail_cloudwatch_role_arn  = module.iam_security.cloudtrail_cloudwatch_role_arn
+  cloudwatch_kinesis_role_arn     = module.iam_security.cloudwatch_kinesis_role_arn
+  kms_key_arn                     = aws_kms_key.main.arn
+  sns_topic_arn                   = aws_sns_topic.security_alerts.arn
+  
+
+  common_tags = merge(local.common_tags, {
+    Component = "Security"
+  })
+  
+  depends_on = [module.iam_security, module.s3]
+}
+
+# # Security Hub Module
+module "security_hub" {
+  source = "./modules/securityhub"
+  
+  project_name                = var.project_name
+  cloudwatch_kinesis_role_arn = module.iam_security.cloudwatch_kinesis_role_arn
+  kms_key_arn                 = aws_kms_key.main.arn
+  sns_topic_arn               = aws_sns_topic.security_alerts.arn
+  
+  # Security Hub 설정
+  enable_default_standards = true
+  enable_aws_foundational  = true
+  enable_cis_standard      = true
+  
+  # Kinesis 설정
+  kinesis_shard_count     = 1
+  kinesis_retention_hours = 24
+
+  # 모니터링 설정
+  enable_monitoring        = true
+
+  # 로그 설정
+  log_retention_days = var.security_log_retention_days
+  log_filter_pattern = ""
+
+    common_tags = merge(local.common_tags, {
+    Component = "Security"
+    Service   = "SecurityHub"
+  })
+
+  depends_on = [module.iam_security]
+}
+
+# GuardDuty Module
+module "guardduty" {
+  source = "./modules/guardduty"
+  project_name                = var.project_name
+  cloudwatch_kinesis_role_arn = module.iam_security.cloudwatch_kinesis_role_arn
+  kms_key_arn                 = aws_kms_key.main.arn
+  sns_topic_arn               = aws_sns_topic.security_alerts.arn        
+  # GuardDuty 설정
+  finding_publishing_frequency = "FIFTEEN_MINUTES"
+  enable_s3_protection        = true
+  enable_kubernetes_protection = true
+  enable_malware_protection   = true
+  
+  # Kinesis 설정
+  kinesis_shard_count     = 1
+  kinesis_retention_hours = 24
+  
+  # 모니터링 설정
+  enable_monitoring        = true
+  high_severity_threshold  = 3
+  # 로그 설정
+  log_retention_days = var.security_log_retention_days
+  log_filter_pattern = ""
+  
+  common_tags = merge(local.common_tags, {
+    Component = "Security"
+    Service   = "GuardDuty"
+  })
+  
+  depends_on = [module.iam_security]
+}
+
+# WAF Module
+module "waf" {
+  source = "./modules/waf"
+  project_name     = var.project_name
+  target_alb_name  = "walb2-app-ingress-alb"  # EKS Ingress에서 생성되는 ALB 이름
+  # WAF 설정
+  rate_limit             = 2000
+  blocked_ip_addresses   = []  # 필요시 차단할 IP 추가
+  blocked_requests_threshold = 100
+  
+  # Firehose 설정
+  firehose_role_arn       = module.iam_security.firehose_role_arn  # IAM Security 모듈에서 생성 필요
+  s3_bucket_arn           = module.s3.logs_bucket_arn
+  buffer_size_mb          = 5
+  buffer_interval_seconds = 300
+  # 모니터링 설정
+  enable_monitoring = true
+  kms_key_arn      = aws_kms_key.main.arn
+  # 로그 설정
+  log_retention_days = var.security_log_retention_days
+  
+  # 데이터 변환 설정 (선택적)
+  enable_data_transformation = false
+  lambda_processor_arn       = null
+  
+  common_tags = merge(local.common_tags, {
+    Component = "Security"
+    Service   = "WAF"
+  })
+  
+  depends_on = [module.eks, module.iam_security, module.s3]
+}
+
+# =========================================
+# VPC Flow Logs Module
+# =========================================
+module "vpcflow" {
+  source = "./modules/vpcflow"
+  project_name = var.project_name
+  vpc_id       = module.vpc.vpc_id
+  # S3 설정
+  vpc_flow_logs_s3_arn = "${module.s3.logs_bucket_arn}/vpc-flow-logs/"
+  s3_bucket_name       = module.s3.logs_bucket_name
+  # Flow Logs 설정
+  traffic_type = "ALL"
+  vpc_flow_logs_format = "$${version} $${account-id} $${interface-id} $${srcaddr} $${dstaddr} $${srcport} $${dstport} $${protocol} $${packets} $${bytes} $${windowstart} $${windowend} $${action} $${flowlogstatus} $${vpc-id} $${subnet-id} $${instance-id} $${tcp-flags} $${type} $${pkt-srcaddr} $${pkt-dstaddr} $${region} $${az-id}"
+  # S3 파티셔닝 옵션
+  enable_hive_partitions   = true
+  enable_hourly_partitions = true
+  # S3 라이프사이클 설정
+  enable_s3_lifecycle              = true
+  transition_to_ia_days           = 30
+  transition_to_glacier_days      = 90
+  transition_to_deep_archive_days = 365
+  vpc_flow_logs_retention_days    = 2555  # 7 years
+  common_tags = merge(local.common_tags, {
+    Component = "Security"
+    Service   = "VPCFlowLogs"
+  })
+  depends_on = [module.vpc, module.s3]
+}
+
+# DNS Resolve Logging Module
+module "dnsresolve" {
+  source = "./modules/dnsresolve"
+  project_name         = var.project_name
+  environment         = var.environment
+  common_tags         = local.common_tags
+  # Route 53 Configuration
+  hosted_zone_id      = var.hosted_zone_id
+  # S3 Configuration
+  s3_logs_bucket_name = module.s3.logs_bucket_name
+
+  vpc_id                  = module.vpc.vpc_id
+  
+  # S3 Lifecycle Configuration
+  enable_s3_lifecycle             = var.enable_s3_lifecycle
+  transition_to_ia_days          = var.transition_to_ia_days
+  transition_to_glacier_days     = var.transition_to_glacier_days
+  transition_to_deep_archive_days = var.transition_to_deep_archive_days
+  dns_log_retention_days         = var.dns_log_retention_days
+  
+  depends_on = [
+    module.s3,
+    module.vpc
+  ]
 }

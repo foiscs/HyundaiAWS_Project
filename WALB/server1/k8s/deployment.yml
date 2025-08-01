@@ -1,0 +1,84 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: walb-app-deployment
+  namespace: walb-app
+  labels:
+    app: walb-app
+    version: v1
+spec:
+  replicas: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app: walb-app
+  template:
+    metadata:
+      labels:
+        app: walb-app
+        version: v1
+    spec:
+      containers:
+      - name: walb-app
+        image: 253157413163.dkr.ecr.ap-northeast-2.amazonaws.com/simple-blog-app:latest
+        ports:
+        - containerPort: 80
+          name: http
+          protocol: TCP
+        env:
+        - name: DB_HOST
+          value: "walb-rds-database.cx02kko4cplr.ap-northeast-2.rds.amazonaws.com"
+        - name: DB_NAME
+          value: "mydb"
+        - name: DB_USER
+          value: "dbadmin"
+        - name: DB_PASSWORD
+          value: "MySecurePassword123!"
+        - name: DB_PORT
+          value: "5432"
+        - name: APP_DEBUG
+          value: "false"
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        readinessProbe:
+          httpGet:
+            path: /health.php
+            port: 80
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        livenessProbe:
+          httpGet:
+            path: /simple-health.php
+            port: 80
+          initialDelaySeconds: 60
+          periodSeconds: 15
+          timeoutSeconds: 5
+          failureThreshold: 3
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: walb-app-service
+  namespace: walb-app
+  labels:
+    app: walb-app
+spec:
+  type: LoadBalancer
+  selector:
+    app: walb-app
+  ports:
+  - port: 80
+    targetPort: 80
+    protocol: TCP
+    name: http 

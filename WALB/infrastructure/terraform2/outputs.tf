@@ -47,6 +47,20 @@ output "eks_cluster_info" {
 # ALB는 Kubernetes Ingress Controller가 자동으로 생성하므로
 # Terraform에서 직접 관리하지 않음
 
+# =========================================
+# AWS Load Balancer Controller App2 정보
+# =========================================
+output "aws_load_balancer_controller_app2_info" {
+  description = "App2 전용 AWS Load Balancer Controller 정보"
+  value = {
+    service_account_name = "aws-load-balancer-controller-app2"
+    iam_role_arn        = module.eks.aws_load_balancer_controller_app2_role_arn
+    ingress_class       = "alb-app2"
+    helm_release_name   = "walb-app2-alb-controller"
+    namespace          = "kube-system"
+  }
+}
+
 # EKS 접속을 위한 kubectl 명령어
 output "eks_kubectl_config" {
   description = "kubectl 설정 명령어"
@@ -249,6 +263,49 @@ output "security_checklist" {
 }
 
 # =========================================
+# IAM Security 정보
+# =========================================
+output "iam_security_info" {
+  description = "IAM Security 모듈에서 생성된 리소스 정보"
+  value = {
+    # Users
+    blog_s3_user_name     = module.iam_security.blog_s3_user_name
+    blog_s3_user_arn      = module.iam_security.blog_s3_user_arn
+    splunk_kinesis_reader_name = module.iam_security.splunk_kinesis_reader_name
+    splunk_kinesis_reader_arn  = module.iam_security.splunk_kinesis_reader_arn
+    
+    # Roles
+    cloudtrail_cloudwatch_role_name = module.iam_security.cloudtrail_cloudwatch_role_name
+    cloudtrail_cloudwatch_role_arn  = module.iam_security.cloudtrail_cloudwatch_role_arn
+    cloudwatch_kinesis_role_name    = module.iam_security.cloudwatch_kinesis_role_name
+    cloudwatch_kinesis_role_arn     = module.iam_security.cloudwatch_kinesis_role_arn
+    firehose_role_name              = module.iam_security.firehose_role_name
+    firehose_role_arn               = module.iam_security.firehose_role_arn
+    
+    # Policies
+    blog_s3_policy_arn              = module.iam_security.blog_s3_policy_arn
+    splunk_kinesis_policy_arn       = module.iam_security.splunk_kinesis_policy_arn
+    cloudtrail_cloudwatch_policy_arn = module.iam_security.cloudtrail_cloudwatch_policy_arn
+    cloudwatch_kinesis_policy_arn   = module.iam_security.cloudwatch_kinesis_policy_arn
+    firehose_waf_policy_arn         = module.iam_security.firehose_waf_policy_arn
+  }
+}
+
+# =========================================
+# IAM Security Credentials (sensitive)
+# =========================================
+output "iam_security_credentials" {
+  description = "IAM Security 사용자 자격 증명 (민감 정보)"
+  value = {
+    blog_s3_user_access_key_id        = module.iam_security.blog_s3_user_access_key_id
+    splunk_kinesis_reader_access_key_id = module.iam_security.splunk_kinesis_reader_access_key_id
+    blog_s3_credentials_secret_arn      = module.iam_security.blog_s3_credentials_secret_arn
+    splunk_kinesis_credentials_secret_arn = module.iam_security.splunk_kinesis_credentials_secret_arn
+  }
+  sensitive = true
+}
+
+# =========================================
 # 트러블슈팅 정보
 # =========================================
 output "troubleshooting_info" {
@@ -272,6 +329,18 @@ output "troubleshooting_info" {
 }
 
 # =========================================
+# ALB 서브넷 설정 (Ingress용)
+# =========================================
+output "alb_subnet_config" {
+  description = "ALB Ingress에서 사용할 서브넷 설정"
+  value = {
+    # 서로 다른 AZ의 퍼블릭 서브넷 2개 선택
+    public_subnets_for_alb = join(",", slice(module.vpc.public_subnet_ids, 0, 2))
+    all_public_subnets     = module.vpc.public_subnet_ids
+  }
+}
+
+# =========================================
 # 다음 단계 안내
 # =========================================
 output "next_steps" {
@@ -282,6 +351,7 @@ output "next_steps" {
     check_pods     = "kubectl get pods --all-namespaces"
     access_rds     = "Use the RDS endpoint: ${module.rds.db_instance_endpoint}"
     view_logs      = "Check CloudWatch logs in: ${aws_cloudwatch_log_group.application_logs.name}"
+    alb_subnets    = "Use these subnets for ALB: ${join(",", slice(module.vpc.public_subnet_ids, 0, 2))}"
   }
 }
 

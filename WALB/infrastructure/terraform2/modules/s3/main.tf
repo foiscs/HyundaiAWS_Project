@@ -425,7 +425,11 @@ resource "aws_s3_bucket_policy" "logs" {
         Principal = {
           Service = "delivery.logs.amazonaws.com"
         }
-        Action   = "s3:PutObject"
+        Action = [
+            "s3:PutObject",
+            "s3:GetBucketAcl",
+            "s3:ListBucket"
+        ]
         Resource = "${aws_s3_bucket.logs.arn}/vpc-flow-logs/*"
         Condition = {
           StringEquals = {

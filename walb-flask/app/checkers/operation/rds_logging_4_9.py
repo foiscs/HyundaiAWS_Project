@@ -26,7 +26,7 @@ class RdsLoggingChecker(BaseChecker):
         - PostgreSQL 또는 Aurora PostgreSQL에서 'postgresql' 로그가 CloudWatch에 연동되어 있는지 확인
         """
         print("[INFO] 4.9 RDS PostgreSQL 로깅 설정 체크 중...")
-        rds = boto3.client('rds')
+        rds = self.session.client('rds')
         insufficient_logging_instances = {}
 
         try:
@@ -106,7 +106,7 @@ class RdsLoggingChecker(BaseChecker):
             return {'status': 'no_action', 'message': 'RDS 로깅 조치가 필요한 항목이 없습니다.'}
 
         insufficient_logging_instances = diagnosis_result['insufficient_instances']
-        rds = boto3.client('rds')
+        rds = self.session.client('rds')
         results = []
 
         print("[FIX] 4.9 RDS PostgreSQL 로그 설정 조치 시작합니다.")

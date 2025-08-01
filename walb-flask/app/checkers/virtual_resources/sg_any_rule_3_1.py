@@ -30,7 +30,7 @@ class SecurityGroupAnyRuleChecker(BaseChecker):
             if self.session:
                 ec2 = self.session.client('ec2')
             else:
-                ec2 = boto3.client('ec2')
+                ec2 = self.session.client('ec2')
                 
             vulnerable_rules = []
 
@@ -193,7 +193,7 @@ class SecurityGroupAnyRuleChecker(BaseChecker):
             if self.session:
                 ec2 = self.session.client('ec2')
             else:
-                ec2 = boto3.client('ec2')
+                ec2 = self.session.client('ec2')
         except Exception as e:
             return [{
                 'item': 'connection_error',

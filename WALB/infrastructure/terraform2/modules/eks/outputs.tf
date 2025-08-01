@@ -269,6 +269,14 @@ output "eks_cluster_summary" {
 
 # AWS Load Balancer Controller 정보
 output "aws_load_balancer_controller_role_arn" {
+  description = "AWS Load Balancer Controller IAM Role ARN (App2용 - terraform2에서 관리)"
+  value       = var.enable_load_balancer ? aws_iam_role.aws_load_balancer_controller_app2[0].arn : null
+}
+
+# AWS Load Balancer Controller App2 정보  
+output "aws_load_balancer_controller_app2_role_arn" {
+  description = "AWS Load Balancer Controller App2 IAM Role ARN (terraform2에서 관리)"
+  value       = var.enable_load_balancer ? aws_iam_role.aws_load_balancer_controller_app2[0].arn : null
   description = "AWS Load Balancer Controller IAM Role ARN (App2 전용)"
   value       = var.enable_load_balancer ? aws_iam_role.aws_load_balancer_controller_app2[0].arn : null
 }
@@ -292,4 +300,22 @@ output "access_verification_commands" {
     get_configmap     = "kubectl get configmap aws-auth -n kube-system -o yaml"
     test_connection   = "kubectl get nodes"
   }
+}
+
+# ALB 정보 (WAF 연결용)
+output "alb_arn" {
+  description = "Application Load Balancer ARN for WAF association"
+  value       = var.enable_load_balancer && var.create_ingress ? data.aws_lb.walb_app_alb[0].arn : null
+}
+output "alb_dns_name" {
+  description = "Application Load Balancer DNS name"
+  value       = var.enable_load_balancer && var.create_ingress ? data.aws_lb.walb_app_alb[0].dns_name : null      
+}
+output "alb_zone_id" {
+  description = "Application Load Balancer hosted zone ID"
+  value       = var.enable_load_balancer && var.create_ingress ? data.aws_lb.walb_app_alb[0].zone_id : null       
+}
+output "alb_name" {
+  description = "Application Load Balancer name"
+  value       = var.enable_load_balancer && var.create_ingress ? data.aws_lb.walb_app_alb[0].name : null
 }

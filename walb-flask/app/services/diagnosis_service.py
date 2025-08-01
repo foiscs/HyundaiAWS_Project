@@ -7,7 +7,7 @@ from datetime import datetime
 from botocore.exceptions import ClientError, NoCredentialsError # type: ignore
 from app.config.diagnosis_config import DiagnosisConfig
 from app.utils.aws_handler import AWSConnectionHandler
-from app.utils.diagnosis_logger import diagnosis_logger
+# 진단 로거 제거됨
 
 class DiagnosisService:
     """진단 서비스 클래스 - mainHub의 DiagnosisCoreEngine 기능 이식"""
@@ -36,19 +36,23 @@ class DiagnosisService:
             boto3.Session or None: AWS 세션 객체
         """
         try:
+            # 디버깅: 리전 정보 확인
+            region = getattr(account, 'primary_region', 'ap-northeast-2') or 'ap-northeast-2'
+            print(f"AWS 세션 생성 디버그: region={region}, connection_type={account.connection_type}")
+            
             if account.connection_type == 'role':
                 # Cross-Account Role 방식
                 return self.aws_handler.create_session_from_role(
                     role_arn=account.role_arn,
                     external_id=account.external_id,
-                    region=account.primary_region
+                    region=region
                 )
             else:
                 # Access Key 방식
                 return self.aws_handler.create_session_from_keys(
                     access_key_id=account.access_key_id,
                     secret_access_key=account.secret_access_key,
-                    region=account.primary_region
+                    region=region
                 )
                 
         except Exception as e:
@@ -108,12 +112,12 @@ class DiagnosisService:
                     'message': f'진단 항목을 찾을 수 없습니다: {item_code}'
                 }
                 if enable_logging:
-                    diagnosis_logger.log_diagnosis_result(item_code, "알 수 없는 항목", result)
+                    pass  # 로깅 제거됨
                 return result
             
             # 진단 시작 로그
             if enable_logging:
-                diagnosis_logger.log_diagnosis_start(item_code, item_info['name'])
+                pass  # 로깅 제거됨
             
             # AWS 세션 생성
             aws_session = self.create_aws_session(account)
@@ -123,7 +127,7 @@ class DiagnosisService:
                     'message': 'AWS 세션 생성에 실패했습니다.'
                 }
                 if enable_logging:
-                    diagnosis_logger.log_diagnosis_result(item_code, item_info['name'], result)
+                    pass  # 로깅 제거됨
                 return result
             
             # 체커 인스턴스 생성 및 진단 실행
@@ -134,7 +138,7 @@ class DiagnosisService:
                     'message': f'진단 체커를 찾을 수 없습니다: {item_code}'
                 }
                 if enable_logging:
-                    diagnosis_logger.log_diagnosis_result(item_code, item_info['name'], result)
+                    pass  # 로깅 제거됨
                 return result
             
             # 진단 실행
@@ -157,7 +161,7 @@ class DiagnosisService:
             
             # 진단 결과 로그
             if enable_logging:
-                diagnosis_logger.log_diagnosis_result(item_code, item_info['name'], result)
+                pass  # 로깅 제거됨
             
             return result
             
@@ -168,7 +172,7 @@ class DiagnosisService:
             }
             if enable_logging:
                 item_name = item_info.get('name', '알 수 없는 항목') if 'item_info' in locals() else '알 수 없는 항목'
-                diagnosis_logger.log_diagnosis_result(item_code, item_name, result)
+
             return result
     
     def run_batch_diagnosis(self, account, item_codes=None, enable_logging=True):
@@ -199,7 +203,7 @@ class DiagnosisService:
             if enable_logging:
                 account_id = getattr(account, 'account_id', 'Unknown')
                 account_name = getattr(account, 'cloud_name', None)
-                session_id = diagnosis_logger.start_session(account_id, account_name, "batch")
+                pass  # 로깅 제거됨
             
             # AWS 세션 생성
             aws_session = self.create_aws_session(account)
@@ -209,8 +213,7 @@ class DiagnosisService:
                     'message': 'AWS 세션 생성에 실패했습니다.'
                 }
                 if enable_logging:
-                    diagnosis_logger.log_session_summary(len(item_codes), 0, len(item_codes))
-                    diagnosis_logger.end_session()
+                    pass  # 로깅 제거됨
                 return result
             
             # 각 항목별 진단 실행
@@ -230,9 +233,7 @@ class DiagnosisService:
             # 세션 요약 로그
             log_file_path = None
             if enable_logging:
-                diagnosis_logger.log_session_summary(len(item_codes), success_count, failed_count)
-                log_file_path = diagnosis_logger.get_session_log_path()  # end_session() 전에 경로 저장
-                diagnosis_logger.end_session()
+                pass  # 로깅 제거됨
             
             result = {
                 'status': 'success',
@@ -252,7 +253,7 @@ class DiagnosisService:
             
         except Exception as e:
             if enable_logging and session_id:
-                diagnosis_logger.end_session()
+                pass  # 로깅 제거됨
             return {
                 'status': 'error',
                 'message': f'일괄 진단 실행 중 오류 발생: {str(e)}'

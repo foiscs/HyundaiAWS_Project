@@ -24,7 +24,7 @@ variable "environment" {
 variable "vpc_cidr" {
   description = "VPC CIDR 블록"
   type        = string
-  default     = "10.0.0.0/16"
+  default     = "10.1.0.0/16"
   validation {
     condition     = can(cidrhost(var.vpc_cidr, 0))
     error_message = "유효한 CIDR 블록 형식이어야 합니다."
@@ -34,7 +34,7 @@ variable "vpc_cidr" {
 variable "public_subnet_cidrs" {
   description = "퍼블릭 서브넷 CIDR 블록 목록"
   type        = list(string)
-  default     = ["10.0.1.0/24", "10.0.2.0/24"]
+  default     = ["10.1.1.0/24", "10.1.2.0/24"]
   validation {
     condition     = length(var.public_subnet_cidrs) >= 2
     error_message = "고가용성을 위해 최소 2개의 퍼블릭 서브넷이 필요합니다."
@@ -44,7 +44,7 @@ variable "public_subnet_cidrs" {
 variable "private_subnet_cidrs" {
   description = "프라이빗 서브넷 CIDR 블록 목록"
   type        = list(string)
-  default     = ["10.0.10.0/24", "10.0.20.0/24"]
+  default     = ["10.1.10.0/24", "10.1.20.0/24"]
   validation {
     condition     = length(var.private_subnet_cidrs) >= 2
     error_message = "고가용성을 위해 최소 2개의 프라이빗 서브넷이 필요합니다."
@@ -54,7 +54,7 @@ variable "private_subnet_cidrs" {
 variable "database_subnet_cidrs" {
   description = "데이터베이스 서브넷 CIDR 블록 목록"
   type        = list(string)
-  default     = ["10.0.100.0/24", "10.0.110.0/24"]
+  default     = ["10.1.100.0/24", "10.1.110.0/24"]
   validation {
     condition     = length(var.database_subnet_cidrs) >= 2
     error_message = "고가용성을 위해 최소 2개의 DB 서브넷이 필요합니다."
@@ -104,7 +104,7 @@ variable "enable_isms_compliance" {
 variable "allowed_cidr_blocks" {
   description = "접근 허용할 CIDR 블록 목록 (보안 그룹용)"
   type        = list(string)
-  default     = ["10.0.0.0/16"]
+  default     = ["10.1.0.0/16"]
 }
 
 # 네트워크 ACL 관련 변수

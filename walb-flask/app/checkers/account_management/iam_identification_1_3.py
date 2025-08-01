@@ -24,7 +24,7 @@ class IAMIdentificationChecker(BaseChecker):
             if self.session:
                 iam = self.session.client('iam')
             else:
-                iam = boto3.client('iam')
+                iam = self.session.client('iam')
             
             untagged_users = []
             all_users = []

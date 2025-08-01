@@ -37,3 +37,15 @@ claude.md
 /.claude
 mainHub/
 copilot-instructions.md
+SplunkEc2.pem
+
+# SSH Keys and Security
+*.pem
+*.key
+ssh_keys/
+keys/
+
+# Environment Variables
+.env
+.env.local
+.env.production

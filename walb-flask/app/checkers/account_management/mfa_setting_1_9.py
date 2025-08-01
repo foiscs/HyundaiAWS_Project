@@ -23,7 +23,7 @@ class MFASettingChecker(BaseChecker):
             if self.session:
                 iam = self.session.client('iam')
             else:
-                iam = boto3.client('iam')
+                iam = self.session.client('iam')
             
             users_without_mfa = []
             all_users = []

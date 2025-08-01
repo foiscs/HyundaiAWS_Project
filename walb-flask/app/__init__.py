@@ -4,6 +4,11 @@ Flask 애플리케이션 팩토리
 from flask import Flask
 import sys
 import os
+from dotenv import load_dotenv
+
+# .env 파일 로드 (있는 경우)
+load_dotenv()
+
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config import config
 
@@ -26,13 +31,11 @@ def create_app(config_name='default'):
     from app.views.diagnosis import diagnosis_bp
     from app.views.api import api_bp
     from app.views.monitoring import bp as monitoring_bp
-    from app.views.logs import logs_bp
     
     app.register_blueprint(main_bp)
     app.register_blueprint(connection_bp, url_prefix='/connection')
     app.register_blueprint(diagnosis_bp, url_prefix='/diagnosis') 
     app.register_blueprint(api_bp, url_prefix='/api')
     app.register_blueprint(monitoring_bp)
-    app.register_blueprint(logs_bp)
     
     return app

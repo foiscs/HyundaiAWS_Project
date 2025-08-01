@@ -1,6 +1,6 @@
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: music1-namespace
+  name: walb2-app
   labels:
-    name: music1-namespace 
+    name: walb2-app 

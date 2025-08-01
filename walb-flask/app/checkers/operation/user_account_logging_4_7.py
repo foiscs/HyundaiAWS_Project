@@ -28,7 +28,7 @@ class UserAccountLoggingChecker(BaseChecker):
         - 멀티 리전 + 관리 이벤트 포함한 CloudTrail 추적이 하나라도 존재하는지 점검
         """
         print("[INFO] 4.7 사용자 계정 접근 로깅 설정 체크 중...")
-        cloudtrail = boto3.client('cloudtrail')
+        cloudtrail = self.session.client('cloudtrail')
         trails_with_mgmt_events = []
 
         try:
@@ -102,9 +102,9 @@ class UserAccountLoggingChecker(BaseChecker):
             return {'status': 'no_action', 'message': '이미 조건을 만족하는 CloudTrail이 존재합니다.'}
 
         # CloudTrail 생성 진행
-        cloudtrail = boto3.client('cloudtrail')
-        s3 = boto3.client('s3')
-        sts = boto3.client('sts')
+        cloudtrail = self.session.client('cloudtrail')
+        s3 = self.session.client('s3')
+        sts = self.session.client('sts')
 
         account_id = sts.get_caller_identity()['Account']
         region = boto3.session.Session().region_name
@@ -221,7 +221,7 @@ class UserAccountLoggingChecker(BaseChecker):
             'message': f"{len(results)}개 항목에 대한 조치가 완료되었습니다."
         }
 
-    def get_fix_options(self, diagnosis_result):
+    def _get_fix_options(self, diagnosis_result):
         """자동 조치 옵션 반환"""
         if diagnosis_result.get('compliant_trail_exists'):
             return []

@@ -26,7 +26,7 @@ class EksClusterEncryptionChecker(BaseChecker):
         - EKS 클러스터의 시크릿(Secret) 암호화가 활성화되어 있는지 점검
         """
         print("[INFO] 4.15 EKS Cluster 암호화 설정 체크 중...")
-        eks = boto3.client('eks')
+        eks = self.session.client('eks')
         
         try:
             clusters = eks.list_clusters().get('clusters', [])
