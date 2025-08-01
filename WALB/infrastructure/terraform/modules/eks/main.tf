@@ -568,7 +568,7 @@ resource "aws_iam_openid_connect_provider" "eks" {
 }
 
 # =========================================
-# AWS Load Balancer Controller를 위한 IAM 역할
+# AWS Load Balancer Controller를 위한 IAM 역할 (App1 전용)
 # =========================================
 data "aws_iam_policy_document" "aws_load_balancer_controller_assume_role_policy" {
   count = var.enable_load_balancer ? 1 : 0
@@ -773,9 +773,8 @@ resource "aws_iam_role_policy_attachment" "aws_load_balancer_controller_attach" 
   policy_arn = aws_iam_policy.aws_load_balancer_controller[0].arn
 }
 
-
 # =========================================
-# AWS Load Balancer Controller ServiceAccount
+# AWS Load Balancer Controller ServiceAccount (App1 전용)
 # =========================================
 resource "kubernetes_service_account" "aws_load_balancer_controller" {
   count = var.enable_load_balancer ? 1 : 0
@@ -792,7 +791,7 @@ resource "kubernetes_service_account" "aws_load_balancer_controller" {
 }
 
 # =========================================
-# AWS Load Balancer Controller ClusterRole
+# AWS Load Balancer Controller RBAC 리소스 (App1 전용)
 # =========================================
 resource "kubernetes_cluster_role" "aws_load_balancer_controller" {
   count = var.enable_load_balancer ? 1 : 0
@@ -859,7 +858,6 @@ resource "kubernetes_cluster_role" "aws_load_balancer_controller" {
     verbs      = ["get", "list", "watch"]
   }
 
-  # ValidatingWebhookConfiguration 권한 추가
   rule {
     api_groups = ["admissionregistration.k8s.io"]
     resources  = ["validatingwebhookconfigurations"]
@@ -869,9 +867,6 @@ resource "kubernetes_cluster_role" "aws_load_balancer_controller" {
   depends_on = [aws_eks_cluster.main]
 }
 
-# =========================================
-# AWS Load Balancer Controller ClusterRoleBinding
-# =========================================
 resource "kubernetes_cluster_role_binding" "aws_load_balancer_controller" {
   count = var.enable_load_balancer ? 1 : 0
 
@@ -901,193 +896,3 @@ resource "kubernetes_cluster_role_binding" "aws_load_balancer_controller" {
   ]
 }
 
-# =========================================
-# AWS Load Balancer Controller Helm Release
-# =========================================
-resource "helm_release" "aws_load_balancer_controller" {
-  count = var.enable_load_balancer ? 1 : 0
-
-  name       = "walb-alb-controller"
-  repository = "https://aws.github.io/eks-charts"
-  chart      = "aws-load-balancer-controller"
-  namespace  = "kube-system"
-  version    = "1.8.1"
-
-  # Values 파일 경로 (상대 경로)
-  values = [
-    templatefile("${path.module}/../../helm-values/aws-load-balancer-controller.yaml", {
-      cluster_name = var.cluster_name
-      aws_region   = data.aws_region.current.name
-      vpc_id       = var.vpc_id
-    })
-  ]
-
-  # 의존성 설정
-  depends_on = [
-    kubernetes_service_account.aws_load_balancer_controller[0],
-    kubernetes_cluster_role_binding.aws_load_balancer_controller[0],
-    aws_iam_role_policy_attachment.aws_load_balancer_controller_attach[0],
-    aws_eks_node_group.main
-  ]
-
-  # 설치 시간 제한
-  timeout = 600
-
-  # 업그레이드 시 기존 리소스 재사용
-  replace = false
-  
-  # 설치 전 대기
-  wait = true
-  wait_for_jobs = true
-  
-  # 강제 업데이트 설정 (webhook config 문제 해결)
-  force_update = true
-  recreate_pods = true
-  
-  # 설치 후 검증
-  atomic = true
-  cleanup_on_fail = true
-}
-
-# =========================================
-# ValidatingWebhookConfiguration 패치 (webhook timeout 및 failure policy 수정)
-# =========================================
-resource "null_resource" "webhook_timeout_patch" {
-  count = var.enable_load_balancer ? 1 : 0
-
-  provisioner "local-exec" {
-    command = <<-EOT
-      # Wait for webhook configuration to be created
-      timeout 300 bash -c 'until kubectl get validatingwebhookconfigurations aws-load-balancer-webhook; do sleep 5; done'
-      
-      # Patch webhook configuration with updated timeout and failure policy
-      kubectl patch validatingwebhookconfigurations aws-load-balancer-webhook --type='json' -p='[
-        {
-          "op": "replace",
-          "path": "/webhooks/0/timeoutSeconds",
-          "value": 30
-        },
-        {
-          "op": "replace", 
-          "path": "/webhooks/0/failurePolicy",
-          "value": "Ignore"
-        },
-        {
-          "op": "replace",
-          "path": "/webhooks/1/timeoutSeconds", 
-          "value": 30
-        },
-        {
-          "op": "replace",
-          "path": "/webhooks/1/failurePolicy",
-          "value": "Ignore"
-        },
-        {
-          "op": "replace",
-          "path": "/webhooks/2/timeoutSeconds",
-          "value": 30
-        },
-        {
-          "op": "replace",
-          "path": "/webhooks/2/failurePolicy",
-          "value": "Ignore"
-        }
-      ]'
-    EOT
-  }
-
-  depends_on = [
-    helm_release.aws_load_balancer_controller[0]
-  ]
-
-  triggers = {
-    helm_release_version = helm_release.aws_load_balancer_controller[0].version
-    always_run          = timestamp()
-  }
-}
-
-# =========================================
-# Ingress 리소스 (선택적)
-# =========================================
-resource "kubernetes_ingress_v1" "walb_app" {
-  count = var.enable_load_balancer && var.create_ingress ? 1 : 0
-
-  metadata {
-    name      = "walb-app-ingress"
-    namespace = "walb-app"
-    annotations = {
-      # AWS Application Load Balancer 설정
-      "alb.ingress.kubernetes.io/scheme"                = "internet-facing"
-      "alb.ingress.kubernetes.io/target-type"           = "ip"
-      "alb.ingress.kubernetes.io/listen-ports"          = "[{\"HTTP\": 80}]"
-      
-      # Health Check 설정 (PHP 애플리케이션)
-      "alb.ingress.kubernetes.io/healthcheck-path"             = "/health.php"
-      "alb.ingress.kubernetes.io/healthcheck-interval-seconds" = "30"
-      "alb.ingress.kubernetes.io/healthcheck-timeout-seconds"  = "10"
-      "alb.ingress.kubernetes.io/healthy-threshold-count"      = "2"
-      "alb.ingress.kubernetes.io/unhealthy-threshold-count"    = "3"
-      "alb.ingress.kubernetes.io/healthcheck-protocol"         = "HTTP"
-      "alb.ingress.kubernetes.io/healthcheck-port"             = "80"
-      
-      # Load Balancer 설정
-      "alb.ingress.kubernetes.io/load-balancer-name" = "walb-app-ingress-alb"
-      "alb.ingress.kubernetes.io/target-group-attributes" = join(",", [
-        "stickiness.enabled=false",
-        "deregistration_delay.timeout_seconds=60",
-        "load_balancing.algorithm.type=round_robin",
-        "slow_start.duration_seconds=30"
-      ])
-      
-      # 태그 설정
-      "alb.ingress.kubernetes.io/tags" = join(",", [
-        "Environment=walb-app",
-        "Project=walb-app", 
-        "ManagedBy=Kubernetes",
-        "CreatedBy=AWS-Load-Balancer-Controller",
-        "Application=PHP-Blog"
-      ])
-    }
-  }
-
-  spec {
-    ingress_class_name = "alb"
-    
-    rule {
-      http {
-        path {
-          path      = "/"
-          path_type = "Prefix"
-          backend {
-            service {
-              name = "walb-app-service"
-              port {
-                number = 80
-              }
-            }
-          }
-        }
-      }
-    }
-  }
-
-  depends_on = [
-    helm_release.aws_load_balancer_controller[0],
-    kubernetes_namespace.walb_app[0]
-  ]
-}
-
-# =========================================
-# 애플리케이션 네임스페이스
-# =========================================
-resource "kubernetes_namespace" "walb_app" {
-  count = var.enable_load_balancer && var.create_ingress ? 1 : 0
-
-  metadata {
-    name = "walb-app"
-    labels = {
-      "app.kubernetes.io/name"       = "walb-app"
-      "app.kubernetes.io/managed-by" = "Terraform"
-    }
-  }
-}

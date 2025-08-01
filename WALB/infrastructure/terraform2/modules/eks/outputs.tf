@@ -269,14 +269,14 @@ output "eks_cluster_summary" {
 
 # AWS Load Balancer Controller 정보
 output "aws_load_balancer_controller_role_arn" {
-  description = "AWS Load Balancer Controller IAM Role ARN"
-  value       = var.enable_load_balancer ? aws_iam_role.aws_load_balancer_controller[0].arn : null
+  description = "AWS Load Balancer Controller IAM Role ARN (App2용 - terraform2에서 관리)"
+  value       = var.enable_load_balancer ? aws_iam_role.aws_load_balancer_controller_app2[0].arn : null
 }
 
-# AWS Load Balancer Controller App2 정보
+# AWS Load Balancer Controller App2 정보  
 output "aws_load_balancer_controller_app2_role_arn" {
-  description = "AWS Load Balancer Controller App2 IAM Role ARN"
-  value       = var.enable_load_balancer ? aws_iam_role.aws_load_balancer_controller[0].arn : null
+  description = "AWS Load Balancer Controller App2 IAM Role ARN (terraform2에서 관리)"
+  value       = var.enable_load_balancer ? aws_iam_role.aws_load_balancer_controller_app2[0].arn : null
 }
 
 
