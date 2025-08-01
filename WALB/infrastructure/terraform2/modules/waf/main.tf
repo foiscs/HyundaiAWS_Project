@@ -155,8 +155,8 @@ resource "aws_kinesis_firehose_delivery_stream" "waf_logs" {
     prefix              = "waf-logs/year=!{timestamp:yyyy}/month=!{timestamp:MM}/day=!{timestamp:dd}/hour=!{timestamp:HH}/"
     error_output_prefix = "waf-logs-errors/"
     # Buffering Configuration
-    buffer_size     = var.buffer_size_mb
-    buffer_interval = var.buffer_interval_seconds
+    buffering_size     = var.buffer_size_mb
+    buffering_interval = var.buffer_interval_seconds
     # Compression
     compression_format = "GZIP"
     # CloudWatch Logging

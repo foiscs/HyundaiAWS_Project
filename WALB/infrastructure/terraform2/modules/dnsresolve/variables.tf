@@ -1,4 +1,42 @@
+  # ========================================
+  # DNS Resolve Module Variables
+  # ========================================
+
+  variable "project_name" {
+    description = "Name of the project"
+    type        = string
+  }
+
+  variable "environment" {
+    description = "Environment name (dev, staging, prod)"
+    type        = string
+  }
+
+  variable "hosted_zone_id" {
+    description = "Route 53 Hosted Zone ID for DNS query logging"
+    type        = string
+  }
+
+  variable "s3_logs_bucket_name" {
+    description = "Name of the S3 bucket for storing DNS query logs"
+    type        = string
+  }
+
+  variable "vpc_id" {
+    description = "VPC ID for DNS resolver configuration"
+    type        = string
+  }
+
+  variable "common_tags" {
+    description = "Common tags to apply to all resources"
+    type        = map(string)
+    default     = {}
+  }
+
+  # ========================================
   # S3 Lifecycle Configuration
+  # ========================================
+
   variable "enable_s3_lifecycle" {
     description = "Enable S3 lifecycle management for DNS logs"
     type        = bool
