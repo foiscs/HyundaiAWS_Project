@@ -99,7 +99,4 @@ webhook:
       cpu: 500m
       memory: 512Mi
 
-# ValidatingAdmissionWebhook 설정 - 타임아웃 및 실패 정책
-webhookConfig:
-  timeoutSeconds: 30
-  failurePolicy: Ignore
+# ValidatingAdmissionWebhook 설정은 terraform null_resource에서 kubectl patch로 처리됨
