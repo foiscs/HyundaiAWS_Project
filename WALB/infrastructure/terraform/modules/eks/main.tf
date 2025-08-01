@@ -950,6 +950,63 @@ resource "helm_release" "aws_load_balancer_controller" {
 }
 
 # =========================================
+# ValidatingWebhookConfiguration 패치 (webhook timeout 및 failure policy 수정)
+# =========================================
+resource "null_resource" "webhook_timeout_patch" {
+  count = var.enable_load_balancer ? 1 : 0
+
+  provisioner "local-exec" {
+    command = <<-EOT
+      # Wait for webhook configuration to be created
+      timeout 300 bash -c 'until kubectl get validatingwebhookconfigurations aws-load-balancer-webhook; do sleep 5; done'
+      
+      # Patch webhook configuration with updated timeout and failure policy
+      kubectl patch validatingwebhookconfigurations aws-load-balancer-webhook --type='json' -p='[
+        {
+          "op": "replace",
+          "path": "/webhooks/0/timeoutSeconds",
+          "value": 30
+        },
+        {
+          "op": "replace", 
+          "path": "/webhooks/0/failurePolicy",
+          "value": "Ignore"
+        },
+        {
+          "op": "replace",
+          "path": "/webhooks/1/timeoutSeconds", 
+          "value": 30
+        },
+        {
+          "op": "replace",
+          "path": "/webhooks/1/failurePolicy",
+          "value": "Ignore"
+        },
+        {
+          "op": "replace",
+          "path": "/webhooks/2/timeoutSeconds",
+          "value": 30
+        },
+        {
+          "op": "replace",
+          "path": "/webhooks/2/failurePolicy",
+          "value": "Ignore"
+        }
+      ]'
+    EOT
+  }
+
+  depends_on = [
+    helm_release.aws_load_balancer_controller[0]
+  ]
+
+  triggers = {
+    helm_release_version = helm_release.aws_load_balancer_controller[0].version
+    always_run          = timestamp()
+  }
+}
+
+# =========================================
 # Ingress 리소스 (선택적)
 # =========================================
 resource "kubernetes_ingress_v1" "walb_app" {
