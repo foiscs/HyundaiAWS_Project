@@ -1061,7 +1061,6 @@ jobs:
           echo "  namespace: ${{ env.PROJECT_NAME }}" >> ingress.yaml
           echo "  annotations:" >> ingress.yaml
           echo "    # AWS Application Load Balancer 설정" >> ingress.yaml
-          echo "    kubernetes.io/ingress.class: alb" >> ingress.yaml
           echo "    alb.ingress.kubernetes.io/scheme: internet-facing" >> ingress.yaml
           echo "    alb.ingress.kubernetes.io/target-type: ip" >> ingress.yaml
           echo '    alb.ingress.kubernetes.io/listen-ports: '"'"'[{"HTTP": 80}]'"'"'' >> ingress.yaml
