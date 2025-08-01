@@ -943,16 +943,17 @@ data "aws_ami" "amazon_linux" {
 module "iam_security" {                             
   source = "./modules/iam-security"                 
   project_name        = var.project_name            
-  #s3_logs_bucket_name = module.s3.logs_bucket_name  
-  s3_logs_bucket_name = "walb2-app-logs-walb-87d08755"
+  s3_logs_bucket_name = module.s3.logs_bucket_name  
+  #s3_logs_bucket_name = "walb2-app-logs-walb-87d08755"
   create_access_keys  = true  # 보안상 기본값 false
   common_tags = merge(local.common_tags, {          
     Component = "Security"                          
     Purpose   = "User Management"                   
   })
+  depends_on = [module.s3]
 }
 
-# # CloudTrail Hub Module
+# CloudTrail Hub Module
 # module "cloudtrail" {
 #   source = "./modules/cloudtrail"
 #   project_name                    = var.project_name
@@ -962,6 +963,7 @@ module "iam_security" {
 #   kms_key_arn                     = aws_kms_key.main.arn
 #   sns_topic_arn                   = aws_sns_topic.security_alerts.arn
   
+
 #   common_tags = merge(local.common_tags, {
 #     Component = "Security"
 #   })
