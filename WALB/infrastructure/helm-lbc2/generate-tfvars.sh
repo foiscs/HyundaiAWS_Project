@@ -50,9 +50,18 @@ log_info "Terraform2 인프라 정보를 가져오는 중..."
 
 cd "$TERRAFORM_DIR"
 
-# Terraform 상태 확인
-if [ ! -f "terraform.tfstate" ]; then
-    log_error "terraform.tfstate 파일을 찾을 수 없습니다."
+# Terraform 초기화 및 상태 확인 (S3 backend 지원)
+log_info "Terraform 초기화 중..."
+if ! terraform init -input=false >/dev/null 2>&1; then
+    log_error "Terraform 초기화에 실패했습니다."
+    log_info "AWS 자격증명과 S3 backend 설정을 확인해주세요."
+    exit 1
+fi
+
+# Remote state 존재 확인
+log_info "Remote state 확인 중..."
+if ! terraform state list >/dev/null 2>&1; then
+    log_error "Terraform state를 찾을 수 없습니다."
     log_info "먼저 terraform apply를 실행하여 인프라를 배포해주세요."
     exit 1
 fi

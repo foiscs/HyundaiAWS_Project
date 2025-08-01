@@ -454,6 +454,8 @@ resource "aws_iam_role" "eks_app_role" {
   })
 }
 
+# terraform import kubernetes_config_map.aws_auth kube-system/aws-auth 필요
+
 # =========================================
 # aws-auth ConfigMap for GitHub Actions Access
 # =========================================

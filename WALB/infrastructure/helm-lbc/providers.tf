@@ -21,11 +21,12 @@ terraform {
   
   # Backend 설정 (선택사항)
   backend "s3" {
-    bucket         = "walb-terraform-state-bucket"
+    bucket         = "walb-terraform-state-3163"
     key            = "helm-lbc/terraform.tfstate"
     region         = "ap-northeast-2"
-    dynamodb_table = "walb-terraform-locks"
+    dynamodb_table = "walb-terraform-lock-3163"
     encrypt        = true
+    kms_key_id     = "arn:aws:kms:ap-northeast-2:253157413163:key/4c10b1b0-e7df-4ace-a79c-37763dd29fc3"
   }
 }
 
@@ -56,7 +57,19 @@ data "aws_eks_cluster_auth" "cluster" {
 provider "kubernetes" {
   host                   = data.aws_eks_cluster.cluster.endpoint
   cluster_ca_certificate = base64decode(data.aws_eks_cluster.cluster.certificate_authority[0].data)
-  token                  = data.aws_eks_cluster_auth.cluster.token
+  
+  exec {
+    api_version = "client.authentication.k8s.io/v1beta1"
+    command     = "aws"
+    args = [
+      "eks",
+      "get-token",
+      "--cluster-name",
+      var.cluster_name,
+      "--region",
+      var.aws_region
+    ]
+  }
 }
 
 # Helm Provider
@@ -64,6 +77,18 @@ provider "helm" {
   kubernetes {
     host                   = data.aws_eks_cluster.cluster.endpoint
     cluster_ca_certificate = base64decode(data.aws_eks_cluster.cluster.certificate_authority[0].data)
-    token                  = data.aws_eks_cluster_auth.cluster.token
+    
+    exec {
+      api_version = "client.authentication.k8s.io/v1beta1"
+      command     = "aws"
+      args = [
+        "eks",
+        "get-token",
+        "--cluster-name",
+        var.cluster_name,
+        "--region",
+        var.aws_region
+      ]
+    }
   }
 }

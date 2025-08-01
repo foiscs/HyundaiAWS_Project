@@ -5,7 +5,6 @@ output "helm_release_info" {
   value = {
     name      = helm_release.aws_load_balancer_controller_app2.name
     namespace = helm_release.aws_load_balancer_controller_app2.namespace
-    revision  = helm_release.aws_load_balancer_controller_app2.revision
     version   = helm_release.aws_load_balancer_controller_app2.version
     status    = helm_release.aws_load_balancer_controller_app2.status
     chart     = helm_release.aws_load_balancer_controller_app2.chart
