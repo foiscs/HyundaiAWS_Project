@@ -1,17 +1,23 @@
   data "aws_caller_identity" "current" {}
   data "aws_region" "current" {}
 
-  # Route 53 Query Logging Configuration (Direct to S3)
-  resource "aws_route53_query_log" "main" {
+  # Route 53 Resolver Query Logging Configuration (Direct to S3)
+  resource "aws_route53_resolver_query_log_config" "main" {
+    name            = "${var.project_name}-dns-query-logging"
     destination_arn = "arn:aws:s3:::${var.s3_logs_bucket_name}/dns-query-logs/"
-    zone_id         = var.hosted_zone_id
     
     tags = merge(var.common_tags, {
       Name      = "${var.project_name}-dns-query-logging"
       Component = "Security"
-      Service   = "Route53"
+      Service   = "Route53Resolver"
       Purpose   = "DNS Query Analysis"
     })
+  }
+
+  # Associate Query Log Config with VPC
+  resource "aws_route53_resolver_query_log_config_association" "main" {
+    resolver_query_log_config_id = aws_route53_resolver_query_log_config.main.id
+    resource_id                  = var.vpc_id
   }
   # S3 prefix for DNS logs organization
   resource "aws_s3_object" "dns_logs_prefix" {

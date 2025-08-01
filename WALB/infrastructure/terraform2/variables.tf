@@ -566,3 +566,42 @@ variable "github_repository" {
   type        = string
   default     = "foiscs/HyundaiAWS_Project"  # 실제 리포지토리로 변경 필요
 }
+
+# =========================================
+# DNS Resolve 모듈 설정
+# =========================================
+variable "hosted_zone_id" {
+  description = "Route 53 Hosted Zone ID for DNS query logging"
+  type        = string
+  default     = ""  # 실제 Hosted Zone ID로 설정 필요
+}
+
+variable "enable_s3_lifecycle" {
+  description = "Enable S3 lifecycle management for DNS logs"
+  type        = bool
+  default     = true
+}
+
+variable "transition_to_ia_days" {
+  description = "Days to transition to Standard-IA"
+  type        = number
+  default     = 30
+}
+
+variable "transition_to_glacier_days" {
+  description = "Days to transition to Glacier"
+  type        = number
+  default     = 90
+}
+
+variable "transition_to_deep_archive_days" {
+  description = "Days to transition to Deep Archive"
+  type        = number
+  default     = 365
+}
+
+variable "dns_log_retention_days" {
+  description = "Days to retain DNS logs before deletion"
+  type        = number
+  default     = 2555  # 7 years for compliance
+}
