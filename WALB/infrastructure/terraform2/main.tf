@@ -818,6 +818,10 @@ resource "aws_iam_role_policy" "github_actions_app_policy" {
           "ec2:DescribeRouteTables",
           "ec2:DescribeVpcs",
           
+          # 보안그룹 권한 추가 (kubelet 통신 규칙 확인/수정용)
+          "ec2:DescribeSecurityGroups",
+          "ec2:AuthorizeSecurityGroupIngress",
+          
           # 계정 정보 조회
           "sts:GetCallerIdentity"
         ]

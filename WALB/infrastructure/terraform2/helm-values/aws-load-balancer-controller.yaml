@@ -90,9 +90,6 @@ webhook:
   certManager:
     enabled: false
   port: 9443
-  timeoutSeconds: 30
-  # 웹훅 실패 정책 - Ignore로 변경하여 타임아웃 시 무시
-  failurePolicy: Ignore
   # 웹훅 성능 최적화
   resources:
     limits:
@@ -102,5 +99,7 @@ webhook:
       cpu: 500m
       memory: 512Mi
 
-# ValidatingAdmissionWebhook 타임아웃 설정
-validatingWebhookTimeoutSeconds: 30
+# ValidatingAdmissionWebhook 설정 - 타임아웃 및 실패 정책
+webhookConfig:
+  timeoutSeconds: 30
+  failurePolicy: Ignore

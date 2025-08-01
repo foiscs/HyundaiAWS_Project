@@ -982,7 +982,7 @@ jobs:
           echo "    alb.ingress.kubernetes.io/load-balancer-name: ${{ env.PROJECT_NAME }}-ingress-alb" >> ingress.yaml
           echo '    alb.ingress.kubernetes.io/target-group-attributes: "stickiness.enabled=false,deregistration_delay.timeout_seconds=60,load_balancing.algorithm.type=round_robin,slow_start.duration_seconds=30"' >> ingress.yaml
           echo "spec:" >> ingress.yaml
-          echo "  ingressClassName: alb-app2" >> ingress.yaml
+          echo "  ingressClassName: alb" >> ingress.yaml
           echo "  rules:" >> ingress.yaml
           echo "  - http:" >> ingress.yaml
           echo "      paths:" >> ingress.yaml
@@ -1048,7 +1048,7 @@ jobs:
               
               # Controller 로그 확인
               echo "🔍 Controller 로그 확인:"
-              kubectl logs -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller-app2 --tail=10 || true
+              kubectl logs -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller --tail=10 || true
             else
               echo "✅ Ingress finalizer 설정됨: $ingress_finalizers"
             fi
@@ -1090,7 +1090,7 @@ jobs:
                 # AWS Load Balancer Controller 상태 확인
                 if [ $((i % 6)) -eq 0 ]; then
                   echo "🔍 AWS Load Balancer Controller Pod 상태:"
-                  kubectl get pods -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller-app2 || true
+                  kubectl get pods -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller || true
                   
                   # 최근 이벤트 확인
                   echo "🔍 최근 Ingress 이벤트:"
@@ -1122,14 +1122,14 @@ jobs:
               fi
               
               echo "🔍 AWS Load Balancer Controller 상세 상태:"
-              kubectl get pods -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller-app2 -o wide || true
-              kubectl describe pods -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller-app2 || true
+              kubectl get pods -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller -o wide || true
+              kubectl describe pods -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller || true
               
               echo "🔍 AWS Load Balancer Controller App2 최근 로그 (실패 관련):"
-              kubectl logs -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller-app2 --tail=200 | grep -i "error\|fail\|denied\|invalid\|timeout" || echo "관련 에러 로그 없음"
+              kubectl logs -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller --tail=200 | grep -i "error\|fail\|denied\|invalid\|timeout" || echo "관련 에러 로그 없음"
               
               echo "🔍 AWS Load Balancer Controller App2 전체 로그 (최근 50줄):"
-              kubectl logs -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller-app2 --tail=50 || true
+              kubectl logs -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller --tail=50 || true
               
               echo "🔍 IngressClass 확인:"
               kubectl get ingressclass || true
@@ -1168,8 +1168,8 @@ jobs:
           else
             echo "❌ Ingress 배포 실패"
             echo "🔍 진단 정보:"
-            kubectl get pods -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller-app2
-            kubectl logs -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller-app2 --tail=50 || true
+            kubectl get pods -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller
+            kubectl logs -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller --tail=50 || true
             kubectl get validatingwebhookconfigurations | grep -E "(ingress|aws-load-balancer)" || echo "웹훅 없음"
             kubectl get ingressclass || true
             exit 1
@@ -1241,7 +1241,7 @@ jobs:
           kubectl get ingress -n ${{ env.PROJECT_NAME }} || echo "Ingress를 찾을 수 없습니다."
 
           echo "📋 AWS Load Balancer Controller 상태:"
-          kubectl get pods -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller-app2 || echo "AWS Load Balancer Controller App2를 찾을 수 없습니다."
+          kubectl get pods -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller || echo "AWS Load Balancer Controller App2를 찾을 수 없습니다."
 
           # Deployment 존재 확인 후 대기
           if kubectl get deployment ${{ env.PROJECT_NAME }}-app -n ${{ env.PROJECT_NAME }} >/dev/null 2>&1; then
