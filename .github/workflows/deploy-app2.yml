@@ -160,6 +160,54 @@ jobs:
           exit 1
         fi
         echo "✅ EKS Cluster Status: $EKS_STATUS"
+
+    # ===============================================
+    # EKS 보안그룹 규칙 확인 및 자동 수정 (kubelet 통신용)
+    # ===============================================
+    - name: Check and fix EKS security group rules
+      run: |
+        echo "🔍 EKS 보안그룹 10250 포트 규칙 확인 중..."
+        
+        # 워커노드 보안그룹 ID 조회
+        NODE_SG_ID=$(aws ec2 describe-instances \
+          --filters "Name=tag:kubernetes.io/cluster/${{ env.EKS_CLUSTER_NAME }},Values=owned" \
+          --query "Reservations[*].Instances[*].SecurityGroups[*].GroupId" \
+          --output text | tr '\t' '\n' | sort | uniq | head -1)
+        
+        # 클러스터 보안그룹 ID 조회  
+        CLUSTER_SG_ID=$(aws eks describe-cluster --name ${{ env.EKS_CLUSTER_NAME }} \
+          --query "cluster.resourcesVpcConfig.securityGroupIds[0]" --output text)
+        
+        if [ -z "$NODE_SG_ID" ] || [ -z "$CLUSTER_SG_ID" ]; then
+          echo "⚠️ 보안그룹 ID를 찾을 수 없습니다. 스킵합니다."
+          echo "NODE_SG_ID: $NODE_SG_ID"
+          echo "CLUSTER_SG_ID: $CLUSTER_SG_ID"
+        else
+          echo "📋 보안그룹 정보:"
+          echo "  Worker Node SG: $NODE_SG_ID"
+          echo "  Cluster SG: $CLUSTER_SG_ID"
+          
+          # 10250 포트 규칙 존재 여부 확인
+          RULE_EXISTS=$(aws ec2 describe-security-groups --group-ids $NODE_SG_ID \
+            --query "SecurityGroups[0].GroupRules[?FromPort==\`10250\` && ToPort==\`10250\` && IsEgress==\`false\`]" \
+            --output text)
+          
+          if [ -z "$RULE_EXISTS" ]; then
+            echo "⚠️ kubelet 통신용 10250 포트 규칙이 없습니다. 추가 중..."
+            
+            # 10250 포트 인바운드 규칙 추가 (클러스터에서 노드로)
+            aws ec2 authorize-security-group-ingress \
+              --group-id $NODE_SG_ID \
+              --protocol tcp \
+              --port 10250 \
+              --source-group $CLUSTER_SG_ID \
+              --description "Allow kubelet communication from control plane (auto-added by GitHub Actions)" \
+              2>/dev/null && echo "✅ 10250 포트 규칙 추가 완료" || echo "⚠️ 규칙 추가 실패 (이미 존재할 수 있음)"
+            
+          else
+            echo "✅ kubelet 통신용 10250 포트 규칙이 이미 존재합니다"
+          fi
+        fi
     
     # ===============================================
     # ECR 로그인
@@ -710,12 +758,8 @@ jobs:
           # namespace.yml 업데이트 (프로젝트명 사용)
           sed -i "s/music1-namespace/${{ env.PROJECT_NAME }}/g" namespace.yml
           
-          # deployment.yml 업데이트
-          sed -i "s/music1-deployment/${{ env.PROJECT_NAME }}-app/g" deployment.yml
-          sed -i "s/music1-namespace/${{ env.PROJECT_NAME }}/g" deployment.yml
-          sed -i "s/music1-app/${{ env.PROJECT_NAME }}-app/g" deployment.yml
-          sed -i "s/music1-service/${{ env.PROJECT_NAME }}-service/g" deployment.yml
-          sed -i "s|YOUR_ECR_URI/${{ env.IMAGE_NAME }}:latest|${{ steps.build-image.outputs.image }}|g" deployment.yml
+          # deployment.yml 업데이트 (실제 파일 내용에 맞게 수정)
+          sed -i "s|\${ECR_REGISTRY}/walb2-app-ecr:\${IMAGE_TAG}|${{ steps.build-image.outputs.image }}|g" deployment.yml
           
           # Spring Boot Actuator 헬스체크로 변경
           sed -i "s|path: /api/music|path: ${{ env.HEALTH_CHECK_PATH }}|g" deployment.yml
@@ -971,15 +1015,19 @@ jobs:
       run: |
           echo "🚀 EKS에 애플리케이션 배포 중..."
 
-          # 기존 k8s 매니페스트 적용
-          echo "📦 기존 k8s 리소스 배포 중..."
+          # k8s 리소스 의존성 순서대로 배포
+          echo "📦 k8s 리소스 배포 중..."
+          
+          # 1. 네임스페이스 먼저 생성
           kubectl apply -f server2/k8s/namespace.yml
-          kubectl apply -f server2/k8s/deployment.yml
-
-          # 추가 리소스 배포  
+          
+          # 2. 기본 리소스들 생성 (deployment가 참조하는 리소스들)
           kubectl apply -f serviceaccount.yaml
           kubectl apply -f configmap.yaml
           kubectl apply -f secret.yaml
+          
+          # 3. 마지막에 deployment 생성 (모든 의존성 리소스 준비 완료 후)
+          kubectl apply -f server2/k8s/deployment.yml
 
           # Ingress 배포 (AWS Load Balancer Controller로 ALB 생성)
           echo "🔗 Ingress 리소스 배포 중..."

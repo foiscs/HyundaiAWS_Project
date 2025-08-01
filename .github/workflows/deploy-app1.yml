@@ -152,6 +152,54 @@ jobs:
           exit 1
         fi
         echo "✅ EKS Cluster Status: $EKS_STATUS"
+
+    # ===============================================
+    # EKS 보안그룹 규칙 확인 및 자동 수정 (kubelet 통신용)
+    # ===============================================
+    - name: Check and fix EKS security group rules
+      run: |
+        echo "🔍 EKS 보안그룹 10250 포트 규칙 확인 중..."
+        
+        # 워커노드 보안그룹 ID 조회
+        NODE_SG_ID=$(aws ec2 describe-instances \
+          --filters "Name=tag:kubernetes.io/cluster/$EKS_CLUSTER_NAME,Values=owned" \
+          --query "Reservations[*].Instances[*].SecurityGroups[*].GroupId" \
+          --output text | tr '\t' '\n' | sort | uniq | head -1)
+        
+        # 클러스터 보안그룹 ID 조회  
+        CLUSTER_SG_ID=$(aws eks describe-cluster --name $EKS_CLUSTER_NAME \
+          --query "cluster.resourcesVpcConfig.securityGroupIds[0]" --output text)
+        
+        if [ -z "$NODE_SG_ID" ] || [ -z "$CLUSTER_SG_ID" ]; then
+          echo "⚠️ 보안그룹 ID를 찾을 수 없습니다. 스킵합니다."
+          echo "NODE_SG_ID: $NODE_SG_ID"
+          echo "CLUSTER_SG_ID: $CLUSTER_SG_ID"
+        else
+          echo "📋 보안그룹 정보:"
+          echo "  Worker Node SG: $NODE_SG_ID"
+          echo "  Cluster SG: $CLUSTER_SG_ID"
+          
+          # 10250 포트 규칙 존재 여부 확인
+          RULE_EXISTS=$(aws ec2 describe-security-groups --group-ids $NODE_SG_ID \
+            --query "SecurityGroups[0].GroupRules[?FromPort==\`10250\` && ToPort==\`10250\` && IsEgress==\`false\`]" \
+            --output text)
+          
+          if [ -z "$RULE_EXISTS" ]; then
+            echo "⚠️ kubelet 통신용 10250 포트 규칙이 없습니다. 추가 중..."
+            
+            # 10250 포트 인바운드 규칙 추가 (클러스터에서 노드로)
+            aws ec2 authorize-security-group-ingress \
+              --group-id $NODE_SG_ID \
+              --protocol tcp \
+              --port 10250 \
+              --source-group $CLUSTER_SG_ID \
+              --description "Allow kubelet communication from control plane (auto-added by GitHub Actions)" \
+              2>/dev/null && echo "✅ 10250 포트 규칙 추가 완료" || echo "⚠️ 규칙 추가 실패 (이미 존재할 수 있음)"
+            
+          else
+            echo "✅ kubelet 통신용 10250 포트 규칙이 이미 존재합니다"
+          fi
+        fi
     
     # ===============================================
     # ECR 로그인
