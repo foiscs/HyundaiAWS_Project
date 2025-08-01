@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
       - name: walb2-app
-        image: 253157413163.dkr.ecr.ap-northeast-2.amazonaws.com/walb2-app-ecr:latest
+        image: ${ECR_REGISTRY}/walb2-app-ecr:${IMAGE_TAG}
         ports:
         - containerPort: 8080
           name: http
