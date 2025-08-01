@@ -10,7 +10,7 @@ metadata:
     alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}]'
     
     # 서로 다른 AZ의 퍼블릭 서브넷 2개 사용
-    alb.ingress.kubernetes.io/subnets: subnet-053633e89439737ed,subnet-018cf836ea07a606a
+    alb.ingress.kubernetes.io/subnets: subnet-0c9ed529f9273ca5c",subnet-0f0e638a79fd7ee95
     
     # Health Check 설정 (PHP 애플리케이션)
     alb.ingress.kubernetes.io/healthcheck-path: /health.php
