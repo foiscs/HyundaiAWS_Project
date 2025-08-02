@@ -1057,21 +1057,20 @@ jobs:
           echo "            name: ${{ env.PROJECT_NAME }}-config" >> deployment.yaml
           echo "        - secretRef:" >> deployment.yaml
           echo "            name: ${{ env.PROJECT_NAME }}-secret" >> deployment.yaml
-          # Health Check 임시 비활성화 - 디버깅을 위해
-          # echo "        livenessProbe:" >> deployment.yaml
-          # echo "          tcpSocket:" >> deployment.yaml
-          # echo "            port: 80" >> deployment.yaml
-          # echo "          initialDelaySeconds: 120" >> deployment.yaml
-          # echo "          periodSeconds: 60" >> deployment.yaml
-          # echo "          timeoutSeconds: 10" >> deployment.yaml
-          # echo "          failureThreshold: 5" >> deployment.yaml
-          # echo "        readinessProbe:" >> deployment.yaml
-          # echo "          tcpSocket:" >> deployment.yaml
-          # echo "            port: 80" >> deployment.yaml
-          # echo "          initialDelaySeconds: 60" >> deployment.yaml
-          # echo "          periodSeconds: 30" >> deployment.yaml
-          # echo "          timeoutSeconds: 5" >> deployment.yaml
-          # echo "          failureThreshold: 3" >> deployment.yaml
+          echo "        livenessProbe:" >> deployment.yaml
+          echo "          httpGet:" >> deployment.yaml
+          echo "            path: ${{ env.HEALTH_CHECK_PATH }}" >> deployment.yaml
+          echo "            port: 80" >> deployment.yaml
+          echo "          initialDelaySeconds: 60" >> deployment.yaml
+          echo "          periodSeconds: 30" >> deployment.yaml
+          echo "          timeoutSeconds: 10" >> deployment.yaml
+          echo "        readinessProbe:" >> deployment.yaml
+          echo "          httpGet:" >> deployment.yaml
+          echo "            path: ${{ env.HEALTH_CHECK_PATH }}" >> deployment.yaml
+          echo "            port: 80" >> deployment.yaml
+          echo "          initialDelaySeconds: 30" >> deployment.yaml
+          echo "          periodSeconds: 10" >> deployment.yaml
+          echo "          timeoutSeconds: 5" >> deployment.yaml
           echo "        resources:" >> deployment.yaml
           echo "          requests:" >> deployment.yaml
           echo '            memory: "256Mi"' >> deployment.yaml
@@ -1116,7 +1115,7 @@ jobs:
           echo "    alb.ingress.kubernetes.io/subnets: ${{ env.PUBLIC_SUBNETS }}" >> ingress.yaml
           echo "    " >> ingress.yaml
           echo "    # Health Check 설정 (PHP 애플리케이션)" >> ingress.yaml
-          echo '    alb.ingress.kubernetes.io/healthcheck-path: "/"' >> ingress.yaml
+          echo "    alb.ingress.kubernetes.io/healthcheck-path: ${{ env.HEALTH_CHECK_PATH }}" >> ingress.yaml
           echo "    alb.ingress.kubernetes.io/healthcheck-interval-seconds: '30'" >> ingress.yaml
           echo "    alb.ingress.kubernetes.io/healthcheck-timeout-seconds: '10'" >> ingress.yaml
           echo "    alb.ingress.kubernetes.io/healthy-threshold-count: '2'" >> ingress.yaml

@@ -13,7 +13,7 @@ metadata:
     alb.ingress.kubernetes.io/subnets: subnet-0c9ed529f9273ca5c",subnet-0f0e638a79fd7ee95
     
     # Health Check 설정 (PHP 애플리케이션)
-    alb.ingress.kubernetes.io/healthcheck-path: /health.php
+    alb.ingress.kubernetes.io/healthcheck-path: /simple-health.php
     alb.ingress.kubernetes.io/healthcheck-interval-seconds: '30'
     alb.ingress.kubernetes.io/healthcheck-timeout-seconds: '10'
     alb.ingress.kubernetes.io/healthy-threshold-count: '2'

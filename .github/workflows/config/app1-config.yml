@@ -33,7 +33,7 @@ app1_config:
   application:
     deployment_name: "walb-deployment"  # deployment 이름
     image_name: "walb-app-ecr"              # 컨테이너 이미지 이름
-    health_check_path: "/health.php"  # PHP RDS 연결 포함 헬스체크 경로
+    health_check_path: "/simple-health.php"  # PHP 간단한 헬스체크 경로 (DB 연결 없음)
   
   # 네트워크 설정
   network:
