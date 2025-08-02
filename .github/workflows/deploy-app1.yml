@@ -1058,19 +1058,19 @@ jobs:
           echo "        - secretRef:" >> deployment.yaml
           echo "            name: ${{ env.PROJECT_NAME }}-secret" >> deployment.yaml
           echo "        livenessProbe:" >> deployment.yaml
-          echo "          httpGet:" >> deployment.yaml
-          echo "            path: ${{ env.HEALTH_CHECK_PATH }}" >> deployment.yaml
+          echo "          tcpSocket:" >> deployment.yaml
+          echo "            port: 80" >> deployment.yaml
+          echo "          initialDelaySeconds: 120" >> deployment.yaml
+          echo "          periodSeconds: 60" >> deployment.yaml
+          echo "          timeoutSeconds: 10" >> deployment.yaml
+          echo "          failureThreshold: 5" >> deployment.yaml
+          echo "        readinessProbe:" >> deployment.yaml
+          echo "          tcpSocket:" >> deployment.yaml
           echo "            port: 80" >> deployment.yaml
           echo "          initialDelaySeconds: 60" >> deployment.yaml
           echo "          periodSeconds: 30" >> deployment.yaml
-          echo "          timeoutSeconds: 10" >> deployment.yaml
-          echo "        readinessProbe:" >> deployment.yaml
-          echo "          httpGet:" >> deployment.yaml
-          echo "            path: ${{ env.HEALTH_CHECK_PATH }}" >> deployment.yaml
-          echo "            port: 80" >> deployment.yaml
-          echo "          initialDelaySeconds: 30" >> deployment.yaml
-          echo "          periodSeconds: 10" >> deployment.yaml
           echo "          timeoutSeconds: 5" >> deployment.yaml
+          echo "          failureThreshold: 3" >> deployment.yaml
           echo "        resources:" >> deployment.yaml
           echo "          requests:" >> deployment.yaml
           echo '            memory: "256Mi"' >> deployment.yaml
