@@ -105,73 +105,10 @@ resource "aws_kms_alias" "main" {
   target_key_id = aws_kms_key.main.key_id
 }
 
-# =========================================
 # EKS Module - Kubernetes 클러스터
-# =========================================
-module "eks" {
-  source = "./modules/eks"
 
-  project_name = var.project_name
 
-  # 클러스터 설정
-  cluster_name    = local.cluster_name
-  cluster_version = "1.32"
 
-  # 네트워크 설정
-  vpc_id             = module.vpc.vpc_id
-  private_subnet_ids = module.vpc.private_subnet_ids
-  subnet_ids         = module.vpc.private_subnet_ids
-
-  # 보안 설정
-  cluster_endpoint_private_access = true
-  cluster_endpoint_public_access  = true
-  cluster_endpoint_public_access_cidrs = ["0.0.0.0/0"]
-
-  # 로깅 설정
-  cluster_enabled_log_types = [
-    "api",
-    "audit", 
-    "authenticator",
-    "controllerManager",
-    "scheduler"
-  ]
-  log_retention_days = var.security_log_retention_days
-
-  # IRSA 설정
-  enable_irsa = true
-
-  enable_load_balancer = var.enable_load_balancer
-  
-  # 애드온 설정
-  enable_vpc_cni_addon    = true
-  enable_coredns_addon    = true
-  enable_kube_proxy_addon = true
-  
-  # 노드 그룹 설정
-  node_group_name = "${var.project_name}-nodes"
-  eks_node_instance_types = var.eks_node_instance_types
-  capacity_type = var.enable_spot_instances ? "SPOT" : "ON_DEMAND"
-  
-  # 스케일링 설정
-  eks_node_desired_capacity = var.eks_node_desired_capacity
-  eks_node_max_capacity     = var.eks_node_max_capacity
-  eks_node_min_capacity     = var.eks_node_min_capacity
-  
-  # 보안 설정
-  enable_ssh_access = var.enable_bastion_host
-  ec2_key_pair_name = var.ec2_key_pair_name
-  
-  # 시작 템플릿 설정
-  create_launch_template = true
-  ebs_volume_type = "gp3"
-  ebs_volume_size = 30
-
-  common_tags = merge(local.common_tags, {
-    Component = "Compute"
-  })
-
-  depends_on = [module.vpc, aws_kms_key.main]
-}
 
 # =========================================
 # DynamoDB Module - NoSQL 데이터베이스
@@ -302,7 +239,7 @@ module "rds" {
  
   allowed_security_groups = [
     module.eks.cluster_security_group_id,
-    module.eks.node_group_security_group_id,
+    module.eks.node_security_group_id,
     aws_security_group.bastion.id
   ]
   
@@ -486,7 +423,7 @@ resource "kubernetes_config_map_v1_data" "aws_auth" {
     mapRoles = yamlencode([
       # EKS 노드 그룹 역할
       {
-        rolearn  = module.eks.node_group_iam_role_arn
+        rolearn  = module.eks.eks_managed_node_groups.main.iam_role_arn
         username = "system:node:{{EC2PrivateDNSName}}"
         groups   = ["system:bootstrappers", "system:nodes"]
       },

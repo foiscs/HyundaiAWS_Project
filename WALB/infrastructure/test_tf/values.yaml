@@ -1,0 +1,15 @@
+clusterName: ${cluster_name}
+serviceAccount:
+  create: true
+  name: ${service_account_name}
+  annotations:
+    eks.amazonaws.com/role-arn: ${service_account_arn}
+
+region: ${aws_region}
+vpcId: ${vpc_id}
+
+image:
+  repository: ${image_repository}
+
+podDisruptionBudget:
+  maxUnavailable: 1

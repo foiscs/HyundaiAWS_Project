@@ -76,28 +76,18 @@ provider "aws" {
   # }
 }
 
+# EKS 클러스터와 통신하기 위한 인증 토큰을 가져온다.
+data "aws_eks_cluster_auth" "cluster" {
+  name = module.eks.cluster_name
+}
+
 # =========================================
 # Kubernetes Provider
 # =========================================
 provider "kubernetes" {
-  host                   = try(module.eks.cluster_endpoint, "https://kubernetes.default.svc")
-  cluster_ca_certificate = try(base64decode(module.eks.cluster_certificate_authority_data), "")
-  
-  dynamic "exec" {
-    for_each = try(module.eks.cluster_name, null) != null ? [1] : []
-    content {
-      api_version = "client.authentication.k8s.io/v1beta1"
-      command     = "aws"
-      args = [
-        "eks",
-        "get-token",
-        "--cluster-name",
-        module.eks.cluster_name,
-        "--region",
-        var.aws_region
-      ]
-    }
-  }
+  host                   = module.eks.cluster_endpoint
+  token                  = data.aws_eks_cluster_auth.this.token
+  cluster_ca_certificate = base64decode(module.eks.cluster_certificate_authority_data)
 }
 
 # =========================================
@@ -105,24 +95,8 @@ provider "kubernetes" {
 # =========================================
 provider "helm" {
   kubernetes {
-    host                   = try(module.eks.cluster_endpoint, "https://kubernetes.default.svc")
-    cluster_ca_certificate = try(base64decode(module.eks.cluster_certificate_authority_data), "")
-    
-    dynamic "exec" {
-      for_each = try(module.eks.cluster_name, null) != null ? [1] : []
-      content {
-        api_version = "client.authentication.k8s.io/v1beta1"
-        command     = "aws"
-        args = [
-          "eks",
-          "get-token",
-          "--cluster-name",
-          module.eks.cluster_name,
-          "--region",
-          var.aws_region
-        ]
-      }
-    }
+    host                   = module.eks.cluster_endpoint
+    token                  = data.aws_eks_cluster_auth.this.token
+    cluster_ca_certificate = base64decode(module.eks.cluster_certificate_authority_data)
   }
 }
-
