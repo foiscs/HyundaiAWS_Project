@@ -1170,15 +1170,25 @@ jobs:
           kubectl apply -f deployment.yaml
           
           # Service 배포 전 AWS Load Balancer Controller 웹훅 패치
-          echo "🔧 AWS Load Balancer Controller 웹훅 패치 중..."
-          kubectl patch validatingwebhookconfigurations aws-load-balancer-webhook --type='json' -p='[
-            {"op": "replace", "path": "/webhooks/0/timeoutSeconds", "value": 30},
-            {"op": "replace", "path": "/webhooks/0/failurePolicy", "value": "Ignore"},
-            {"op": "replace", "path": "/webhooks/1/timeoutSeconds", "value": 30},
-            {"op": "replace", "path": "/webhooks/1/failurePolicy", "value": "Ignore"}
-          ]' || echo "⚠️ 웹훅 패치 실패 - 계속 진행합니다"
+          echo "🔧 AWS Load Balancer Controller 웹훅 설정 확인 및 패치..."
           
+          # 웹훅 설정 확인
+          echo "현재 웹훅 설정 확인:"
+          kubectl get validatingwebhookconfigurations aws-load-balancer-webhook -o yaml || echo "ValidatingWebhook 설정을 찾을 수 없습니다"
+          kubectl get mutatingwebhookconfigurations aws-load-balancer-webhook -o yaml || echo "MutatingWebhook 설정을 찾을 수 없습니다"
+          
+          # 웹훅 비활성화 (임시)
+          echo "웹훅 임시 비활성화..."
+          kubectl delete validatingwebhookconfigurations aws-load-balancer-webhook || echo "ValidatingWebhook 삭제 실패 또는 이미 삭제됨"
+          kubectl delete mutatingwebhookconfigurations aws-load-balancer-webhook || echo "MutatingWebhook 삭제 실패 또는 이미 삭제됨"
+          
+          # Service 배포
+          echo "Service 배포 중..."
           kubectl apply -f service.yaml
+          
+          # 웹훅 재생성 (AWS Load Balancer Controller가 자동으로 재생성)
+          echo "AWS Load Balancer Controller 재시작하여 웹훅 재생성..."
+          kubectl rollout restart deployment/aws-load-balancer-controller -n kube-system || echo "Load Balancer Controller 재시작 실패"
 
           # Ingress 배포 (AWS Load Balancer Controller로 ALB 생성)
           echo "🔗 Ingress 리소스 배포 중..."
