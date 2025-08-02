@@ -35,7 +35,7 @@ jobs:
     # ===============================================
     - name: Load config from app1-config.yml
       run: |
-        echo "📋 app1-config.yml에서 설정값 로드 중..."
+        echo "📋 app1-config.yml에서 설정값 로드 중.."
         
         # yq 설치
         sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
