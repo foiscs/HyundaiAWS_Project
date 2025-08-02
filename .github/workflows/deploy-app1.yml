@@ -1168,6 +1168,16 @@ jobs:
           kubectl apply -f configmap.yaml
           kubectl apply -f secret.yaml
           kubectl apply -f deployment.yaml
+          
+          # Service 배포 전 AWS Load Balancer Controller 웹훅 패치
+          echo "🔧 AWS Load Balancer Controller 웹훅 패치 중..."
+          kubectl patch validatingwebhookconfigurations aws-load-balancer-webhook --type='json' -p='[
+            {"op": "replace", "path": "/webhooks/0/timeoutSeconds", "value": 30},
+            {"op": "replace", "path": "/webhooks/0/failurePolicy", "value": "Ignore"},
+            {"op": "replace", "path": "/webhooks/1/timeoutSeconds", "value": 30},
+            {"op": "replace", "path": "/webhooks/1/failurePolicy", "value": "Ignore"}
+          ]' || echo "⚠️ 웹훅 패치 실패 - 계속 진행합니다"
+          
           kubectl apply -f service.yaml
 
           # Ingress 배포 (AWS Load Balancer Controller로 ALB 생성)
