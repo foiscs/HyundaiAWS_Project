@@ -29,11 +29,11 @@ defaultIngressClass: true
 # 리소스 설정 - 웹훅 성능 개선을 위해 리소스 증가
 resources:
   limits:
+    cpu: 1000m
+    memory: 2Gi
+  requests:
     cpu: 500m
     memory: 1Gi
-  requests:
-    cpu: 200m
-    memory: 500Mi
 
 # 로깅 설정
 logLevel: info
@@ -81,30 +81,21 @@ commonLabels:
 serviceMonitor:
   enabled: false
 
-# 웹훅 설정 (자체 서명 인증서 사용) - 안정성 및 동기화 최적화
+# 웹훅 설정 (자체 서명 인증서 사용) - 타임아웃 및 성능 최적화
 webhook:
   certManager:
     enabled: false
   port: 9443
-  timeoutSeconds: 10
-  # 웹훅 실패 정책 - 필수로 변경하여 리소스 동기화 보장
-  failurePolicy: Fail
-  # 웹훅 재시도 설정
-  admissionReviewVersions: ["v1", "v1beta1"]
-  # 네임스페이스 셀렉터 (시스템 네임스페이스 제외)
-  namespaceSelector:
-    matchExpressions:
-    - key: name
-      operator: NotIn
-      values: ["kube-system", "kube-public", "kube-node-lease"]
   # 웹훅 성능 최적화
   resources:
     limits:
-      cpu: 200m
-      memory: 256Mi
+      cpu: 1000m
+      memory: 1Gi
     requests:
-      cpu: 100m
-      memory: 128Mi
+      cpu: 500m
+      memory: 512Mi
+
+# ValidatingAdmissionWebhook 설정은 terraform null_resource에서 kubectl patch로 처리됨
 
 # finalizer 관리 설정 - 리소스 정리 보장
 enableFinalizer: true

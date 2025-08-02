@@ -89,7 +89,7 @@ jobs:
     
     - name: Validate and Build Maven Project
       run: |
-        echo "🔍 Java Spring Boot 애플리케이션 검증 중..."
+        echo "🔍 Java Spring Boot 애플리케이션 검증 중.."
         if [ -f "server2/pom.xml" ]; then
           cd server2
           echo "📦 Maven 의존성 검증 및 빌드 중..."
@@ -107,7 +107,7 @@ jobs:
     - name: Configure AWS credentials
       uses: aws-actions/configure-aws-credentials@v4
       with:
-        role-to-assume: ${{ secrets.AWS_ROLE_ARN_APP }}
+        role-to-assume: ${{ secrets.AWS_ROLE_ARN_APP2 }}
         aws-region: ${{ secrets.AWS_REGION }}
         role-session-name: GitHubActions-Application-${{ github.run_id }}
 
@@ -160,6 +160,54 @@ jobs:
           exit 1
         fi
         echo "✅ EKS Cluster Status: $EKS_STATUS"
+
+    # ===============================================
+    # EKS 보안그룹 규칙 확인 및 자동 수정 (kubelet 통신용)
+    # ===============================================
+    - name: Check and fix EKS security group rules
+      run: |
+        echo "🔍 EKS 보안그룹 10250 포트 규칙 확인 중..."
+        
+        # 워커노드 보안그룹 ID 조회
+        NODE_SG_ID=$(aws ec2 describe-instances \
+          --filters "Name=tag:kubernetes.io/cluster/${{ env.EKS_CLUSTER_NAME }},Values=owned" \
+          --query "Reservations[*].Instances[*].SecurityGroups[*].GroupId" \
+          --output text | tr '\t' '\n' | sort | uniq | head -1)
+        
+        # 클러스터 보안그룹 ID 조회  
+        CLUSTER_SG_ID=$(aws eks describe-cluster --name ${{ env.EKS_CLUSTER_NAME }} \
+          --query "cluster.resourcesVpcConfig.securityGroupIds[0]" --output text)
+        
+        if [ -z "$NODE_SG_ID" ] || [ -z "$CLUSTER_SG_ID" ]; then
+          echo "⚠️ 보안그룹 ID를 찾을 수 없습니다. 스킵합니다."
+          echo "NODE_SG_ID: $NODE_SG_ID"
+          echo "CLUSTER_SG_ID: $CLUSTER_SG_ID"
+        else
+          echo "📋 보안그룹 정보:"
+          echo "  Worker Node SG: $NODE_SG_ID"
+          echo "  Cluster SG: $CLUSTER_SG_ID"
+          
+          # 10250 포트 규칙 존재 여부 확인
+          RULE_EXISTS=$(aws ec2 describe-security-groups --group-ids $NODE_SG_ID \
+            --query "SecurityGroups[0].GroupRules[?FromPort==\`10250\` && ToPort==\`10250\` && IsEgress==\`false\`]" \
+            --output text)
+          
+          if [ -z "$RULE_EXISTS" ]; then
+            echo "⚠️ kubelet 통신용 10250 포트 규칙이 없습니다. 추가 중..."
+            
+            # 10250 포트 인바운드 규칙 추가 (클러스터에서 노드로)
+            aws ec2 authorize-security-group-ingress \
+              --group-id $NODE_SG_ID \
+              --protocol tcp \
+              --port 10250 \
+              --source-group $CLUSTER_SG_ID \
+              --description "Allow kubelet communication from control plane (auto-added by GitHub Actions)" \
+              2>/dev/null && echo "✅ 10250 포트 규칙 추가 완료" || echo "⚠️ 규칙 추가 실패 (이미 존재할 수 있음)"
+            
+          else
+            echo "✅ kubelet 통신용 10250 포트 규칙이 이미 존재합니다"
+          fi
+        fi
     
     # ===============================================
     # ECR 로그인
@@ -265,97 +313,6 @@ jobs:
         echo "✅ Bastion IP: '$BASTION_IP'"
         echo "✅ DB User: '$DB_USER'"
         echo "✅ DB Name: '$DB_NAME'"
-        
-        # 보안 그룹 설정 함수 정의
-        echo "🔧 setup_security_groups 함수 정의 시작..."
-        setup_security_groups() {
-          echo "🔧 보안 그룹 규칙 자동 설정 중..."
-          
-          # Bastion Host 정보 조회
-          BASTION_INSTANCE_ID=$(aws ec2 describe-instances \
-            --filters "Name=ip-address,Values=$BASTION_IP" "Name=instance-state-name,Values=running" \
-            --query "Reservations[0].Instances[0].InstanceId" \
-            --output text 2>/dev/null || echo "")
-          
-          if [ -n "$BASTION_INSTANCE_ID" ] && [ "$BASTION_INSTANCE_ID" != "None" ]; then
-            # Bastion Host의 보안 그룹 조회
-            BASTION_SG=$(aws ec2 describe-instances \
-              --instance-ids $BASTION_INSTANCE_ID \
-              --query "Reservations[0].Instances[0].SecurityGroups[0].GroupId" \
-              --output text 2>/dev/null || echo "")
-            
-            echo "Bastion Security Group: $BASTION_SG"
-          fi
-          
-          # RDS 정보 조회
-          RDS_INSTANCE_ID=$(aws rds describe-db-instances \
-            --query "DBInstances[?Endpoint.Address=='$DB_HOST'].DBInstanceIdentifier" \
-            --output text 2>/dev/null || echo "")
-          
-          if [ -n "$RDS_INSTANCE_ID" ] && [ "$RDS_INSTANCE_ID" != "None" ]; then
-            # RDS의 보안 그룹 조회
-            RDS_SG=$(aws rds describe-db-instances \
-              --db-instance-identifier $RDS_INSTANCE_ID \
-              --query "DBInstances[0].VpcSecurityGroups[0].VpcSecurityGroupId" \
-              --output text 2>/dev/null || echo "")
-            
-            echo "RDS Security Group: $RDS_SG"
-            
-            # RDS 보안 그룹에 Bastion 접근 규칙 추가
-            if [ -n "$BASTION_SG" ] && [ -n "$RDS_SG" ]; then
-              echo "🔧 RDS 보안 그룹에 Bastion 접근 규칙 추가 중..."
-              
-              # 기존 규칙 확인
-              EXISTING_RULE=$(aws ec2 describe-security-groups \
-                --group-ids $RDS_SG \
-                --query "SecurityGroups[0].IpPermissions[?FromPort==\`${{ env.DB_PORT }}\` && UserIdGroupPairs[?GroupId==\`$BASTION_SG\`]]" \
-                --output text 2>/dev/null || echo "")
-              
-              if [ -z "$EXISTING_RULE" ]; then
-                aws ec2 authorize-security-group-ingress \
-                  --group-id $RDS_SG \
-                  --protocol tcp \
-                  --port ${{ env.DB_PORT }} \
-                  --source-group $BASTION_SG \
-                  --no-cli-pager 2>/dev/null && echo "✅ RDS 인바운드 규칙 추가 완료" || echo "⚠️ RDS 규칙 추가 실패 (이미 존재할 수 있음)"
-              else
-                echo "✅ RDS 인바운드 규칙이 이미 존재합니다"
-              fi
-            fi
-          fi
-          
-          # Bastion 보안 그룹에 아웃바운드 규칙 확인/추가
-          if [ -n "$BASTION_SG" ]; then
-            echo "🔧 Bastion 보안 그룹 아웃바운드 규칙 확인 중..."
-            
-            # MySQL 아웃바운드 규칙 확인
-            EXISTING_OUTBOUND=$(aws ec2 describe-security-groups \
-              --group-ids $BASTION_SG \
-              --query "SecurityGroups[0].IpPermissionsEgress[?FromPort==\`${{ env.DB_PORT }}\` || IpProtocol==\`-1\`]" \
-              --output text 2>/dev/null || echo "")
-            
-            if [ -z "$EXISTING_OUTBOUND" ]; then
-              echo "🔧 Bastion 아웃바운드 규칙 추가 중..."
-              aws ec2 authorize-security-group-egress \
-                --group-id $BASTION_SG \
-                --protocol tcp \
-                --port ${{ env.DB_PORT }} \
-                --cidr 0.0.0.0/0 \
-                --no-cli-pager 2>/dev/null && echo "✅ Bastion 아웃바운드 규칙 추가 완료" || echo "⚠️ Bastion 규칙 추가 실패 (이미 존재할 수 있음)"
-            else
-              echo "✅ Bastion 아웃바운드 규칙이 이미 존재합니다"
-            fi
-          fi
-        }
-        echo "✅ setup_security_groups 함수 정의 완료"
-        
-        # 보안 그룹 설정 함수 호출
-        if type setup_security_groups > /dev/null 2>&1; then
-          setup_security_groups
-        else
-          echo "❌ setup_security_groups 함수가 정의되지 않았습니다."
-          exit 1
-        fi
         
         # SSH 키를 Parameter Store에서 가져오기
         echo "🔑 SSH 키 조회 중..."
@@ -509,7 +466,7 @@ jobs:
     # MySQL 클라이언트 설치 및 스키마 적용
     # ===============================================
     - name: Apply Database Schema
-      if: ${{ github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/terraform') }}
+      if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
       run: |
         echo "🗄️ 데이터베이스 스키마 적용 중..."
         
@@ -538,97 +495,6 @@ jobs:
         echo "  Bastion IP: $BASTION_IP"
         echo "  DB 이름: $DB_NAME"
         echo "  DB 사용자: $DB_USER"
-        
-        # 보안 그룹 설정 함수 정의
-        echo "🔧 setup_security_groups 함수 정의 시작..."
-        setup_security_groups() {
-          echo "🔧 보안 그룹 규칙 자동 설정 중..."
-          
-          # Bastion Host 정보 조회
-          BASTION_INSTANCE_ID=$(aws ec2 describe-instances \
-            --filters "Name=ip-address,Values=$BASTION_IP" "Name=instance-state-name,Values=running" \
-            --query "Reservations[0].Instances[0].InstanceId" \
-            --output text 2>/dev/null || echo "")
-          
-          if [ -n "$BASTION_INSTANCE_ID" ] && [ "$BASTION_INSTANCE_ID" != "None" ]; then
-            # Bastion Host의 보안 그룹 조회
-            BASTION_SG=$(aws ec2 describe-instances \
-              --instance-ids $BASTION_INSTANCE_ID \
-              --query "Reservations[0].Instances[0].SecurityGroups[0].GroupId" \
-              --output text 2>/dev/null || echo "")
-            
-            echo "Bastion Security Group: $BASTION_SG"
-          fi
-          
-          # RDS 정보 조회
-          RDS_INSTANCE_ID=$(aws rds describe-db-instances \
-            --query "DBInstances[?Endpoint.Address=='$DB_HOST'].DBInstanceIdentifier" \
-            --output text 2>/dev/null || echo "")
-          
-          if [ -n "$RDS_INSTANCE_ID" ] && [ "$RDS_INSTANCE_ID" != "None" ]; then
-            # RDS의 보안 그룹 조회
-            RDS_SG=$(aws rds describe-db-instances \
-              --db-instance-identifier $RDS_INSTANCE_ID \
-              --query "DBInstances[0].VpcSecurityGroups[0].VpcSecurityGroupId" \
-              --output text 2>/dev/null || echo "")
-            
-            echo "RDS Security Group: $RDS_SG"
-            
-            # RDS 보안 그룹에 Bastion 접근 규칙 추가
-            if [ -n "$BASTION_SG" ] && [ -n "$RDS_SG" ]; then
-              echo "🔧 RDS 보안 그룹에 Bastion 접근 규칙 추가 중..."
-              
-              # 기존 규칙 확인
-              EXISTING_RULE=$(aws ec2 describe-security-groups \
-                --group-ids $RDS_SG \
-                --query "SecurityGroups[0].IpPermissions[?FromPort==\`${{ env.DB_PORT }}\` && UserIdGroupPairs[?GroupId==\`$BASTION_SG\`]]" \
-                --output text 2>/dev/null || echo "")
-              
-              if [ -z "$EXISTING_RULE" ]; then
-                aws ec2 authorize-security-group-ingress \
-                  --group-id $RDS_SG \
-                  --protocol tcp \
-                  --port ${{ env.DB_PORT }} \
-                  --source-group $BASTION_SG \
-                  --no-cli-pager 2>/dev/null && echo "✅ RDS 인바운드 규칙 추가 완료" || echo "⚠️ RDS 규칙 추가 실패 (이미 존재할 수 있음)"
-              else
-                echo "✅ RDS 인바운드 규칙이 이미 존재합니다"
-              fi
-            fi
-          fi
-          
-          # Bastion 보안 그룹에 아웃바운드 규칙 확인/추가
-          if [ -n "$BASTION_SG" ]; then
-            echo "🔧 Bastion 보안 그룹 아웃바운드 규칙 확인 중..."
-            
-            # MySQL 아웃바운드 규칙 확인
-            EXISTING_OUTBOUND=$(aws ec2 describe-security-groups \
-              --group-ids $BASTION_SG \
-              --query "SecurityGroups[0].IpPermissionsEgress[?FromPort==\`${{ env.DB_PORT }}\` || IpProtocol==\`-1\`]" \
-              --output text 2>/dev/null || echo "")
-            
-            if [ -z "$EXISTING_OUTBOUND" ]; then
-              echo "🔧 Bastion 아웃바운드 규칙 추가 중..."
-              aws ec2 authorize-security-group-egress \
-                --group-id $BASTION_SG \
-                --protocol tcp \
-                --port ${{ env.DB_PORT }} \
-                --cidr 0.0.0.0/0 \
-                --no-cli-pager 2>/dev/null && echo "✅ Bastion 아웃바운드 규칙 추가 완료" || echo "⚠️ Bastion 규칙 추가 실패 (이미 존재할 수 있음)"
-            else
-              echo "✅ Bastion 아웃바운드 규칙이 이미 존재합니다"
-            fi
-          fi
-        }
-        echo "✅ setup_security_groups 함수 정의 완료"
-        
-        # 보안 그룹 설정 함수 호출
-        if type setup_security_groups > /dev/null 2>&1; then
-          setup_security_groups
-        else
-          echo "❌ setup_security_groups 함수가 정의되지 않았습니다."
-          exit 1
-        fi
         
         # SSH 키를 Parameter Store에서 가져오기
         echo "🔑 SSH 키 가져오는 중..."
@@ -800,17 +666,12 @@ jobs:
           echo "🔍 현재 AWS 자격 증명 확인..."
           aws sts get-caller-identity
 
-          # EKS 클러스터 이름 조회 (여러 방법 시도)
+          # EKS 클러스터 이름 조회 (config에서 읽은 값 사용)
           echo "🔍 EKS 클러스터 조회 중..."
-
-          # 방법 1: 클러스터 목록에서 첫 번째 조회
-          EKS_CLUSTER_NAME=$(aws eks list-clusters --query 'clusters[0]' --output text 2>/dev/null || echo "")
-
-          # 방법 2: 특정 이름으로 조회
-          if [ -z "$EKS_CLUSTER_NAME" ] || [ "$EKS_CLUSTER_NAME" == "None" ]; then
-            EKS_CLUSTER_NAME="${{ env.EKS_CLUSTER_NAME }}"
-            echo "기본 클러스터 이름 사용: $EKS_CLUSTER_NAME"
-          fi
+          
+          # config에서 읽은 클러스터 이름 사용
+          EKS_CLUSTER_NAME="${{ env.EKS_CLUSTER_NAME }}"
+          echo "config에서 읽은 클러스터 이름: $EKS_CLUSTER_NAME"
 
           # 클러스터 존재 확인
           if ! aws eks describe-cluster --name "$EKS_CLUSTER_NAME" --region ${{ secrets.AWS_REGION }} >/dev/null 2>&1; then
@@ -897,12 +758,8 @@ jobs:
           # namespace.yml 업데이트 (프로젝트명 사용)
           sed -i "s/music1-namespace/${{ env.PROJECT_NAME }}/g" namespace.yml
           
-          # deployment.yml 업데이트
-          sed -i "s/music1-deployment/${{ env.PROJECT_NAME }}-app/g" deployment.yml
-          sed -i "s/music1-namespace/${{ env.PROJECT_NAME }}/g" deployment.yml
-          sed -i "s/music1-app/${{ env.PROJECT_NAME }}-app/g" deployment.yml
-          sed -i "s/music1-service/${{ env.PROJECT_NAME }}-service/g" deployment.yml
-          sed -i "s|YOUR_ECR_URI/${{ env.IMAGE_NAME }}:latest|${{ steps.build-image.outputs.image }}|g" deployment.yml
+          # deployment.yml 업데이트 (실제 파일 내용에 맞게 수정)
+          sed -i "s|\${ECR_REGISTRY}/walb2-app-ecr:\${IMAGE_TAG}|${{ steps.build-image.outputs.image }}|g" deployment.yml
           
           # Spring Boot Actuator 헬스체크로 변경
           sed -i "s|path: /api/music|path: ${{ env.HEALTH_CHECK_PATH }}|g" deployment.yml
@@ -996,12 +853,56 @@ jobs:
           fi
           
           if [ -z "$PUBLIC_SUBNETS" ]; then
-            # 방법 4: 기본값 사용 (app2 전용 - 주의: app1과 다른 서브넷 ID)
-            PUBLIC_SUBNETS="subnet-01fbc1b7b3df0ace6,subnet-0dc46ee2f98b5b0ce"
-            echo "⚠️ 퍼블릭 서브넷을 자동으로 찾을 수 없어 app2 기본값 사용: $PUBLIC_SUBNETS"
-            echo "ℹ️ EKS VPC: ${EKS_VPC_ID:-알수없음} 내에서 서브넷에 다음 태그 중 하나를 추가하세요:"
-            echo "   - Type=public 또는"
-            echo "   - kubernetes.io/role/elb=1"
+            # 방법 4: 모든 퍼블릭 서브넷에서 가용영역별로 1개씩 선택
+            echo "⚠️ 태그 기반 조회 실패. 모든 퍼블릭 서브넷에서 가용영역별로 선택 중..."
+            
+            # EKS VPC 내에서 우선 조회, 실패하면 전체 계정에서 조회
+            VPC_FILTER_OPTION=""
+            if [ -n "$EKS_VPC_ID" ] && [ "$EKS_VPC_ID" != "None" ]; then
+              VPC_FILTER_OPTION="Name=vpc-id,Values=$EKS_VPC_ID"
+              echo "🔍 EKS VPC($EKS_VPC_ID) 내에서 퍼블릭 서브넷 조회 중..."
+            else
+              echo "🔍 전체 계정에서 퍼블릭 서브넷 조회 중..."
+            fi
+            
+            # 모든 서브넷 조회 (State=available만)
+            ALL_SUBNETS=$(aws ec2 describe-subnets \
+              --filters "Name=state,Values=available" $VPC_FILTER_OPTION \
+              --query "Subnets[*].[SubnetId,AvailabilityZone,MapPublicIpOnLaunch]" \
+              --output text)
+            
+            if [ -n "$ALL_SUBNETS" ]; then
+              UNIQUE_AZ_SUBNETS=""
+              USED_AZS=""
+              
+              echo "$ALL_SUBNETS" | while read subnet_id az map_public; do
+                # MapPublicIpOnLaunch가 true인 서브넷만 (퍼블릭 서브넷)
+                if [ "$map_public" = "True" ] && [[ ! "$USED_AZS" == *"$az"* ]]; then
+                  UNIQUE_AZ_SUBNETS="$UNIQUE_AZ_SUBNETS $subnet_id"
+                  USED_AZS="$USED_AZS $az"
+                  echo "✅ 가용영역 $az에서 서브넷 $subnet_id 선택"
+                  
+                  # 최대 3개 AZ까지만
+                  if [ $(echo $UNIQUE_AZ_SUBNETS | wc -w) -ge 3 ]; then
+                    break
+                  fi
+                fi
+              done
+              
+              if [ -n "$UNIQUE_AZ_SUBNETS" ]; then
+                PUBLIC_SUBNETS=$(echo "$UNIQUE_AZ_SUBNETS" | tr ' ' ',' | sed 's/^,//' | sed 's/,$//')
+                echo "✅ 자동 선택된 퍼블릭 서브넷: $PUBLIC_SUBNETS"
+              fi
+            fi
+            
+            if [ -z "$PUBLIC_SUBNETS" ]; then
+              echo "❌ 사용 가능한 퍼블릭 서브넷을 찾을 수 없습니다."
+              echo "🔍 VPC에 퍼블릭 서브넷이 생성되어 있는지 확인하세요."
+              echo "🔍 또는 서브넷에 다음 태그를 추가하세요:"
+              echo "   - Type=public 또는"
+              echo "   - kubernetes.io/role/elb=1"
+              exit 1
+            fi
           else
             echo "✅ 퍼블릭 서브넷 발견 (VPC: ${EKS_VPC_ID:-전체}): $PUBLIC_SUBNETS"
           fi
@@ -1063,7 +964,6 @@ jobs:
           echo "  namespace: ${{ env.PROJECT_NAME }}" >> ingress.yaml
           echo "  annotations:" >> ingress.yaml
           echo "    # AWS Application Load Balancer 설정" >> ingress.yaml
-          echo "    kubernetes.io/ingress.class: alb" >> ingress.yaml
           echo "    alb.ingress.kubernetes.io/scheme: internet-facing" >> ingress.yaml
           echo "    alb.ingress.kubernetes.io/target-type: ip" >> ingress.yaml
           echo '    alb.ingress.kubernetes.io/listen-ports: '"'"'[{"HTTP": 80}]'"'"'' >> ingress.yaml
@@ -1076,7 +976,7 @@ jobs:
           echo "    alb.ingress.kubernetes.io/healthy-threshold-count: '2'" >> ingress.yaml
           echo "    alb.ingress.kubernetes.io/unhealthy-threshold-count: '3'" >> ingress.yaml
           echo "    alb.ingress.kubernetes.io/healthcheck-protocol: HTTP" >> ingress.yaml
-          echo "    alb.ingress.kubernetes.io/healthcheck-port: '8080'" >> ingress.yaml
+          echo "    alb.ingress.kubernetes.io/healthcheck-port: '80'" >> ingress.yaml
           echo "    " >> ingress.yaml
           echo "    # Load Balancer 설정" >> ingress.yaml
           echo "    alb.ingress.kubernetes.io/load-balancer-name: ${{ env.PROJECT_NAME }}-ingress-alb" >> ingress.yaml
@@ -1092,7 +992,7 @@ jobs:
           echo "          service:" >> ingress.yaml
           echo "            name: ${{ env.PROJECT_NAME }}-service" >> ingress.yaml
           echo "            port:" >> ingress.yaml
-          echo "              number: 8080" >> ingress.yaml
+          echo "              number: 80" >> ingress.yaml
 
           echo "✅ Ingress 기반 매니페스트 생성 완료"
 
@@ -1108,22 +1008,26 @@ jobs:
           echo "✅ 매니페스트 파일 생성 완료"
 
       # ===============================================
-      # EKS에 애플리케이션 배포 (main 또는 terraform 브랜치일 때만)
+      # EKS에 애플리케이션 배포 (main 브랜치일 때만)
       # ===============================================
     - name: Deploy to EKS
-      if: ${{ github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/terraform') }}
+      if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
       run: |
           echo "🚀 EKS에 애플리케이션 배포 중..."
 
-          # 기존 k8s 매니페스트 적용
-          echo "📦 기존 k8s 리소스 배포 중..."
+          # k8s 리소스 의존성 순서대로 배포
+          echo "📦 k8s 리소스 배포 중..."
+          
+          # 1. 네임스페이스 먼저 생성
           kubectl apply -f server2/k8s/namespace.yml
-          kubectl apply -f server2/k8s/deployment.yml
-
-          # 추가 리소스 배포  
+          
+          # 2. 기본 리소스들 생성 (deployment가 참조하는 리소스들)
           kubectl apply -f serviceaccount.yaml
           kubectl apply -f configmap.yaml
           kubectl apply -f secret.yaml
+          
+          # 3. 마지막에 deployment 생성 (모든 의존성 리소스 준비 완료 후)
+          kubectl apply -f server2/k8s/deployment.yml
 
           # Ingress 배포 (AWS Load Balancer Controller로 ALB 생성)
           echo "🔗 Ingress 리소스 배포 중..."
@@ -1144,7 +1048,7 @@ jobs:
               
               # Controller 로그 확인
               echo "🔍 Controller 로그 확인:"
-              kubectl logs -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller-app2 --tail=10 || true
+              kubectl logs -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller --tail=10 || true
             else
               echo "✅ Ingress finalizer 설정됨: $ingress_finalizers"
             fi
@@ -1186,7 +1090,7 @@ jobs:
                 # AWS Load Balancer Controller 상태 확인
                 if [ $((i % 6)) -eq 0 ]; then
                   echo "🔍 AWS Load Balancer Controller Pod 상태:"
-                  kubectl get pods -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller-app2 || true
+                  kubectl get pods -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller || true
                   
                   # 최근 이벤트 확인
                   echo "🔍 최근 Ingress 이벤트:"
@@ -1218,21 +1122,21 @@ jobs:
               fi
               
               echo "🔍 AWS Load Balancer Controller 상세 상태:"
-              kubectl get pods -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller-app2 -o wide || true
-              kubectl describe pods -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller-app2 || true
+              kubectl get pods -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller -o wide || true
+              kubectl describe pods -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller || true
               
               echo "🔍 AWS Load Balancer Controller App2 최근 로그 (실패 관련):"
-              kubectl logs -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller-app2 --tail=200 | grep -i "error\|fail\|denied\|invalid\|timeout" || echo "관련 에러 로그 없음"
+              kubectl logs -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller --tail=200 | grep -i "error\|fail\|denied\|invalid\|timeout" || echo "관련 에러 로그 없음"
               
               echo "🔍 AWS Load Balancer Controller App2 전체 로그 (최근 50줄):"
-              kubectl logs -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller-app2 --tail=50 || true
+              kubectl logs -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller --tail=50 || true
               
               echo "🔍 IngressClass 확인:"
               kubectl get ingressclass || true
               kubectl describe ingressclass alb || true
               
               echo "🔍 ValidatingWebhookConfiguration 확인:"
-              webhook_status=$(kubectl get validatingwebhookconfigurations | grep -E "(vingress|aws-load-balancer)" || echo "웹훅 없음")
+              webhook_status=$(kubectl get validatingwebhookconfigurations | grep -E "(ingress|aws-load-balancer)" || echo "웹훅 없음")
               echo "Webhook 상태: $webhook_status"
               
               if [[ "$webhook_status" == "웹훅 없음" ]]; then
@@ -1264,9 +1168,9 @@ jobs:
           else
             echo "❌ Ingress 배포 실패"
             echo "🔍 진단 정보:"
-            kubectl get pods -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller-app2
-            kubectl logs -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller-app2 --tail=50 || true
-            kubectl get validatingwebhookconfigurations | grep -E "(vingress|aws-load-balancer)" || echo "웹훅 없음"
+            kubectl get pods -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller
+            kubectl logs -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller --tail=50 || true
+            kubectl get validatingwebhookconfigurations | grep -E "(ingress|aws-load-balancer)" || echo "웹훅 없음"
             kubectl get ingressclass || true
             exit 1
           fi
@@ -1310,7 +1214,7 @@ jobs:
       # 배포 결과 확인
       # ===============================================
     - name: Verify Deployment
-      if: ${{ github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/terraform') }}
+      if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
       run: |
           echo "🔍 배포 상태 확인 중..."
           echo "네임스페이스: ${{ env.PROJECT_NAME }}"
@@ -1337,7 +1241,7 @@ jobs:
           kubectl get ingress -n ${{ env.PROJECT_NAME }} || echo "Ingress를 찾을 수 없습니다."
 
           echo "📋 AWS Load Balancer Controller 상태:"
-          kubectl get pods -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller-app2 || echo "AWS Load Balancer Controller App2를 찾을 수 없습니다."
+          kubectl get pods -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller || echo "AWS Load Balancer Controller App2를 찾을 수 없습니다."
 
           # Deployment 존재 확인 후 대기
           if kubectl get deployment ${{ env.PROJECT_NAME }}-app -n ${{ env.PROJECT_NAME }} >/dev/null 2>&1; then
@@ -1358,7 +1262,7 @@ jobs:
       # 배포 방법별 접속 URL 제공
       # ===============================================
     - name: Get Application URL
-      if: success() && ${{ github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/terraform') }}
+      if: success() && ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
       run: |
           echo "🔗 애플리케이션 접속 정보 확인 중..."
           echo "배포 방법: ${DEPLOYMENT_METHOD:-Unknown}"
@@ -1430,7 +1334,7 @@ jobs:
       # 배포 완료 알림
       # ===============================================
     - name: Application Deployment Notification
-      if: success() && ${{ github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/terraform') }}
+      if: success() && ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
       run: |
           echo "🎉 Java Spring Boot 애플리케이션 배포 완료!"
           echo "프로젝트: ${{ env.PROJECT_NAME }}"
@@ -1449,7 +1353,7 @@ jobs:
       # 배포 실패 시 롤백 및 정리
       # ===============================================
     - name: Rollback on failure
-      if: ${{ failure() && github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/terraform') }}
+      if: ${{ failure() && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
       run: |
           echo "❌ 배포 실패 - 롤백 및 정리 시작..."
           

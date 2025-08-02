@@ -436,7 +436,7 @@ variable "nodeport_range_end" {
 variable "health_check_path" {
   description = "헬스 체크 경로"
   type        = string
-  default     = "/health"
+  default     = "/simple-health.php"
 }
 
 variable "application_image" {

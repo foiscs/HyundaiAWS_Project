@@ -44,7 +44,9 @@ RUN composer install --no-dev --optimize-autoloader --no-interaction || \
 # 애플리케이션 코드 복사
 COPY files/app/ ./app/
 COPY files/css/ ./app/css/
-COPY files/healthcheck.php ./app/
+COPY files/simple-health.php ./app/
+COPY files/health.php ./app/
+COPY files/detailed-health.php ./app/
 COPY files/db_test.php ./app/
 
 # DocumentRoot 설정

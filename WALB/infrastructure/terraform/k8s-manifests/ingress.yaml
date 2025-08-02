@@ -9,12 +9,11 @@ metadata:
     alb.ingress.kubernetes.io/target-type: ip
     alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}]'
     
-    # 서로 다른 AZ의 퍼블릭 서브넷 2개 사용 (Terraform에서 동적으로 선택)
-    # 설정: subnet-0681af293c4f19263 (ap-northeast-2a), subnet-057589a6494b65a9c (ap-northeast-2b)
-    alb.ingress.kubernetes.io/subnets: subnet-0681af293c4f19263,subnet-057589a6494b65a9c
+    # 서로 다른 AZ의 퍼블릭 서브넷 2개 사용
+    alb.ingress.kubernetes.io/subnets: subnet-0c9ed529f9273ca5c",subnet-0f0e638a79fd7ee95
     
     # Health Check 설정 (PHP 애플리케이션)
-    alb.ingress.kubernetes.io/healthcheck-path: /healthcheck.php
+    alb.ingress.kubernetes.io/healthcheck-path: /simple-health.php
     alb.ingress.kubernetes.io/healthcheck-interval-seconds: '30'
     alb.ingress.kubernetes.io/healthcheck-timeout-seconds: '10'
     alb.ingress.kubernetes.io/healthy-threshold-count: '2'
@@ -30,8 +29,7 @@ metadata:
       load_balancing.algorithm.type=round_robin,
       slow_start.duration_seconds=30
     
-    # 보안 그룹 설정
-    alb.ingress.kubernetes.io/security-groups: walb-app-alb-sg
+    # 보안 그룹은 ALB Controller가 자동 생성
     
     # 태그 설정
     alb.ingress.kubernetes.io/tags: |
@@ -52,57 +50,3 @@ spec:
             name: walb-app-service
             port:
               number: 80
-
-# apiVersion: networking.k8s.io/v1
-# kind: Ingress
-# metadata:
-#   name: walb-app-ingress
-#   namespace: walb-app
-#   annotations:
-#     # AWS Application Load Balancer 설정
-#     alb.ingress.kubernetes.io/scheme: internet-facing
-#     alb.ingress.kubernetes.io/target-type: ip
-#     alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}]'
-    
-#     # Health Check 설정 (PHP 애플리케이션)
-#     alb.ingress.kubernetes.io/healthcheck-path: /healthcheck.php
-#     alb.ingress.kubernetes.io/healthcheck-interval-seconds: '30'
-#     alb.ingress.kubernetes.io/healthcheck-timeout-seconds: '10'
-#     alb.ingress.kubernetes.io/healthy-threshold-count: '2'
-#     alb.ingress.kubernetes.io/unhealthy-threshold-count: '3'
-#     alb.ingress.kubernetes.io/healthcheck-protocol: HTTP
-#     alb.ingress.kubernetes.io/healthcheck-port: '80'
-    
-#     # Load Balancer 설정
-#     alb.ingress.kubernetes.io/load-balancer-name: walb-app-ingress-alb
-#     alb.ingress.kubernetes.io/target-group-attributes: |
-#       stickiness.enabled=false,
-#       deregistration_delay.timeout_seconds=60,
-#       load_balancing.algorithm.type=round_robin,
-#       slow_start.duration_seconds=30
-      
-#     # 서브넷 자동 발견 (태그 기반)
-#     alb.ingress.kubernetes.io/subnets: subnet-public
-    
-#     # 보안 그룹 설정
-#     alb.ingress.kubernetes.io/security-groups: walb-app-alb-sg
-    
-#     # 태그 설정
-#     alb.ingress.kubernetes.io/tags: |
-#       Environment=walb-app,
-#       Project=walb-app,
-#       ManagedBy=Kubernetes,
-#       CreatedBy=AWS-Load-Balancer-Controller,
-#       Application=PHP-Blog
-# spec:
-#   ingressClassName: alb
-#   rules:
-#   - http:
-#       paths:
-#       - path: /
-#         pathType: Prefix
-#         backend:
-#           service:
-#             name: walb-app-service
-#             port:
-#               number: 80

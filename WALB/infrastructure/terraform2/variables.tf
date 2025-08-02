@@ -37,15 +37,15 @@ variable "cost_center" {
 variable "vpc_cidr" {
   description = "VPC CIDR 블록"
   type        = string
-  default     = "10.0.0.0/16"
+  default     = "10.1.0.0/16"
 }
 
 variable "public_subnets" {
   description = "퍼블릭 서브넷 CIDR 블록들"
   type        = list(string)
   default     = [
-    "10.0.1.0/24",
-    "10.0.2.0/24"
+    "10.1.1.0/24",
+    "10.1.2.0/24"
   ]
 }
 
@@ -53,8 +53,8 @@ variable "private_subnets" {
   description = "프라이빗 서브넷 CIDR 블록들"
   type        = list(string)
   default     = [
-    "10.0.10.0/24",
-    "10.0.11.0/24"
+    "10.1.10.0/24",
+    "10.1.11.0/24"
   ]
 }
 
@@ -62,8 +62,8 @@ variable "database_subnets" {
   description = "데이터베이스 서브넷 CIDR 블록들"
   type        = list(string)
   default     = [
-    "10.0.20.0/24",
-    "10.0.21.0/24"
+    "10.1.20.0/24",
+    "10.1.21.0/24"
   ]
 }
 
@@ -117,7 +117,7 @@ variable "ec2_key_pair_name" {
 variable "allowed_ssh_cidrs" {
   description = "SSH 접근을 허용할 CIDR 블록들"
   type        = list(string)
-  default     = ["10.0.0.0/16"]  # VPC 내부만 허용
+  default     = ["10.1.0.0/16"]  # VPC 내부만 허용
 }
 
 # =========================================

@@ -409,23 +409,6 @@ resource "aws_security_group" "bastion" {
     cidr_blocks = ["0.0.0.0/0"]  # 보안상 위험하지만 GitHub Actions용
   }
 
-  # PostgreSQL 포트 포워딩을 위한 로컬 접근 (추가 필요)
-  ingress {
-    description = "PostgreSQL port forwarding"
-    from_port   = 5432
-    to_port     = 5432
-    protocol    = "tcp"
-    cidr_blocks = ["127.0.0.1/32"]  # 로컬 루프백만 허용
-  }
-  
-  # RDS에 대한 outbound 접근 허용 (기존 egress 규칙을 보다 구체적으로)
-  egress {
-    description = "PostgreSQL to RDS"
-    from_port   = 5432
-    to_port     = 5432
-    protocol    = "tcp"
-    cidr_blocks = [var.vpc_cidr]
-  }
 
   egress {
     description = "All outbound traffic"
@@ -471,10 +454,12 @@ resource "aws_iam_role" "eks_app_role" {
   })
 }
 
+# terraform import kubernetes_config_map.aws_auth kube-system/aws-auth 필요
+
 # =========================================
 # aws-auth ConfigMap for GitHub Actions Access
 # =========================================
-resource "kubernetes_config_map_v1_data" "aws_auth" {
+resource "kubernetes_config_map" "aws_auth" {
   depends_on = [module.eks]
   
   metadata {
@@ -525,8 +510,6 @@ resource "kubernetes_config_map_v1_data" "aws_auth" {
       }
     ])
   }
-
-  force = true
 }
 
 # EKS 애플리케이션용 정책 연결
@@ -642,9 +625,14 @@ resource "aws_iam_openid_connect_provider" "github_actions" {
   ]
 
   tags = merge(local.common_tags, {
-    Name      = "${var.project_name}-github-oidc-provider"
+    Name      = "walb-app-github-oidc-provider"
     Component = "CI/CD"
   })
+
+  lifecycle {
+    create_before_destroy = true
+    ignore_changes        = [thumbprint_list]
+  }
 }
 
 # GitHub Actions IAM Role for Infrastructure (Terraform)
@@ -828,10 +816,17 @@ resource "aws_iam_role_policy" "github_actions_app_policy" {
           "ssm:GetParameters",
           "ssm:GetParametersByPath",
           
-          # EC2 권한 추가 (Bastion Host 조회용)
+          # EC2 권한 추가 (Bastion Host 및 네트워크 조회용)
           "ec2:DescribeInstances",
-          "ec2:DescribeInstanceStatus",
+          "ec2:DescribeInstanceStatus", 
           "ec2:DescribeTags",
+          "ec2:DescribeSubnets",
+          "ec2:DescribeRouteTables",
+          "ec2:DescribeVpcs",
+          
+          # 보안그룹 권한 추가 (kubelet 통신 규칙 확인/수정용)
+          "ec2:DescribeSecurityGroups",
+          "ec2:AuthorizeSecurityGroupIngress",
           
           # 계정 정보 조회
           "sts:GetCallerIdentity"
@@ -896,12 +891,17 @@ resource "aws_instance" "bastion" {
   vpc_security_group_ids = [aws_security_group.bastion.id]
   subnet_id             = module.vpc.public_subnet_ids[0]
   
-  # PostgreSQL 클라이언트 설치를 위한 user data
+  # PostgreSQL 클라이언트 및 네트워크 도구 설치를 위한 user data
   user_data = base64encode(<<-EOF
     #!/bin/bash
     yum update -y
+    
+    # PostgreSQL 클라이언트 설치
     amazon-linux-extras install -y postgresql13
     yum install -y postgresql
+    
+    # 네트워크 진단 도구 설치
+    yum install -y telnet nc nmap-ncat
     
     # AWS CLI 설치 (최신 버전)
     curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
