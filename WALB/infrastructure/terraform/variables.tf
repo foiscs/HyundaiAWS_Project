@@ -73,13 +73,13 @@ variable "database_subnets" {
 variable "rds_instance_class" {
   description = "RDS 인스턴스 클래스"
   type        = string
-  default     = "db.t3.micro"
+  default     = "db.t4g.micro"
 }
 
 variable "db_name" {
   description = "데이터베이스 이름"
   type        = string
-  default     = "walb_DB"
+  default     = "mydb"
 }
 
 variable "db_username" {

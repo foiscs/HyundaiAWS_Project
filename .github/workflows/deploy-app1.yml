@@ -35,7 +35,7 @@ jobs:
     # ===============================================
     - name: Load config from app1-config.yml
       run: |
-        echo "📋 app1-config.yml에서 설정값 로드 중.."
+        echo "📋 app1-config.yml에서 설정값 로드 중..."
         
         # yq 설치
         sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
@@ -83,7 +83,7 @@ jobs:
       uses: shivammathur/setup-php@v2
       with:
         php-version: '8.1'
-        extensions: pdo, pdo_pgsql, mbstring, xml, zip, gd
+        extensions: pdo, pdo_mysql, mbstring, xml, zip, gd
         coverage: none
     
     - name: Validate Composer
@@ -348,12 +348,12 @@ jobs:
           exit 1
         fi
         
-        echo "🔗 SSH 터널을 통한 PostgreSQL 연결 테스트 중..."
+        echo "🔗 SSH 터널을 통한 MySQL 연결 테스트 중..."
         
-        # PostgreSQL 클라이언트 설치 (먼저 설치)
-        if ! command -v psql &> /dev/null; then
-          echo "📦 PostgreSQL 클라이언트 설치 중..."
-          sudo apt-get update -qq && sudo apt-get install -y postgresql-client
+        # MySQL 클라이언트 설치 (먼저 설치)
+        if ! command -v mysql &> /dev/null; then
+          echo "📦 MySQL 클라이언트 설치 중..."
+          sudo apt-get update -qq && sudo apt-get install -y mysql-client
         fi
         
         # 로컬 포트가 사용 중인지 확인
@@ -382,7 +382,7 @@ jobs:
             -o ServerAliveInterval=60 \
             -o ServerAliveCountMax=3 \
             -o ConnectTimeout=30 \
-            -L $LOCAL_PORT:$DB_HOST:5432 \
+            -L $LOCAL_PORT:$DB_HOST:3306 \
             ec2-user@$BASTION_IP \
             -N &
         SSH_PID=$!
@@ -419,21 +419,21 @@ jobs:
         # Bastion Host에서 직접 DB 연결 테스트
         echo "🔍 Bastion Host에서 DB 직접 연결 테스트 중..."
         ssh -i bastion_key.pem -o StrictHostKeyChecking=no ec2-user@$BASTION_IP "
-          # PostgreSQL 클라이언트 설치 확인
-          if ! command -v psql &> /dev/null; then
-            echo '📦 Bastion에 PostgreSQL 클라이언트 설치 중...'
+          # MySQL 클라이언트 설치 확인
+          if ! command -v mysql &> /dev/null; then
+            echo '📦 Bastion에 MySQL 클라이언트 설치 중...'
             sudo yum update -y
-            sudo yum install -y postgresql15
+            sudo yum install -y mysql
           fi
           
           # DB 연결 테스트
           echo '🔍 Bastion에서 RDS 직접 연결 테스트...'
-          if PGPASSWORD='$DB_PASSWORD' psql -h $DB_HOST -p 5432 -U $DB_USER -d $DB_NAME -c 'SELECT version();' 2>/dev/null; then
+          if mysql -h $DB_HOST -P 3306 -u $DB_USER -p$DB_PASSWORD $DB_NAME -e 'SELECT VERSION();' 2>/dev/null; then
             echo '✅ Bastion에서 RDS 직접 연결 성공'
           else
             echo '❌ Bastion에서 RDS 직접 연결 실패'
             echo '🔍 네트워크 연결 확인:'
-            telnet $DB_HOST 5432 < /dev/null 2>&1 | head -5
+            telnet $DB_HOST 3306 < /dev/null 2>&1 | head -5
             echo '🔍 보안 그룹 확인이 필요합니다.'
             exit 1
           fi
@@ -443,7 +443,7 @@ jobs:
         echo "🔍 SSH 터널을 통한 데이터베이스 연결 테스트 중..."
         DB_CONNECTED=false
         for i in {1..5}; do
-          if PGPASSWORD=$DB_PASSWORD psql -h localhost -p $LOCAL_PORT -U $DB_USER -d $DB_NAME -c "SELECT 1;" 2>/dev/null; then
+          if mysql -h 127.0.0.1 -P $LOCAL_PORT --protocol=TCP -u $DB_USER -p$DB_PASSWORD $DB_NAME -e "SELECT 1;" 2>/dev/null; then
             echo "✅ 데이터베이스 연결 성공 (시도 $i/5)"
             DB_CONNECTED=true
             break
@@ -451,7 +451,7 @@ jobs:
             echo "⚠️ 데이터베이스 연결 실패 (시도 $i/5)"
             # 자세한 오류 정보 출력
             echo "🔍 상세 오류 정보:"
-            PGPASSWORD=$DB_PASSWORD psql -h localhost -p $LOCAL_PORT -U $DB_USER -d $DB_NAME -c "SELECT 1;" 2>&1 || true
+            mysql -h 127.0.0.1 -P $LOCAL_PORT --protocol=TCP -u $DB_USER -p$DB_PASSWORD $DB_NAME -e "SELECT 1;" 2>&1 || true
             
             if [ $i -lt 5 ]; then
               echo "3초 후 재시도..."
@@ -486,15 +486,15 @@ jobs:
         PROJECT_NAME: ${{ env.PROJECT_NAME }}
         
     # ===============================================
-    # PostgreSQL 클라이언트 설치 및 스키마 적용
+    # SQL 클라이언트 설치 및 스키마 적용
     # ===============================================
     - name: Apply Database Schema
       if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
       run: |
         echo "🗄️ 데이터베이스 스키마 적용 중..."
         
-        # PostgreSQL 클라이언트 설치
-        sudo apt-get update && sudo apt-get install -y postgresql-client
+        # MySQL 클라이언트 설치
+        sudo apt-get update && sudo apt-get install -y mysql-client
         
         # 환경 변수 설정
         PROJECT_NAME="${{ env.PROJECT_NAME }}"
@@ -572,7 +572,7 @@ jobs:
             -o ServerAliveInterval=60 \
             -o ServerAliveCountMax=3 \
             -o ConnectTimeout=30 \
-            -L $LOCAL_PORT:$DB_HOST:5432 \
+            -L $LOCAL_PORT:$DB_HOST:3306 \
             ec2-user@$BASTION_IP \
             -N &
         SSH_PID=$!
@@ -611,22 +611,64 @@ jobs:
         # Bastion Host에서 직접 DB 연결 테스트
         echo "🔍 Bastion Host에서 DB 직접 연결 테스트 중..."
         ssh -i bastion_key.pem -o StrictHostKeyChecking=no ec2-user@$BASTION_IP "
-          # PostgreSQL 클라이언트 설치 확인
-          if ! command -v psql &> /dev/null; then
-            echo '📦 Bastion에 PostgreSQL 클라이언트 설치 중...'
+          # MySQL 클라이언트 설치 확인
+          if ! command -v mysql &> /dev/null; then
+            echo '📦 Bastion에 MySQL 클라이언트 설치 중...'
             sudo yum update -y
-            sudo yum install -y postgresql15
+            sudo yum install -y mysql
+          fi
+          
+          # MySQL 클라이언트 설치 확인
+          echo "🔍 MySQL 클라이언트 확인 중..."
+          if ! command -v mysql &> /dev/null; then
+            echo "📦 Bastion에 MySQL 클라이언트 설치 중..."
+            if sudo yum install -y mysql; then
+              echo "✅ yum으로 MySQL 클라이언트 설치 성공"
+            elif sudo apt-get update && sudo apt-get install -y mysql-client; then
+              echo "✅ apt로 MySQL 클라이언트 설치 성공"
+            else
+              echo "❌ MySQL 클라이언트 설치 실패"
+              exit 1
+            fi
+          else
+            echo "✅ MySQL 클라이언트가 이미 설치되어 있음"
+            mysql --version
           fi
           
           # DB 연결 테스트
           echo '🔍 Bastion에서 RDS 직접 연결 테스트...'
-          if PGPASSWORD='${{ secrets.DB_PASSWORD }}' psql -h $DB_HOST -p 5432 -U $DB_USER -d $DB_NAME -c 'SELECT version();' 2>/dev/null; then
+          echo "사용할 연결 정보: Host=$DB_HOST, User=$DB_USER, DB=$DB_NAME"
+          
+          # 먼저 데이터베이스 이름 없이 연결 시도 (오류 메시지 표시)
+          echo "🔍 기본 MySQL 연결 시도 중..."
+          if mysql -h $DB_HOST -P 3306 -u $DB_USER -p${{ secrets.DB_PASSWORD }} -e 'SELECT VERSION();' 2>&1; then
+            echo '✅ Bastion에서 RDS 기본 연결 성공'
+            # 이제 mydb 데이터베이스 접근 시도
+            if mysql -h $DB_HOST -P 3306 -u $DB_USER -p${{ secrets.DB_PASSWORD }} $DB_NAME -e 'SELECT DATABASE();' 2>/dev/null; then
+              echo '✅ Bastion에서 RDS mydb 연결 성공'
+            else
+              echo '⚠️ mydb 데이터베이스 접근 실패 - 스키마 생성 필요할 수 있음'
+            fi
+          elif mysql -h $DB_HOST -P 3306 -u $DB_USER -p${{ secrets.DB_PASSWORD }} $DB_NAME -e 'SELECT VERSION();' 2>/dev/null; then
             echo '✅ Bastion에서 RDS 직접 연결 성공'
           else
             echo '❌ Bastion에서 RDS 직접 연결 실패'
             echo '🔍 네트워크 연결 확인:'
-            nc -zv $DB_HOST 5432 2>&1 || telnet $DB_HOST 5432 < /dev/null 2>&1 | head -5
-            echo '🔍 보안 그룹 확인이 필요합니다.'
+            if nc -zv $DB_HOST 3306 2>&1; then
+              echo '✅ 네트워크 연결은 성공 - MySQL 서비스 문제일 수 있음'
+              echo '🔍 MySQL 클라이언트 및 서버 상태 확인 필요'
+            else
+              telnet $DB_HOST 3306 < /dev/null 2>&1 | head -5
+              echo '🔍 보안 그룹 확인이 필요합니다.'
+            fi
+            
+            # 추가 진단 정보
+            echo "🔍 현재 MySQL 클라이언트 버전:"
+            mysql --version 2>/dev/null || echo "MySQL 클라이언트가 설치되지 않음"
+            
+            echo "🔍 네트워크 진단:"
+            ping -c 2 $DB_HOST 2>/dev/null || echo "Ping 실패"
+            
             exit 1
           fi
         "
@@ -635,13 +677,7 @@ jobs:
         echo "🔍 SSH 터널을 통한 데이터베이스 연결 테스트 중..."
         DB_CONNECTED=false
         for i in {1..5}; do
-          if PGPASSWORD="${{ secrets.DB_PASSWORD }}" psql \
-            -h localhost \
-            -p $LOCAL_PORT \
-            -U "$DB_USER" \
-            -d "$DB_NAME" \
-            -c "SELECT version();" \
-            -v ON_ERROR_STOP=1 2>/dev/null; then
+          if mysql -h 127.0.0.1 -P $LOCAL_PORT --protocol=TCP -u $DB_USER -p${{ secrets.DB_PASSWORD }} $DB_NAME -e "SELECT VERSION();" 2>/dev/null; then
             echo "✅ 데이터베이스 연결 성공 (시도 $i/5)"
             DB_CONNECTED=true
             break
@@ -649,12 +685,7 @@ jobs:
             echo "⚠️ 데이터베이스 연결 실패 (시도 $i/5)"
             # 자세한 오류 정보 출력
             echo "🔍 상세 오류 정보:"
-            PGPASSWORD="${{ secrets.DB_PASSWORD }}" psql \
-              -h localhost \
-              -p $LOCAL_PORT \
-              -U "$DB_USER" \
-              -d "$DB_NAME" \
-              -c "SELECT version();" 2>&1 || true
+            mysql -h 127.0.0.1 -P $LOCAL_PORT --protocol=TCP -u $DB_USER -p${{ secrets.DB_PASSWORD }} $DB_NAME -e "SELECT VERSION();" 2>&1 || true
             
             if [ $i -lt 5 ]; then
               echo "3초 후 재시도..."
@@ -677,25 +708,13 @@ jobs:
         
         # 기존 테이블 확인
         echo "🔍 기존 테이블 확인 중..."
-        EXISTING_TABLES=$(PGPASSWORD="${{ secrets.DB_PASSWORD }}" psql \
-          -h localhost \
-          -p $LOCAL_PORT \
-          -U "$DB_USER" \
-          -d "$DB_NAME" \
-          -t -c "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_name IN ('users', 'posts', 'images', 'files');" \
-          -v ON_ERROR_STOP=1 | tr -d ' ')
+        EXISTING_TABLES=$(mysql -h 127.0.0.1 -P $LOCAL_PORT --protocol=TCP -u $DB_USER -p${{ secrets.DB_PASSWORD }} $DB_NAME -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = '$DB_NAME' AND table_name IN ('users', 'posts', 'images', 'files');" 2>/dev/null | tail -n 1)
         
         echo "📊 기존 테이블 개수: $EXISTING_TABLES/4"
         
         if [ "$EXISTING_TABLES" -lt "4" ]; then
           echo "📝 스키마 파일 적용 중..."
-          if PGPASSWORD="${{ secrets.DB_PASSWORD }}" psql \
-            -h localhost \
-            -p $LOCAL_PORT \
-            -U "$DB_USER" \
-            -d "$DB_NAME" \
-            -f server1/files/schema.sql \
-            -v ON_ERROR_STOP=1; then
+          if mysql -h 127.0.0.1 -P $LOCAL_PORT --protocol=TCP -u $DB_USER -p${{ secrets.DB_PASSWORD }} $DB_NAME < server1/files/schema.sql; then
             echo "✅ 스키마 적용 완료"
           else
             echo "❌ 스키마 적용 실패"

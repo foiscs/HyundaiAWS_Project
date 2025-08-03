@@ -6,11 +6,11 @@ header('Content-Type: application/json');
 $start_time = microtime(true);
 
 // 환경변수 로드
-$db_host = $_ENV['DB_HOST'] ?? getenv('DB_HOST') ?: 'walb-rds-database.cx02kko4cplr.ap-northeast-2.rds.amazonaws.com';
+$db_host = $_ENV['DB_HOST'] ?? getenv('DB_HOST') ?: 'walb-mysql-rds.cx02kko4cplr.ap-northeast-2.rds.amazonaws.com';
 $db_name = $_ENV['DB_NAME'] ?? getenv('DB_NAME') ?: 'mydb';
 $db_user = $_ENV['DB_USER'] ?? getenv('DB_USER') ?: 'dbadmin';
 $db_password = $_ENV['DB_PASSWORD'] ?? getenv('DB_PASSWORD') ?: 'MySecurePassword123!';
-$db_port = $_ENV['DB_PORT'] ?? getenv('DB_PORT') ?: '5432';
+$db_port = $_ENV['DB_PORT'] ?? getenv('DB_PORT') ?: '3306';
 
 $result = [
     'tests' => [],
@@ -61,14 +61,14 @@ $connection_tests = [
         PDO::ATTR_TIMEOUT => 10,
         PDO::ATTR_PERSISTENT => false,
         PDO::ATTR_EMULATE_PREPARES => false,
-        PDO::PGSQL_ATTR_DISABLE_PREPARES => true
+        PDO::MYSQL_ATTR_INIT_COMMAND => "SET NAMES utf8mb4"
     ]
 ];
 
 foreach ($connection_tests as $test_name => $options) {
     $pdo_start = microtime(true);
     try {
-        $dsn = "pgsql:host={$db_host};port={$db_port};dbname={$db_name}";
+        $dsn = "mysql:host={$db_host};port={$db_port};dbname={$db_name};charset=utf8mb4";
         $default_options = [
             PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
             PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
@@ -111,11 +111,12 @@ $consecutive_times = [];
 for ($i = 0; $i < 5; $i++) {
     $conn_start = microtime(true);
     try {
-        $dsn = "pgsql:host={$db_host};port={$db_port};dbname={$db_name}";
+        $dsn = "mysql:host={$db_host};port={$db_port};dbname={$db_name};charset=utf8mb4";
         $pdo = new PDO($dsn, $db_user, $db_password, [
             PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
             PDO::ATTR_PERSISTENT => true,
-            PDO::ATTR_TIMEOUT => 10
+            PDO::ATTR_TIMEOUT => 10,
+            PDO::MYSQL_ATTR_INIT_COMMAND => "SET NAMES utf8mb4"
         ]);
         $pdo->query("SELECT 1");
         $consecutive_times[] = round((microtime(true) - $conn_start) * 1000, 2);
@@ -134,7 +135,7 @@ $result['tests']['consecutive_connections'] = [
 $result['tests']['network_info'] = [
     'server_location' => gethostname(),
     'php_version' => phpversion(),
-    'pdo_pgsql_version' => phpversion('pdo_pgsql'),
+    'pdo_mysql_version' => phpversion('pdo_mysql'),
     'memory_limit' => ini_get('memory_limit'),
     'max_execution_time' => ini_get('max_execution_time')
 ];
