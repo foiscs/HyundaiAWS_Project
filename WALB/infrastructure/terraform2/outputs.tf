@@ -33,10 +33,10 @@ output "eks_cluster_info" {
     cluster_security_group_id     = module.eks.cluster_security_group_id
     cluster_oidc_issuer_url       = module.eks.cluster_oidc_issuer_url
     oidc_provider_arn             = module.eks.oidc_provider_arn
-    node_group_arn                = module.eks.node_group_arn
-    node_group_status             = module.eks.node_group_status
-    node_group_capacity_type      = module.eks.node_group_capacity_type
-    node_group_instance_types     = module.eks.node_group_instance_types
+    node_group_arn                = module.eks.eks_managed_node_groups.main.node_group_arn
+    node_group_status             = module.eks.eks_managed_node_groups.main.node_group_status
+    node_group_capacity_type      = var.enable_spot_instances ? "SPOT" : "ON_DEMAND"
+    node_group_instance_types     = var.eks_node_instance_types
   }
   sensitive = true
 }
@@ -50,13 +50,12 @@ output "eks_cluster_info" {
 # =========================================
 # AWS Load Balancer Controller App2 정보
 # =========================================
-output "aws_load_balancer_controller_app2_info" {
-  description = "App2 전용 AWS Load Balancer Controller 정보"
+output "aws_load_balancer_controller_info" {
+  description = "AWS Load Balancer Controller 정보"
   value = {
-    service_account_name = "aws-load-balancer-controller-app2"
-    iam_role_arn        = module.eks.aws_load_balancer_controller_app2_role_arn
-    ingress_class       = "alb-app2"
-    helm_release_name   = "walb-app2-alb-controller"
+    service_account_name = "aws-load-balancer-controller"
+    iam_role_arn        = try(module.load_balancer_controller_irsa_role[0].iam_role_arn, "")
+    helm_release_name   = "aws-load-balancer-controller"
     namespace          = "kube-system"
   }
 }
