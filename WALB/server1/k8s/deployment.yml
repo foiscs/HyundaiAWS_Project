@@ -31,7 +31,7 @@ spec:
           protocol: TCP
         env:
         - name: DB_HOST
-          value: "walb-rds-database.cx02kko4cplr.ap-northeast-2.rds.amazonaws.com"
+          value: "walb-mysql-rds.cx02kko4cplr.ap-northeast-2.rds.amazonaws.com"
         - name: DB_NAME
           value: "mydb"
         - name: DB_USER
@@ -39,7 +39,7 @@ spec:
         - name: DB_PASSWORD
           value: "MySecurePassword123!"
         - name: DB_PORT
-          value: "5432"
+          value: "3306"
         - name: APP_DEBUG
           value: "false"
         resources:

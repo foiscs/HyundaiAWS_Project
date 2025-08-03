@@ -186,8 +186,8 @@ output "monitoring_info" {
 output "connection_strings" {
   description = "서비스 연결 문자열"
   value = {
-    # PostgreSQL 연결 문자열
-    postgres_connection = "postgresql://${var.db_username}:${var.db_password}@${module.rds.db_instance_endpoint}:${module.rds.db_instance_port}/${var.db_name}"
+    # MySQL 연결 문자열
+    mysql_connection = "mysql://${var.db_username}:${var.db_password}@${module.rds.db_instance_endpoint}:${module.rds.db_instance_port}/${var.db_name}"
     
     # DynamoDB 엔드포인트
     dynamodb_endpoint = "https://dynamodb.${var.aws_region}.amazonaws.com"

@@ -31,24 +31,24 @@ resource "aws_db_parameter_group" "main" {
     }
   }
 
-  # PostgreSQL 로깅 파라미터
+  # MySQL 로깅 파라미터
   parameter {
-    name  = "log_statement"
-    value = "all"
-  }
-
-  parameter {
-    name  = "log_min_duration_statement"
-    value = "1000"  # 1초 이상 쿼리 로깅
-  }
-
-  parameter {
-    name  = "log_connections"
+    name  = "general_log"
     value = "1"
   }
 
   parameter {
-    name  = "log_disconnections"
+    name  = "slow_query_log"
+    value = "1"
+  }
+
+  parameter {
+    name  = "long_query_time"
+    value = "1"  # 1초 이상 쿼리 로깅
+  }
+
+  parameter {
+    name  = "log_queries_not_using_indexes"
     value = "1"
   }
 
@@ -172,8 +172,8 @@ resource "aws_db_instance" "main" {
 
   # Performance Insights (ISMS-P 컴플라이언스)
   performance_insights_enabled          = var.performance_insights_enabled
-  performance_insights_retention_period = var.performance_insights_retention_period
-  performance_insights_kms_key_id      = var.create_kms_key ? aws_kms_key.rds[0].arn : null
+  performance_insights_retention_period = var.performance_insights_enabled ? var.performance_insights_retention_period : null
+  performance_insights_kms_key_id      = var.performance_insights_enabled && var.create_kms_key ? aws_kms_key.rds[0].arn : null
 
   # 로그 설정 (ISMS-P 컴플라이언스)
   enabled_cloudwatch_logs_exports = var.enabled_cloudwatch_logs_exports

@@ -8,13 +8,13 @@ try {
     $db_name = $_ENV['DB_NAME'] ?? getenv('DB_NAME') ?: 'mydb';
     $db_user = $_ENV['DB_USER'] ?? getenv('DB_USER') ?: 'dbadmin';
     $db_password = $_ENV['DB_PASSWORD'] ?? getenv('DB_PASSWORD') ?: '';
-    $db_port = $_ENV['DB_PORT'] ?? getenv('DB_PORT') ?: '5432';
+    $db_port = $_ENV['DB_PORT'] ?? getenv('DB_PORT') ?: '3306';
     
     $health_data = [
         'status' => 'healthy',
         'timestamp' => date('Y-m-d H:i:s'),
         'php_version' => PHP_VERSION,
-        'pdo_pgsql_loaded' => extension_loaded('pdo_pgsql'),
+        'pdo_mysql_loaded' => extension_loaded('pdo_mysql'),
         'available_drivers' => PDO::getAvailableDrivers(),
         'memory_usage' => [
             'current' => round(memory_get_usage(true) / 1024 / 1024, 2) . 'MB',
@@ -40,15 +40,16 @@ try {
         
         // PDO 연결 시간 측정
         $pdo_start = microtime(true);
-        $dsn = "pgsql:host={$db_host};port={$db_port};dbname={$db_name};connect_timeout=5";
+        $dsn = "mysql:host={$db_host};port={$db_port};dbname={$db_name};charset=utf8mb4";
         $pdo = new PDO($dsn, $db_user, $db_password, [
             PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-            PDO::ATTR_TIMEOUT => 5
+            PDO::ATTR_TIMEOUT => 5,
+            PDO::MYSQL_ATTR_INIT_COMMAND => "SET NAMES utf8mb4"
         ]);
         
         // 간단한 쿼리 실행
         $query_start = microtime(true);
-        $stmt = $pdo->query("SELECT version(), current_database(), inet_server_addr(), inet_server_port()");
+        $stmt = $pdo->query("SELECT VERSION() as version, DATABASE() as current_database, CONNECTION_ID() as connection_id");
         $db_info = $stmt->fetch();
         $query_time = (microtime(true) - $query_start) * 1000;
         
@@ -71,8 +72,7 @@ try {
             'server_info' => [
                 'version' => $db_info['version'] ?? 'unknown',
                 'database' => $db_info['current_database'] ?? 'unknown',
-                'server_ip' => $db_info['inet_server_addr'] ?? 'unknown',
-                'server_port' => $db_info['inet_server_port'] ?? 'unknown'
+                'connection_id' => $db_info['connection_id'] ?? 'unknown'
             ]
         ];
         

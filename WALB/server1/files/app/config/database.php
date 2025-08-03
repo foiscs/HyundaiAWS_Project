@@ -45,10 +45,10 @@ foreach ($env_paths as $env_path) {
 
 // RDS 데이터베이스 설정 (환경변수 우선, 기본값 fallback)
 $db_host = $_ENV['DB_HOST'] ?? getenv('DB_HOST') ?: '127.0.0.1';
-$db_name = $_ENV['DB_NAME'] ?? getenv('DB_NAME') ?: 'mydb';  # simple_blog에서 mydb로 변경
-$db_user = $_ENV['DB_USER'] ?? getenv('DB_USER') ?: 'dbadmin';  # blog_user에서 dbadmin으로 변경
-$db_password = $_ENV['DB_PASSWORD'] ?? getenv('DB_PASSWORD') ?: 'MySecurePassword123!';  # qwer1234에서 변경
-$db_port = $_ENV['DB_PORT'] ?? getenv('DB_PORT') ?: '5432';  # 3306에서 5432로 변경
+$db_name = $_ENV['DB_NAME'] ?? getenv('DB_NAME') ?: 'mydb';
+$db_user = $_ENV['DB_USER'] ?? getenv('DB_USER') ?: 'dbadmin';
+$db_password = $_ENV['DB_PASSWORD'] ?? getenv('DB_PASSWORD') ?: 'MySecurePassword123!';
+$db_port = $_ENV['DB_PORT'] ?? getenv('DB_PORT') ?: '3306';  # MySQL 기본 포트
 
 // 디버그 정보 (개발 환경에서만)
 if (($_ENV['APP_DEBUG'] ?? 'false') === 'true') {
@@ -59,24 +59,24 @@ try {
     // 연결 시간 측정 시작
     $connection_start = microtime(true);
     
-    // DSN에 연결 최적화 옵션 추가
-    $dsn = "pgsql:host={$db_host};port={$db_port};dbname={$db_name};connect_timeout=10;application_name=walb_app";
+    // MySQL DSN 설정
+    $dsn = "mysql:host={$db_host};port={$db_port};dbname={$db_name};charset=utf8mb4";
     
     $options = [
         PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
         PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
         PDO::ATTR_EMULATE_PREPARES => false,
-        PDO::ATTR_TIMEOUT => 10,  // 원래 설정으로 복원
-        PDO::ATTR_PERSISTENT => false,  // persistent 연결 비활성화로 복원
-        PDO::PGSQL_ATTR_DISABLE_PREPARES => true  // prepare 오버헤드 제거
+        PDO::ATTR_TIMEOUT => 10,
+        PDO::ATTR_PERSISTENT => false,
+        PDO::MYSQL_ATTR_INIT_COMMAND => "SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci"
     ];
     
     $pdo = new PDO($dsn, $db_user, $db_password, $options);
     
-    // PostgreSQL 세션 최적화 설정
-    $pdo->exec("SET statement_timeout = '30s'");
-    $pdo->exec("SET lock_timeout = '10s'");
-    $pdo->exec("SET idle_in_transaction_session_timeout = '60s'");
+    // MySQL 세션 최적화 설정
+    $pdo->exec("SET SESSION wait_timeout = 600");
+    $pdo->exec("SET SESSION interactive_timeout = 600");
+    $pdo->exec("SET SESSION sql_mode = 'STRICT_TRANS_TABLES,NO_ZERO_DATE,NO_ZERO_IN_DATE,ERROR_FOR_DIVISION_BY_ZERO'");
     
     // 연결 테스트 및 시간 측정
     $query_start = microtime(true);

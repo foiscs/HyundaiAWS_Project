@@ -20,7 +20,6 @@ RUN docker-php-ext-configure gd --with-freetype --with-jpeg \
     gd \
     pdo \
     pdo_mysql \
-    pdo_pgsql \
     mysqli \
     mbstring \
     xml \
@@ -65,7 +64,7 @@ RUN echo "upload_max_filesize = 10M" > /usr/local/etc/php/conf.d/optimization.in
     && echo "date.timezone = Asia/Seoul" >> /usr/local/etc/php/conf.d/optimization.ini \
     && echo "" >> /usr/local/etc/php/conf.d/optimization.ini \
     && echo "# Database connection optimization" >> /usr/local/etc/php/conf.d/optimization.ini \
-    && echo "pdo.dsn.* = pgsql:host=walb-rds-database.cx02kko4cplr.ap-northeast-2.rds.amazonaws.com" >> /usr/local/etc/php/conf.d/optimization.ini \
+    && echo "pdo.dsn.* = mysql:host=walb-mysql-rds.cx02kko4cplr.ap-northeast-2.rds.amazonaws.com" >> /usr/local/etc/php/conf.d/optimization.ini \
     && echo "default_socket_timeout = 10" >> /usr/local/etc/php/conf.d/optimization.ini \
     && echo "" >> /usr/local/etc/php/conf.d/optimization.ini \
     && echo "# OPcache settings for performance" >> /usr/local/etc/php/conf.d/optimization.ini \

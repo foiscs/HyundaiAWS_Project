@@ -9,8 +9,8 @@ app1_config:
   database:
     name: "mydb"
     user: "dbadmin"
-    port: "5432"  # PostgreSQL
-    rds_identifier: "walb-rds-database"  # RDS 인스턴스 식별자
+    port: "3306"  # MySQL
+    rds_identifier: "walb-mysql-rds"  # RDS 인스턴스 식별자
   
   # EKS 클러스터 설정
   eks:

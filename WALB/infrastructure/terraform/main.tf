@@ -307,8 +307,8 @@ module "rds" {
   ]
   
   # 데이터베이스 설정
-  engine                 = "postgres"
-  engine_version         = "16.4"
+  engine                 = "mysql"
+  engine_version         = "8.0.39"
   instance_class         = var.rds_instance_class
   allocated_storage      = 20
   max_allocated_storage  = 100
@@ -325,7 +325,7 @@ module "rds" {
 
   # 모니터링 설정
   monitoring_interval = 60
-  enabled_cloudwatch_logs_exports = ["postgresql"]
+  enabled_cloudwatch_logs_exports = ["error", "general", "slowquery"]
   log_retention_days = var.security_log_retention_days
 
   # Multi-AZ 설정
@@ -891,14 +891,13 @@ resource "aws_instance" "bastion" {
   vpc_security_group_ids = [aws_security_group.bastion.id]
   subnet_id             = module.vpc.public_subnet_ids[0]
   
-  # PostgreSQL 클라이언트 및 네트워크 도구 설치를 위한 user data
+  # MySQL 클라이언트 및 네트워크 도구 설치를 위한 user data
   user_data = base64encode(<<-EOF
     #!/bin/bash
     yum update -y
     
-    # PostgreSQL 클라이언트 설치
-    amazon-linux-extras install -y postgresql13
-    yum install -y postgresql
+    # MySQL 클라이언트 설치
+    yum install -y mysql
     
     # 네트워크 진단 도구 설치
     yum install -y telnet nc nmap-ncat

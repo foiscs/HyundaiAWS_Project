@@ -7,7 +7,7 @@ $db_host = $_ENV['DB_HOST'] ?? getenv('DB_HOST') ?: 'localhost';
 $db_name = $_ENV['DB_NAME'] ?? getenv('DB_NAME') ?: 'mydb';
 $db_user = $_ENV['DB_USER'] ?? getenv('DB_USER') ?: 'dbadmin';
 $db_password = $_ENV['DB_PASSWORD'] ?? getenv('DB_PASSWORD') ?: '';
-$db_port = $_ENV['DB_PORT'] ?? getenv('DB_PORT') ?: '5432';
+$db_port = $_ENV['DB_PORT'] ?? getenv('DB_PORT') ?: '3306';
 
 $result = [
     'config' => [
@@ -22,19 +22,20 @@ $result = [
 ];
 
 try {
-    $dsn = "pgsql:host={$db_host};port={$db_port};dbname={$db_name}";
+    $dsn = "mysql:host={$db_host};port={$db_port};dbname={$db_name};charset=utf8mb4";
     $options = [
         PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
         PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
         PDO::ATTR_EMULATE_PREPARES => false,
         PDO::ATTR_TIMEOUT => 10,
-        PDO::ATTR_PERSISTENT => false
+        PDO::ATTR_PERSISTENT => false,
+        PDO::MYSQL_ATTR_INIT_COMMAND => "SET NAMES utf8mb4"
     ];
     
     $pdo = new PDO($dsn, $db_user, $db_password, $options);
     
     // 연결 테스트
-    $stmt = $pdo->query("SELECT version(), current_database(), current_user");
+    $stmt = $pdo->query("SELECT VERSION() as version, DATABASE() as current_database, USER() as current_user");
     $db_info = $stmt->fetch();
     
     // 테이블 존재 확인
@@ -43,14 +44,13 @@ try {
     
     foreach ($required_tables as $table) {
         $stmt = $pdo->prepare("
-            SELECT EXISTS (
-                SELECT FROM information_schema.tables 
-                WHERE table_schema = 'public' 
-                AND table_name = ?
-            )
+            SELECT COUNT(*) > 0 as table_exists
+            FROM information_schema.tables 
+            WHERE table_schema = ? 
+            AND table_name = ?
         ");
-        $stmt->execute([$table]);
-        $tables_check[$table] = $stmt->fetchColumn();
+        $stmt->execute([$db_name, $table]);
+        $tables_check[$table] = (bool)$stmt->fetchColumn();
     }
     
     $result['connection_test'] = 'SUCCESS';

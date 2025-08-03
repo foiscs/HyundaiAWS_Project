@@ -140,7 +140,7 @@ output "connection_info" {
 # JDBC/ODBC 연결 문자열
 output "jdbc_connection_string" {
   description = "JDBC 연결 문자열"
-  value       = "jdbc:postgresql://${aws_db_instance.main.endpoint}/${aws_db_instance.main.db_name}"
+  value       = "jdbc:mysql://${aws_db_instance.main.endpoint}:${aws_db_instance.main.port}/${aws_db_instance.main.db_name}"
 }
 
 # 백업 정보
