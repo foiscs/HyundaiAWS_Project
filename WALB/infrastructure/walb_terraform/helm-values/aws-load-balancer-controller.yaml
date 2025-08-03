@@ -1,0 +1,106 @@
+# AWS Load Balancer Controller Helm Values
+# Terraform에서 동적으로 설정될 값들은 템플릿 변수로 정의
+
+# 클러스터 이름 (필수)
+clusterName: ${cluster_name}
+
+# AWS 설정
+region: ${aws_region}
+vpcId: ${vpc_id}
+
+# 기본 설정 - 안정성을 위해 복제본 수 증가
+replicaCount: 3
+image:
+  repository: public.ecr.aws/eks/aws-load-balancer-controller
+  tag: v2.8.1
+
+# 서비스 계정 설정 (Terraform에서 미리 생성)
+serviceAccount:
+  create: false
+  name: aws-load-balancer-controller
+
+# cert-manager 사용 설정 (비활성화하여 자체 서명 인증서 사용)
+enableCertManager: false
+
+# Ingress Class 생성
+createIngressClassResource: true
+defaultIngressClass: true
+
+# 리소스 설정 - 웹훅 성능 개선을 위해 리소스 증가
+resources:
+  limits:
+    cpu: 1000m
+    memory: 2Gi
+  requests:
+    cpu: 500m
+    memory: 1Gi
+
+# 로깅 설정
+logLevel: info
+
+# AWS 기능 비활성화 (기본 ALB만 사용)
+enableShield: false
+enableWaf: false
+enableWafv2: false
+
+# Node Selector (EKS 노드에만 배치)
+nodeSelector:
+  kubernetes.io/os: linux
+
+# Pod Anti-Affinity (가용성 향상)
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+    - weight: 100
+      podAffinityTerm:
+        labelSelector:
+          matchExpressions:
+          - key: app.kubernetes.io/name
+            operator: In
+            values:
+            - aws-load-balancer-controller
+        topologyKey: kubernetes.io/hostname
+
+# 보안 설정
+securityContext:
+  fsGroup: 65534
+  runAsNonRoot: true
+
+# 추가 환경 변수
+env:
+  CLUSTER_NAME: ${cluster_name}
+  AWS_REGION: ${aws_region}
+  VPC_ID: ${vpc_id}
+
+# 공통 라벨 설정
+commonLabels:
+  app.kubernetes.io/managed-by: "Terraform"
+  app.kubernetes.io/instance: "walb-alb-controller"
+
+# 서비스 모니터 (Prometheus 연동 시)
+serviceMonitor:
+  enabled: false
+
+# 웹훅 설정 (자체 서명 인증서 사용) - 타임아웃 및 성능 최적화
+webhook:
+  certManager:
+    enabled: false
+  port: 9443
+  # 웹훅 성능 최적화
+  resources:
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+    requests:
+      cpu: 500m
+      memory: 512Mi
+
+# ValidatingAdmissionWebhook 설정은 terraform null_resource에서 kubectl patch로 처리됨
+
+# finalizer 관리 설정 - 리소스 정리 보장
+enableFinalizer: true
+
+# 컨트롤러 재시작 시 자동 복구 설정
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1

@@ -1,0 +1,40 @@
+# App1 서버 배포를 위한 설정 파일
+# GitHub Repository Variables로 설정하거나 이 파일을 참고하여 직접 설정하세요
+
+app1_config:
+  # 프로젝트 기본 정보
+  project_name: "walb-app"
+  
+  # 데이터베이스 설정
+  database:
+    name: "mydb"
+    user: "dbadmin"
+    port: "3306"  # MySQL
+    rds_identifier: "walb-mysql-rds"  # RDS 인스턴스 식별자
+  
+  # EKS 클러스터 설정
+  eks:
+    cluster_name: "walb-eks-cluster"  
+  
+  # S3 버킷 설정
+  s3:
+    bucket_name: "walb-app-files"     
+    region: "ap-northeast-2"
+  
+  # IAM 역할 설정
+  iam:
+    role_name: "walb-app-eks-app-role"  
+  
+  # Bastion Host 설정
+  bastion:
+    host_tag_name: "walb-app-bastion-host"  # Bastion Host의 Name 태그
+  
+  # 애플리케이션 설정
+  application:
+    deployment_name: "walb-deployment"  # deployment 이름
+    image_name: "walb-app-ecr"              # 컨테이너 이미지 이름
+    health_check_path: "/simple-health.php"  # PHP 간단한 헬스체크 경로 (DB 연결 없음)
+  
+  # 네트워크 설정
+  network:
+    region: "ap-northeast-2"
