@@ -420,7 +420,7 @@ jobs:
         echo "🔍 Bastion Host에서 DB 직접 연결 테스트 중..."
         ssh -i bastion_key.pem -o StrictHostKeyChecking=no ec2-user@$BASTION_IP "
           # MySQL 클라이언트 설치 확인
-          if ! command -v psql &> /dev/null; then
+          if ! command -v mysql &> /dev/null; then
             echo '📦 Bastion에 MySQL 클라이언트 설치 중...'
             sudo yum update -y
             sudo yum install -y mysql
@@ -612,7 +612,7 @@ jobs:
         echo "🔍 Bastion Host에서 DB 직접 연결 테스트 중..."
         ssh -i bastion_key.pem -o StrictHostKeyChecking=no ec2-user@$BASTION_IP "
           # MySQL 클라이언트 설치 확인
-          if ! command -v psql &> /dev/null; then
+          if ! command -v mysql &> /dev/null; then
             echo '📦 Bastion에 MySQL 클라이언트 설치 중...'
             sudo yum update -y
             sudo yum install -y mysql
@@ -654,8 +654,21 @@ jobs:
           else
             echo '❌ Bastion에서 RDS 직접 연결 실패'
             echo '🔍 네트워크 연결 확인:'
-            nc -zv $DB_HOST 3306 2>&1 || telnet $DB_HOST 3306 < /dev/null 2>&1 | head -5
-            echo '🔍 보안 그룹 확인이 필요합니다.'
+            if nc -zv $DB_HOST 3306 2>&1; then
+              echo '✅ 네트워크 연결은 성공 - MySQL 서비스 문제일 수 있음'
+              echo '🔍 MySQL 클라이언트 및 서버 상태 확인 필요'
+            else
+              telnet $DB_HOST 3306 < /dev/null 2>&1 | head -5
+              echo '🔍 보안 그룹 확인이 필요합니다.'
+            fi
+            
+            # 추가 진단 정보
+            echo "🔍 현재 MySQL 클라이언트 버전:"
+            mysql --version 2>/dev/null || echo "MySQL 클라이언트가 설치되지 않음"
+            
+            echo "🔍 네트워크 진단:"
+            ping -c 2 $DB_HOST 2>/dev/null || echo "Ping 실패"
+            
             exit 1
           fi
         "
