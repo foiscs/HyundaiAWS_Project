@@ -253,42 +253,67 @@ resource "helm_release" "aws_load_balancer_controller" {
   ]
 }
 
-# ValidatingWebhookConfiguration 패치 (선택사항)
+# ValidatingWebhookConfiguration 패치 (선택사항) - 일반적으로 불필요
 resource "null_resource" "webhook_patch" {
-  count = var.webhook_failure_policy == "Ignore" ? 1 : 0
+  count = var.webhook_failure_policy == "Ignore" && var.enable_webhook_patch ? 1 : 0
 
   provisioner "local-exec" {
+    interpreter = ["PowerShell", "-Command"]
     command = <<-EOT
-      # Wait for webhook configuration to be created
-      echo "ValidatingWebhookConfiguration 패치 대기 중..."
-      timeout 300 bash -c 'while ! kubectl get validatingwebhookconfigurations aws-load-balancer-webhook >/dev/null 2>&1; do sleep 5; done'
+      Write-Host "ValidatingWebhookConfiguration 패치 대기 중..."
       
-      # Patch webhook configuration
-      echo "ValidatingWebhookConfiguration 패치 적용 중..."
-      kubectl patch validatingwebhookconfigurations aws-load-balancer-webhook --type='json' -p='[
-        {
-          "op": "replace",
-          "path": "/webhooks/0/timeoutSeconds",
-          "value": ${var.webhook_timeout_seconds}
-        },
-        {
-          "op": "replace", 
-          "path": "/webhooks/0/failurePolicy",
-          "value": "${var.webhook_failure_policy}"
-        },
-        {
-          "op": "replace",
-          "path": "/webhooks/1/timeoutSeconds", 
-          "value": ${var.webhook_timeout_seconds}
-        },
-        {
-          "op": "replace",
-          "path": "/webhooks/1/failurePolicy",
-          "value": "${var.webhook_failure_policy}"
-        }
-      ]'
+      $maxAttempts = 60
+      $attempt = 0
+      do {
+        try {
+          kubectl get validatingwebhookconfigurations aws-load-balancer-webhook *>$null
+          if ($LASTEXITCODE -eq 0) { break }
+        } catch {}
+        Start-Sleep -Seconds 5
+        $attempt++
+        Write-Host "대기 중... ($attempt/$maxAttempts)"
+      } while ($attempt -lt $maxAttempts)
       
-      echo "ValidatingWebhookConfiguration 패치 완료"
+      if ($attempt -ge $maxAttempts) {
+        Write-Error "ValidatingWebhookConfiguration 생성 대기 시간 초과"
+        exit 1
+      }
+      
+      Write-Host "ValidatingWebhookConfiguration 패치 적용 중..."
+      
+      $patchJson = @'
+[
+  {
+    "op": "replace",
+    "path": "/webhooks/0/timeoutSeconds",
+    "value": ${var.webhook_timeout_seconds}
+  },
+  {
+    "op": "replace", 
+    "path": "/webhooks/0/failurePolicy",
+    "value": "${var.webhook_failure_policy}"
+  },
+  {
+    "op": "replace",
+    "path": "/webhooks/1/timeoutSeconds", 
+    "value": ${var.webhook_timeout_seconds}
+  },
+  {
+    "op": "replace",
+    "path": "/webhooks/1/failurePolicy",
+    "value": "${var.webhook_failure_policy}"
+  }
+]
+'@
+      
+      kubectl patch validatingwebhookconfigurations aws-load-balancer-webhook --type='json' -p $patchJson
+      
+      if ($LASTEXITCODE -eq 0) {
+        Write-Host "ValidatingWebhookConfiguration 패치 완료"
+      } else {
+        Write-Error "ValidatingWebhookConfiguration 패치 실패"
+        exit 1
+      }
     EOT
   }
 
