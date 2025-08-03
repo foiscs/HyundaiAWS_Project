@@ -626,7 +626,18 @@ jobs:
           
           # DB 연결 테스트
           echo '🔍 Bastion에서 RDS 직접 연결 테스트...'
-          if mysql -h $DB_HOST -P 3306 -u $DB_USER -p${{ secrets.DB_PASSWORD }} $DB_NAME -e 'SELECT VERSION();' 2>/dev/null; then
+          echo "사용할 연결 정보: Host=$DB_HOST, User=$DB_USER, DB=$DB_NAME"
+          
+          # 먼저 데이터베이스 이름 없이 연결 시도
+          if mysql -h $DB_HOST -P 3306 -u $DB_USER -p${{ secrets.DB_PASSWORD }} -e 'SELECT VERSION();' 2>/dev/null; then
+            echo '✅ Bastion에서 RDS 기본 연결 성공'
+            # 이제 mydb 데이터베이스 접근 시도
+            if mysql -h $DB_HOST -P 3306 -u $DB_USER -p${{ secrets.DB_PASSWORD }} $DB_NAME -e 'SELECT DATABASE();' 2>/dev/null; then
+              echo '✅ Bastion에서 RDS mydb 연결 성공'
+            else
+              echo '⚠️ mydb 데이터베이스 접근 실패 - 스키마 생성 필요할 수 있음'
+            fi
+          elif mysql -h $DB_HOST -P 3306 -u $DB_USER -p${{ secrets.DB_PASSWORD }} $DB_NAME -e 'SELECT VERSION();' 2>/dev/null; then
             echo '✅ Bastion에서 RDS 직접 연결 성공'
           else
             echo '❌ Bastion에서 RDS 직접 연결 실패'
