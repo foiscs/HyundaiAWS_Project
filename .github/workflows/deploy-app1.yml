@@ -443,7 +443,7 @@ jobs:
         echo "🔍 SSH 터널을 통한 데이터베이스 연결 테스트 중..."
         DB_CONNECTED=false
         for i in {1..5}; do
-          if mysql -h localhost -P $LOCAL_PORT -u $DB_USER -p$DB_PASSWORD $DB_NAME -e "SELECT 1;" 2>/dev/null; then
+          if mysql -h 127.0.0.1 -P $LOCAL_PORT --protocol=TCP -u $DB_USER -p$DB_PASSWORD $DB_NAME -e "SELECT 1;" 2>/dev/null; then
             echo "✅ 데이터베이스 연결 성공 (시도 $i/5)"
             DB_CONNECTED=true
             break
@@ -451,7 +451,7 @@ jobs:
             echo "⚠️ 데이터베이스 연결 실패 (시도 $i/5)"
             # 자세한 오류 정보 출력
             echo "🔍 상세 오류 정보:"
-            mysql -h localhost -P $LOCAL_PORT -u $DB_USER -p$DB_PASSWORD $DB_NAME -e "SELECT 1;" 2>&1 || true
+            mysql -h 127.0.0.1 -P $LOCAL_PORT --protocol=TCP -u $DB_USER -p$DB_PASSWORD $DB_NAME -e "SELECT 1;" 2>&1 || true
             
             if [ $i -lt 5 ]; then
               echo "3초 후 재시도..."
@@ -677,7 +677,7 @@ jobs:
         echo "🔍 SSH 터널을 통한 데이터베이스 연결 테스트 중..."
         DB_CONNECTED=false
         for i in {1..5}; do
-          if mysql -h localhost -P $LOCAL_PORT -u $DB_USER -p${{ secrets.DB_PASSWORD }} $DB_NAME -e "SELECT VERSION();" 2>/dev/null; then
+          if mysql -h 127.0.0.1 -P $LOCAL_PORT --protocol=TCP -u $DB_USER -p${{ secrets.DB_PASSWORD }} $DB_NAME -e "SELECT VERSION();" 2>/dev/null; then
             echo "✅ 데이터베이스 연결 성공 (시도 $i/5)"
             DB_CONNECTED=true
             break
@@ -685,7 +685,7 @@ jobs:
             echo "⚠️ 데이터베이스 연결 실패 (시도 $i/5)"
             # 자세한 오류 정보 출력
             echo "🔍 상세 오류 정보:"
-            mysql -h localhost -P $LOCAL_PORT -u $DB_USER -p${{ secrets.DB_PASSWORD }} $DB_NAME -e "SELECT VERSION();" 2>&1 || true
+            mysql -h 127.0.0.1 -P $LOCAL_PORT --protocol=TCP -u $DB_USER -p${{ secrets.DB_PASSWORD }} $DB_NAME -e "SELECT VERSION();" 2>&1 || true
             
             if [ $i -lt 5 ]; then
               echo "3초 후 재시도..."
@@ -708,13 +708,13 @@ jobs:
         
         # 기존 테이블 확인
         echo "🔍 기존 테이블 확인 중..."
-        EXISTING_TABLES=$(mysql -h localhost -P $LOCAL_PORT -u $DB_USER -p${{ secrets.DB_PASSWORD }} $DB_NAME -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = '$DB_NAME' AND table_name IN ('users', 'posts', 'images', 'files');" 2>/dev/null | tail -n 1)
+        EXISTING_TABLES=$(mysql -h 127.0.0.1 -P $LOCAL_PORT --protocol=TCP -u $DB_USER -p${{ secrets.DB_PASSWORD }} $DB_NAME -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = '$DB_NAME' AND table_name IN ('users', 'posts', 'images', 'files');" 2>/dev/null | tail -n 1)
         
         echo "📊 기존 테이블 개수: $EXISTING_TABLES/4"
         
         if [ "$EXISTING_TABLES" -lt "4" ]; then
           echo "📝 스키마 파일 적용 중..."
-          if mysql -h localhost -P $LOCAL_PORT -u $DB_USER -p${{ secrets.DB_PASSWORD }} $DB_NAME < server1/files/schema.sql; then
+          if mysql -h 127.0.0.1 -P $LOCAL_PORT --protocol=TCP -u $DB_USER -p${{ secrets.DB_PASSWORD }} $DB_NAME < server1/files/schema.sql; then
             echo "✅ 스키마 적용 완료"
           else
             echo "❌ 스키마 적용 실패"
