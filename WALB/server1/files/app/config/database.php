@@ -60,23 +60,26 @@ try {
     $connection_start = microtime(true);
     
     // DSN에 연결 최적화 옵션 추가
-    $dsn = "pgsql:host={$db_host};port={$db_port};dbname={$db_name};connect_timeout=10;application_name=walb_app";
+    $dsn = "pgsql:host={$db_host};port={$db_port};dbname={$db_name};connect_timeout=5;application_name=walb_app;options='--statement_timeout=5000'";
     
     $options = [
         PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
         PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
         PDO::ATTR_EMULATE_PREPARES => false,
-        PDO::ATTR_TIMEOUT => 10,  // 30초에서 10초로 단축
-        PDO::ATTR_PERSISTENT => false,  // 컨테이너 환경에서는 persistent 연결 비활성화
+        PDO::ATTR_TIMEOUT => 5,  // 10초에서 5초로 단축
+        PDO::ATTR_PERSISTENT => true,  // 연결 풀링을 위해 persistent 연결 활성화
         PDO::PGSQL_ATTR_DISABLE_PREPARES => true  // prepare 오버헤드 제거
     ];
     
     $pdo = new PDO($dsn, $db_user, $db_password, $options);
     
     // PostgreSQL 세션 최적화 설정
-    $pdo->exec("SET statement_timeout = '30s'");
-    $pdo->exec("SET lock_timeout = '10s'");
-    $pdo->exec("SET idle_in_transaction_session_timeout = '60s'");
+    $pdo->exec("SET statement_timeout = '5s'");
+    $pdo->exec("SET lock_timeout = '3s'");
+    $pdo->exec("SET idle_in_transaction_session_timeout = '30s'");
+    $pdo->exec("SET tcp_keepalives_idle = 60");
+    $pdo->exec("SET tcp_keepalives_interval = 5");
+    $pdo->exec("SET tcp_keepalives_count = 3");
     
     // 연결 테스트 및 시간 측정
     $query_start = microtime(true);

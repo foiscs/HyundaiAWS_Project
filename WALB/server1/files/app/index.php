@@ -2,25 +2,37 @@
 require_once 'config/database.php';
 require_once 'includes/functions.php';
 
-// 최근 게시글 가져오기
+// 최근 게시글 가져오기 (간단한 쿼리로 최적화)
 try {
-    $stmt = $pdo->prepare("
-        SELECT p.*, u.username 
-        FROM posts p 
-        JOIN users u ON p.user_id = u.id 
-        ORDER BY p.created_at DESC 
-        LIMIT 10
-    ");
-    $stmt->execute();
-    $posts = $stmt->fetchAll();
-    
-    // 성능 최적화: 배치로 이미지와 파일 정보 가져오기
-    $post_ids = array_column($posts, 'id');
-    $all_images = !empty($post_ids) ? getBatchPostImages($pdo, $post_ids) : [];
-    $all_files = !empty($post_ids) ? getBatchPostFiles($pdo, $post_ids) : [];
+    // 먼저 테이블 존재 여부 확인
+    $table_check = $pdo->query("SELECT COUNT(*) FROM information_schema.tables WHERE table_name = 'posts'");
+    if ($table_check->fetchColumn() == 0) {
+        $posts = [];
+        setErrorMessage("데이터베이스가 아직 초기화되지 않았습니다.");
+    } else {
+        $stmt = $pdo->prepare("
+            SELECT p.id, p.title, p.content, p.created_at, 
+                   COALESCE(u.username, 'Unknown') as username
+            FROM posts p 
+            LEFT JOIN users u ON p.user_id = u.id 
+            ORDER BY p.created_at DESC 
+            LIMIT 5
+        ");
+        $stmt->execute();
+        $posts = $stmt->fetchAll();
+        
+        // 이미지와 파일 정보는 필요시에만 로드
+        $all_images = [];
+        $all_files = [];
+        if (!empty($posts) && function_exists('getBatchPostImages')) {
+            $post_ids = array_column($posts, 'id');
+            $all_images = getBatchPostImages($pdo, $post_ids);
+            $all_files = getBatchPostFiles($pdo, $post_ids);
+        }
+    }
 } catch(PDOException $e) {
     $posts = [];
-    setErrorMessage("게시글을 불러오는 중 오류가 발생했습니다.");
+    setErrorMessage("게시글을 불러오는 중 오류가 발생했습니다: " . $e->getMessage());
 }
 ?>
 
