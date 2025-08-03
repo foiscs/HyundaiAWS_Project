@@ -619,17 +619,29 @@ jobs:
           fi
           
           # MySQL 클라이언트 설치 확인
+          echo "🔍 MySQL 클라이언트 확인 중..."
           if ! command -v mysql &> /dev/null; then
             echo "📦 Bastion에 MySQL 클라이언트 설치 중..."
-            sudo yum install -y mysql || sudo apt-get update && sudo apt-get install -y mysql-client
+            if sudo yum install -y mysql; then
+              echo "✅ yum으로 MySQL 클라이언트 설치 성공"
+            elif sudo apt-get update && sudo apt-get install -y mysql-client; then
+              echo "✅ apt로 MySQL 클라이언트 설치 성공"
+            else
+              echo "❌ MySQL 클라이언트 설치 실패"
+              exit 1
+            fi
+          else
+            echo "✅ MySQL 클라이언트가 이미 설치되어 있음"
+            mysql --version
           fi
           
           # DB 연결 테스트
           echo '🔍 Bastion에서 RDS 직접 연결 테스트...'
           echo "사용할 연결 정보: Host=$DB_HOST, User=$DB_USER, DB=$DB_NAME"
           
-          # 먼저 데이터베이스 이름 없이 연결 시도
-          if mysql -h $DB_HOST -P 3306 -u $DB_USER -p${{ secrets.DB_PASSWORD }} -e 'SELECT VERSION();' 2>/dev/null; then
+          # 먼저 데이터베이스 이름 없이 연결 시도 (오류 메시지 표시)
+          echo "🔍 기본 MySQL 연결 시도 중..."
+          if mysql -h $DB_HOST -P 3306 -u $DB_USER -p${{ secrets.DB_PASSWORD }} -e 'SELECT VERSION();' 2>&1; then
             echo '✅ Bastion에서 RDS 기본 연결 성공'
             # 이제 mydb 데이터베이스 접근 시도
             if mysql -h $DB_HOST -P 3306 -u $DB_USER -p${{ secrets.DB_PASSWORD }} $DB_NAME -e 'SELECT DATABASE();' 2>/dev/null; then
