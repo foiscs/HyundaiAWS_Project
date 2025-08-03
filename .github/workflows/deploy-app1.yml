@@ -618,6 +618,12 @@ jobs:
             sudo yum install -y mysql
           fi
           
+          # MySQL 클라이언트 설치 확인
+          if ! command -v mysql &> /dev/null; then
+            echo "📦 Bastion에 MySQL 클라이언트 설치 중..."
+            sudo yum install -y mysql || sudo apt-get update && sudo apt-get install -y mysql-client
+          fi
+          
           # DB 연결 테스트
           echo '🔍 Bastion에서 RDS 직접 연결 테스트...'
           if mysql -h $DB_HOST -P 3306 -u $DB_USER -p${{ secrets.DB_PASSWORD }} $DB_NAME -e 'SELECT VERSION();' 2>/dev/null; then
