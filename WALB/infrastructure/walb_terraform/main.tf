@@ -38,6 +38,10 @@ module "s3" {
   source = "./modules/s3"
 
   project_name = var.project_name
+  environment = var.environment
+
+  # CloudTrail 설정
+  cloudtrail_name = "${var.project_name}-cloudtrail"
 
   # 로깅용 S3 버킷들
   create_backups_bucket     = true
@@ -90,6 +94,46 @@ resource "aws_kms_key" "main" {
           "kms:GenerateDataKey"
         ]
         Resource = "*"
+      },
+      {
+        Sid    = "Allow CloudWatch Logs"
+        Effect = "Allow"
+        Principal = {
+          Service = "logs.${data.aws_region.current.name}.amazonaws.com"
+        }
+        Action = [
+          "kms:Encrypt",
+          "kms:Decrypt",
+          "kms:ReEncrypt*",
+          "kms:GenerateDataKey*",
+          "kms:DescribeKey"
+        ]
+        Resource = "*"
+        Condition = {
+          ArnEquals = {
+            "kms:EncryptionContext:aws:logs:arn" = ["arn:aws:logs:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:log-group:*"]
+          }
+        }
+      },
+      {
+        Sid    = "Allow GuardDuty Service"
+        Effect = "Allow"
+        Principal = {
+          Service = "guardduty.amazonaws.com"
+        }
+        Action = [
+          "kms:Encrypt",
+          "kms:Decrypt",
+          "kms:ReEncrypt*",
+          "kms:GenerateDataKey*",
+          "kms:DescribeKey"
+        ]
+        Resource = "*"
+        Condition = {
+          StringEquals = {
+            "AWS:SourceAccount" = "${data.aws_caller_identity.current.account_id}"
+          }
+        }
       }
     ]
   })
@@ -459,8 +503,7 @@ resource "aws_iam_role" "eks_app_role" {
 # =========================================
 # aws-auth ConfigMap for GitHub Actions Access
 # =========================================
-# aws-auth ConfigMap 데이터만 관리 (기존 ConfigMap이 있어도 에러 없음)
-resource "kubernetes_config_map_v1_data" "aws_auth" {
+resource "kubernetes_config_map" "aws_auth" {
   depends_on = [module.eks]
   
   metadata {
@@ -511,8 +554,6 @@ resource "kubernetes_config_map_v1_data" "aws_auth" {
       }
     ])
   }
-
-  force = true
 }
 
 # EKS 애플리케이션용 정책 연결
@@ -939,4 +980,247 @@ data "aws_ami" "amazon_linux" {
     name   = "virtualization-type"
     values = ["hvm"]
   }
+}
+
+# =========================================
+# IAM Security Module - 가장 마지막에 실행
+# =========================================
+module "iam_security" {
+  source = "./modules/iam-security"
+  
+  project_name        = var.project_name
+  s3_logs_bucket_name = module.s3.logs_bucket_id
+  create_access_keys  = true  # 보안상 기본값 false
+  
+  common_tags = merge(local.common_tags, {
+    Component = "Security"
+    Purpose   = "User Management"
+  })
+  
+  depends_on = [module.eks]
+}
+
+# =========================================
+# CloudTrail Module - iam-security 다음에 실행
+# =========================================
+module "cloudtrail" {
+  source = "./modules/cloudtrail"
+  
+  project_name                    = var.project_name
+  s3_bucket_name                  = module.s3.logs_bucket_id
+  cloudtrail_cloudwatch_role_arn  = module.iam_security.cloudtrail_cloudwatch_role_arn
+  cloudwatch_kinesis_role_arn     = module.iam_security.cloudwatch_kinesis_role_arn
+  kms_key_arn                     = aws_kms_key.main.arn
+  sns_topic_arn                   = aws_sns_topic.security_alerts.arn
+
+  common_tags = merge(local.common_tags, {
+    Component = "Security"
+    Service   = "CloudTrail"
+  })
+  
+  depends_on = [module.iam_security, module.s3]
+}
+
+# =========================================
+# AWS Config Module - CloudTrail 다음에 실행
+# =========================================
+module "aws_config" {
+  source = "./modules/aws-config"
+  
+  project_name           = var.project_name
+  s3_logs_bucket_name    = module.s3.logs_bucket_id
+  record_all_resources   = true
+  include_global_resources = true
+  specific_resource_types = []
+  enable_config_rules    = true
+  
+  common_tags = merge(local.common_tags, {
+    Component = "Security"
+    Service   = "AWSConfig"
+  })
+  
+  depends_on = [module.cloudtrail]
+}
+
+# =========================================
+# Security Hub Module - AWS Config 다음에 실행
+# =========================================
+module "security_hub" {
+  source = "./modules/securityhub"
+  
+  project_name                = var.project_name
+  cloudwatch_kinesis_role_arn = module.iam_security.cloudwatch_kinesis_role_arn
+  kms_key_arn                 = aws_kms_key.main.arn
+  sns_topic_arn               = aws_sns_topic.security_alerts.arn
+  
+  # Security Hub 설정
+  enable_default_standards = true
+  enable_aws_foundational  = true
+  enable_cis_standard      = true
+  
+  # Kinesis 설정
+  kinesis_shard_count     = 1
+  kinesis_retention_hours = 24
+  
+  # 로그 설정
+  log_retention_days = var.security_log_retention_days
+  log_filter_pattern = ""
+  severity_levels    = ["LOW", "MEDIUM", "HIGH", "CRITICAL"]
+
+  common_tags = merge(local.common_tags, {
+    Component = "Security"
+    Service   = "SecurityHub"
+  })
+
+  depends_on = [module.aws_config]
+}
+
+# =========================================
+# GuardDuty Module - Security Hub 다음에 실행
+# =========================================
+module "guardduty" {
+  source = "./modules/guardduty"
+  
+  project_name                = var.project_name
+  cloudwatch_kinesis_role_arn = module.iam_security.cloudwatch_kinesis_role_arn
+  kms_key_arn                 = aws_kms_key.main.arn
+  s3_logs_bucket_arn          = module.s3.logs_bucket_arn
+  sns_topic_arn               = aws_sns_topic.security_alerts.arn        
+  
+  # GuardDuty 설정
+  finding_publishing_frequency = "FIFTEEN_MINUTES"
+  enable_s3_protection        = true
+  enable_kubernetes_protection = true
+  enable_malware_protection   = true
+  
+  # Kinesis 설정
+  kinesis_shard_count     = 1
+  kinesis_retention_hours = 24
+  
+  # 모니터링 설정
+  enable_monitoring        = true
+  high_severity_threshold  = 3
+  
+  # 로그 설정
+  log_retention_days = var.security_log_retention_days
+  log_filter_pattern = ""
+  
+  common_tags = merge(local.common_tags, {
+    Component = "Security"
+    Service   = "GuardDuty"
+  })
+  
+  depends_on = [module.security_hub]
+}
+
+# =========================================
+# WAF Module - GuardDuty 다음에 실행
+# =========================================
+module "waf" {
+  source = "./modules/waf"
+  
+  project_name     = var.project_name
+  target_alb_name  = "walb-app-ingress-alb"  # EKS Ingress에서 생성되는 ALB 이름
+  
+  # WAF 설정
+  rate_limit             = 2000
+  blocked_ip_addresses   = []  # 필요시 차단할 IP 추가
+  blocked_requests_threshold = 100
+  
+  # Firehose 설정
+  firehose_role_arn       = module.iam_security.firehose_role_arn  # IAM Security 모듈에서 생성
+  s3_bucket_arn           = module.s3.logs_bucket_arn
+  buffer_size_mb          = 5
+  buffer_interval_seconds = 300
+  
+  # 모니터링 설정
+  enable_monitoring = true
+  kms_key_arn      = aws_kms_key.main.arn
+  
+  # 로그 설정
+  log_retention_days = var.security_log_retention_days
+  
+  # 데이터 변환 설정 (선택적)
+  enable_data_transformation = false
+  lambda_processor_arn       = null
+  
+  common_tags = merge(local.common_tags, {
+    Component = "Security"
+    Service   = "WAF"
+  })
+  
+  depends_on = [module.guardduty, module.eks, module.iam_security, module.s3]
+}
+
+# =========================================
+# VPC Flow Logs Module - WAF 다음에 실행
+# =========================================
+module "vpcflow" {
+  source = "./modules/vpcflow"
+  
+  project_name = var.project_name
+  vpc_id       = module.vpc.vpc_id
+  
+  # S3 설정
+  vpc_flow_logs_s3_arn = "${module.s3.logs_bucket_arn}/vpc-flow-logs/"
+  s3_bucket_name       = module.s3.logs_bucket_id
+  
+  # Flow Logs 설정
+  traffic_type = "ALL"
+  vpc_flow_logs_format = "$${version} $${account-id} $${interface-id} $${srcaddr} $${dstaddr} $${srcport} $${dstport} $${protocol} $${packets} $${bytes} $${start} $${end} $${action} $${log-status} $${vpc-id} $${subnet-id} $${instance-id} $${tcp-flags} $${type} $${pkt-srcaddr} $${pkt-dstaddr} $${region} $${az-id}"
+  
+  # S3 파티셔닝 옵션
+  enable_hive_partitions   = true
+  enable_hourly_partitions = true
+  
+  # S3 라이프사이클 설정
+  enable_s3_lifecycle              = true
+  transition_to_ia_days           = 30
+  transition_to_glacier_days      = 90
+  transition_to_deep_archive_days = 365
+  vpc_flow_logs_retention_days    = 2555  # 7 years
+  
+  common_tags = merge(local.common_tags, {
+    Component = "Security"
+    Service   = "VPCFlowLogs"
+  })
+  
+  depends_on = [module.waf, module.vpc, module.s3]
+}
+
+# =========================================
+# DNS Resolve Logging Module - VPC Flow 다음에 실행
+# =========================================
+module "dnsresolve" {
+  source = "./modules/dnsresolve"
+  
+  project_name         = var.project_name
+  environment         = var.environment
+  common_tags         = local.common_tags
+  
+  # Route 53 Configuration (옵션 - 없으면 기본 설정)
+  hosted_zone_id      = null  # 필요시 Route53 Hosted Zone ID 설정
+  
+  # S3 Configuration
+  s3_logs_bucket_name = module.s3.logs_bucket_id
+  
+  # VPC Configuration
+  vpc_id              = module.vpc.vpc_id
+  
+  # IAM Role Configuration
+  firehose_role_arn           = module.iam_security.firehose_role_arn
+  cloudwatch_kinesis_role_arn = module.iam_security.cloudwatch_kinesis_role_arn
+  
+  # S3 Lifecycle Configuration
+  enable_s3_lifecycle             = true
+  transition_to_ia_days          = 30
+  transition_to_glacier_days     = 90
+  transition_to_deep_archive_days = 365
+  dns_log_retention_days         = 2557  # 7 years (CloudWatch Logs supported value)
+  
+  depends_on = [
+    module.vpcflow,
+    module.s3,
+    module.vpc
+  ]
 }

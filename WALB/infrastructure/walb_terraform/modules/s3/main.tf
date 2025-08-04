@@ -346,7 +346,7 @@ resource "aws_s3_bucket_notification" "artifacts_notification" {
   eventbridge = true
 }
 
-# S3 버킷 정책 (CloudTrail 등을 위한)
+# S3 버킷 정책 (CloudTrail, Config, VPC Flow Logs 등을 위한 통합 정책)
 resource "aws_s3_bucket_policy" "logs" {
   bucket = aws_s3_bucket.logs.id
 
@@ -363,7 +363,7 @@ resource "aws_s3_bucket_policy" "logs" {
         Resource = aws_s3_bucket.logs.arn
         Condition = {
           StringEquals = {
-            "AWS:SourceArn" = "arn:aws:cloudtrail:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:trail/${var.project_name}-cloudtrail"
+            "AWS:SourceArn" = "arn:aws:cloudtrail:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:trail/${var.cloudtrail_name != null ? var.cloudtrail_name : "${var.project_name}-cloudtrail"}"
           }
         }
       },
@@ -373,11 +373,11 @@ resource "aws_s3_bucket_policy" "logs" {
         Principal = {
           Service = "cloudtrail.amazonaws.com"
         }
-        Action   = "s3:GetBucketLocation"
+        Action   = ["s3:GetBucketLocation", "s3:ListBucket"]
         Resource = aws_s3_bucket.logs.arn
         Condition = {
           StringEquals = {
-            "AWS:SourceArn" = "arn:aws:cloudtrail:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:trail/${var.project_name}-cloudtrail"
+            "AWS:SourceArn" = "arn:aws:cloudtrail:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:trail/${var.cloudtrail_name != null ? var.cloudtrail_name : "${var.project_name}-cloudtrail"}"
           }
         }
       },
@@ -388,11 +388,11 @@ resource "aws_s3_bucket_policy" "logs" {
           Service = "cloudtrail.amazonaws.com"
         }
         Action   = "s3:PutObject"
-        Resource = "${aws_s3_bucket.logs.arn}/cloudtrail/*"
+        Resource = "${aws_s3_bucket.logs.arn}/AWSLogs/${data.aws_caller_identity.current.account_id}/CloudTrail/*"
         Condition = {
           StringEquals = {
             "s3:x-amz-acl" = "bucket-owner-full-control"
-            "AWS:SourceArn" = "arn:aws:cloudtrail:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:trail/${var.project_name}-cloudtrail"
+            "AWS:SourceArn" = "arn:aws:cloudtrail:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:trail/${var.cloudtrail_name != null ? var.cloudtrail_name : "${var.project_name}-cloudtrail"}"
           }
         }
       },
@@ -432,6 +432,107 @@ resource "aws_s3_bucket_policy" "logs" {
             "s3:x-amz-acl" = "bucket-owner-full-control"
           }
         }
+      },
+      {
+        Sid    = "AWSConfigBucketPermissionsCheck"
+        Effect = "Allow"
+        Principal = {
+          Service = "config.amazonaws.com"
+        }
+        Action   = "s3:GetBucketAcl"
+        Resource = aws_s3_bucket.logs.arn
+        Condition = {
+          StringEquals = {
+            "AWS:SourceAccount" = "${data.aws_caller_identity.current.account_id}"
+          }
+        }
+      },
+      {
+        Sid    = "AWSConfigBucketExistenceCheck"
+        Effect = "Allow"
+        Principal = {
+          Service = "config.amazonaws.com"
+        }
+        Action   = "s3:ListBucket"
+        Resource = aws_s3_bucket.logs.arn
+        Condition = {
+          StringEquals = {
+            "AWS:SourceAccount" = "${data.aws_caller_identity.current.account_id}"
+          }
+        }
+      },
+      {
+        Sid    = "AWSConfigBucketDelivery"
+        Effect = "Allow"
+        Principal = {
+          Service = "config.amazonaws.com"
+        }
+        Action   = "s3:PutObject"
+        Resource = "${aws_s3_bucket.logs.arn}/aws-config/*"
+        Condition = {
+          StringEquals = {
+            "s3:x-amz-acl" = "bucket-owner-full-control"
+            "AWS:SourceAccount" = "${data.aws_caller_identity.current.account_id}"
+          }
+        }
+      },
+      {
+        Sid    = "AWSGuardDutyBucketPermissionsCheck"
+        Effect = "Allow"
+        Principal = {
+          Service = "guardduty.amazonaws.com"
+        }
+        Action   = "s3:GetBucketLocation"
+        Resource = aws_s3_bucket.logs.arn
+        Condition = {
+          StringEquals = {
+            "AWS:SourceAccount" = "${data.aws_caller_identity.current.account_id}"
+          }
+        }
+      },
+      {
+        Sid    = "AWSGuardDutyBucketDelivery"
+        Effect = "Allow"
+        Principal = {
+          Service = "guardduty.amazonaws.com"
+        }
+        Action   = "s3:PutObject"
+        Resource = "${aws_s3_bucket.logs.arn}/*"
+        Condition = {
+          StringEquals = {
+            "s3:x-amz-acl" = "bucket-owner-full-control"
+            "AWS:SourceAccount" = "${data.aws_caller_identity.current.account_id}"
+          }
+        }
+      },
+      {
+        Sid    = "AWSRoute53ResolverBucketPermissionsCheck"
+        Effect = "Allow"
+        Principal = {
+          Service = "route53resolver.amazonaws.com"
+        }
+        Action   = "s3:GetBucketAcl"
+        Resource = aws_s3_bucket.logs.arn
+        Condition = {
+          StringEquals = {
+            "AWS:SourceAccount" = "${data.aws_caller_identity.current.account_id}"
+          }
+        }
+      },
+      {
+        Sid    = "AWSRoute53ResolverBucketDelivery"
+        Effect = "Allow"
+        Principal = {
+          Service = "route53resolver.amazonaws.com"
+        }
+        Action   = "s3:PutObject"
+        Resource = "${aws_s3_bucket.logs.arn}/dns-query-logs/*"
+        Condition = {
+          StringEquals = {
+            "s3:x-amz-acl" = "bucket-owner-full-control"
+            "AWS:SourceAccount" = "${data.aws_caller_identity.current.account_id}"
+          }
+        }
       }
     ]
   })
@@ -464,45 +565,3 @@ resource "aws_cloudwatch_metric_alarm" "s3_bucket_size" {
   tags = var.common_tags
 }
 
-# AWS Config를 위한 버킷 정책
-resource "aws_s3_bucket_policy" "config_policy" {
-  bucket = aws_s3_bucket.logs.id
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Sid    = "AWSConfigBucketPermissionsCheck"
-        Effect = "Allow"
-        Principal = {
-          Service = "config.amazonaws.com"
-        }
-        Action   = "s3:GetBucketAcl"
-        Resource = aws_s3_bucket.logs.arn
-      },
-      {
-        Sid    = "AWSConfigBucketExistenceCheck"
-        Effect = "Allow"
-        Principal = {
-          Service = "config.amazonaws.com"
-        }
-        Action   = "s3:ListBucket"
-        Resource = aws_s3_bucket.logs.arn
-      },
-      {
-        Sid    = "AWSConfigBucketDelivery"
-        Effect = "Allow"
-        Principal = {
-          Service = "config.amazonaws.com"
-        }
-        Action   = "s3:PutObject"
-        Resource = "${aws_s3_bucket.logs.arn}/aws-config/*"
-        Condition = {
-          StringEquals = {
-            "s3:x-amz-acl" = "bucket-owner-full-control"
-          }
-        }
-      }
-    ]
-  })
-}

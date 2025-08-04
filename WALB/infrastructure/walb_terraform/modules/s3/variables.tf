@@ -327,3 +327,10 @@ variable "backup_account_id" {
   type        = string
   default     = null
 }
+
+# CloudTrail 설정
+variable "cloudtrail_name" {
+  description = "CloudTrail 트레일 이름"
+  type        = string
+  default     = null
+}

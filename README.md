@@ -157,33 +157,46 @@ walb-flask/
 **보안 강화 AWS 인프라 자동 구축**
 
 ```
-WALB/infrastructure/
-├── terraform/              # 메인 인프라 환경
-├── terraform2/             # 보조 인프라 환경  
-├── bootstrap/              # 초기 부트스트랩
-└── modules/                # 재사용 가능한 모듈
-    ├── vpc/               # VPC 및 네트워킹
-    ├── eks/               # EKS 클러스터 
-    ├── rds/               # RDS 데이터베이스
-    ├── s3/                # S3 스토리지
-    ├── cloudtrail/        # CloudTrail 로깅
-    ├── guardduty/         # GuardDuty 위협 탐지
-    ├── securityhub/       # Security Hub 중앙 집중
-    └── waf/               # Web Application Firewall
+WALB/
+├── infrastructure/
+│   ├── walb_terraform/        # 메인 보안 인프라
+│   ├── helm-lbc/             # AWS Load Balancer Controller
+│   └── test_tf/              # 테스트 환경
+├── bootstrap/                # 초기 부트스트랩 설정  
+├── server1/                  # PHP 웹 애플리케이션
+└── scripts/                  # Splunk 연동 스크립트
+```
+
+**walb_terraform 보안 모듈 (13개)**:
+```
+modules/
+├── aws-config/              # AWS Config 컴플라이언스 규칙
+├── cloudtrail/              # API 호출 감사 로깅
+├── dnsresolve/              # DNS 보안 설정
+├── dynamodb/                # DynamoDB 보안 설정
+├── ecr/                     # Container Registry 보안
+├── eks/                     # EKS 클러스터 보안
+├── guardduty/               # 위협 탐지 및 분석
+├── iam-security/            # IAM 정책 보안 검증
+├── rds/                     # RDS 데이터베이스 보안
+├── s3/                      # S3 스토리지 보안
+├── securityhub/             # Security Hub 중앙 관리
+├── vpc/                     # VPC 네트워크 보안
+└── vpcflow/                 # VPC Flow Logs 모니터링
 ```
 
 **기술 스택**:
-- **IaC**: Terraform 1.5+, HCL 구성
-- **AWS 서비스**: VPC, EKS, RDS, S3, CloudTrail, GuardDuty, Security Hub, WAF
-- **컨테이너**: Docker, ECR, Helm Charts
-- **네트워킹**: Load Balancer Controller, Ingress 관리
-- **보안**: 기본 암호화, IAM 정책, 보안 그룹 자동 구성
+- **IaC**: Terraform, 13개 보안 모듈 구성
+- **AWS 보안 서비스**: Config, CloudTrail, GuardDuty, Security Hub, WAF, VPC Flow Logs
+- **컨테이너**: EKS + ECR + Helm Load Balancer Controller
+- **애플리케이션**: PHP 웹앱 + MySQL RDS + DynamoDB
+- **모니터링**: Splunk 연동 실시간 로그 포워딩
 
 **주요 기능**:
-- **모듈화된 인프라**: 재사용 가능한 Terraform 모듈
-- **보안 우선 설계**: 암호화, 로깅, 액세스 제어 기본 적용
-- **Multi-AZ 구성**: 고가용성 인프라 자동 구축
-- **ISMS-P 컴플라이언스**: 보안 표준 준수 인프라
+- **13개 보안 모듈**: 각 AWS 서비스별 전용 보안 설정
+- **멀티 환경 지원**: walb_terraform(운영) + test_tf(테스트)
+- **컴플라이언스 자동화**: AWS Config + Security Hub 통합
+- **실시간 위협 탐지**: GuardDuty + VPC Flow Logs 연동
 
 ### 4. kinesis_splunk_forwarder.py
 **AWS Kinesis → Splunk 실시간 로그 포워딩**
@@ -268,11 +281,46 @@ BlogServer/
 ## 📊 워크플로우
 
 ### 1. 인프라 구축 단계
+
+#### 0단계: Bootstrap (S3 백엔드 생성)
 ```bash
-cd WALB/infrastructure/terraform
+cd WALB/bootstrap
 terraform init
 terraform plan -var-file="terraform.tfvars"
 terraform apply
+# Terraform 상태 파일용 S3 버킷 및 DynamoDB 테이블 생성
+```
+
+#### 1단계: 메인 인프라 (13개 보안 모듈)
+```bash
+cd WALB/infrastructure/walb_terraform
+terraform init
+terraform plan -var-file="terraform.tfvars"
+terraform apply
+# VPC, EKS, RDS, S3, 보안 서비스들 일괄 배포
+```
+
+#### 2단계: AWS Load Balancer Controller
+```bash
+cd WALB/infrastructure/helm-lbc
+chmod +x generate-tfvars.sh
+./generate-tfvars.sh           # 1단계 결과에서 자동으로 설정값 추출
+terraform init
+terraform plan
+terraform apply
+# EKS 클러스터에 ALB Controller 배포
+```
+
+#### 3단계: 애플리케이션 배포 (GitHub Actions)
+```bash
+# WALB/server1 폴더 변경 시 자동 트리거
+git add WALB/server1/
+git commit -m "Update PHP application"
+git push origin main
+# GitHub Actions 워크플로우가 자동으로:
+# - PHP 애플리케이션 빌드 및 ECR 푸시
+# - EKS 클러스터에 배포
+# - 헬스체크 및 롤백 처리
 ```
 
 ### 2. 보안 진단 단계  
