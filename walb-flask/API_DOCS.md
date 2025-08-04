@@ -129,10 +129,21 @@ account_id=123456789012
             "is_recent": true
         },
         "guardduty.log": {
-            "exists": false
+            "exists": true,
+            "size_mb": 23.1,
+            "last_modified": "2024-01-10T15:25:00Z",
+            "last_modified_ago": "10분 전",
+            "is_recent": true
+        },
+        "security-hub.log": {
+            "exists": true,
+            "size_mb": 12.7,
+            "last_modified": "2024-01-10T15:28:00Z",
+            "last_modified_ago": "7분 전",
+            "is_recent": true
         }
     },
-    "overall_health": 66.7
+    "overall_health": 100.0
 }
 ```
 

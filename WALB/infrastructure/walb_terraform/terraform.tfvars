@@ -1,0 +1,16 @@
+vpc_cidr           = "10.10.0.0/16"
+public_subnets     = ["10.10.1.0/24", "10.10.2.0/24"]
+private_subnets    = ["10.10.10.0/24", "10.10.20.0/24"] 
+database_subnets   = ["10.10.100.0/24", "10.10.110.0/24"]
+availability_zones = ["ap-northeast-2a", "ap-northeast-2c"]
+cluster_name       = "walb-eks-cluster"
+db_name            = "mydb"
+db_user            = "dbadmin"
+db_password        = "MySecurePassword123!"
+aws_region         = "ap-northeast-2"
+environment        = "walb"
+project_name       = "walb-app"
+#create_launch_template = false
+enable_load_balancer = true
+# application_port 제거됨 - Ingress가 자동 관리
+github_repository = "foiscs/HyundaiAWS_Project"

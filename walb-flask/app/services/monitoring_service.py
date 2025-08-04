@@ -419,7 +419,7 @@ echo "=== Kinesis Service Removal Completed ==="
                         'python_script': '/opt/kinesis_splunk_forwarder.py',
                         'status': 'created/running',
                         'streams_connected': ['cloudtrail-stream'],
-                        'log_destination': f'/var/log/splunk/{account.account_id}/cloudtrail.log'
+                        'log_destination': f'/var/log/splunk/{account.account_id}/ (cloudtrail.log, guardduty.log, security-hub.log)'
                     },
                     'ssh_info': {
                         'host': instance_ip,
@@ -698,6 +698,56 @@ ps aux | grep {service_name} | grep -v grep || echo "No process found"
                 'error': str(e)
             }
     
+    def check_security_hub_status(self, account: AWSAccount) -> Dict:
+        """Security Hub 상태 확인"""
+        try:
+            session = self.create_aws_session(account)
+            securityhub_client = session.client('securityhub')
+            
+            # Security Hub 활성화 상태 확인
+            try:
+                # get_enabled_standards로 Security Hub 활성화 상태 확인
+                response = securityhub_client.get_enabled_standards()
+                enabled_standards = response.get('StandardsSubscriptions', [])
+                
+                # Hub 상태 확인
+                hub_response = securityhub_client.describe_hub()
+                hub_arn = hub_response.get('HubArn')
+                
+                status = {
+                    'service': 'Security Hub',
+                    'active': True,  # API 호출 성공하면 활성화됨
+                    'hub_arn': hub_arn,
+                    'standards_count': len(enabled_standards),
+                    'enabled_standards': enabled_standards[:5],  # 최대 5개만 저장
+                    'auto_enable_controls': hub_response.get('AutoEnableControls', False)
+                }
+                
+                return status
+                
+            except securityhub_client.exceptions.InvalidAccessException:
+                # Security Hub가 비활성화된 경우
+                return {
+                    'service': 'Security Hub',
+                    'active': False,
+                    'error': 'Security Hub not enabled in this region'
+                }
+            except Exception as hub_error:
+                logger.warning(f"Security Hub API error: {hub_error}")
+                return {
+                    'service': 'Security Hub',
+                    'active': False,
+                    'error': f'Security Hub API error: {str(hub_error)}'
+                }
+                
+        except Exception as e:
+            logger.error(f"Error checking Security Hub status: {e}")
+            return {
+                'service': 'Security Hub', 
+                'active': False, 
+                'error': str(e)
+            }
+    
     def check_log_files_status(self, instance_ip: str, ssh_key_path: str, 
                              account_id: str) -> Dict:
         """SSH를 통해 실제 로그 파일들의 수집 상태 확인"""
@@ -707,7 +757,7 @@ ps aux | grep {service_name} | grep -v grep || echo "No process found"
             log_base_path = f"/var/log/splunk/{account_id}"
             log_files = {
                 'cloudtrail': f'{log_base_path}/cloudtrail.log',
-                'guardduty': f'{log_base_path}/guardduty.log',
+                'guardduty': f'{log_base_path}/guardduty.log', 
                 'security-hub': f'{log_base_path}/security-hub.log'
             }
             
@@ -798,7 +848,7 @@ done
             if '/' in log_files_str:
                 path_parts = log_files_str.split('/')
                 if len(path_parts) >= 2:
-                    # /var/log/splunk/253157413163/cloudtrail.log 형태에서 계정 ID 추출
+                    # /var/log/splunk/253157413163/cloudtrail.log 형태에서 계정 ID 추출 (다중 로그 파일 지원)
                     for part in path_parts:
                         if part.isdigit() and len(part) == 12:  # AWS 계정 ID는 12자리 숫자
                             account_id = part
@@ -1110,17 +1160,21 @@ fi
             
             log_file_path = f"/var/log/splunk/{account_id}/{log_type}.log"
             
-            # 로그 파일 미리보기 스크립트
+            # 로그 파일 미리보기 스크립트 (UTF-8 처리 개선)
             preview_script = f"""
 #!/bin/bash
+export LANG=en_US.UTF-8
+export LC_ALL=en_US.UTF-8
+
 echo "=== Log File Preview: {log_type}.log ==="
 if [ -f "{log_file_path}" ]; then
     echo "FILE_EXISTS:true"
-    echo "FILE_SIZE:$(stat -c%s '{log_file_path}')"
-    echo "LAST_MODIFIED:$(stat -c%Y '{log_file_path}')"
-    echo "TOTAL_LINES:$(wc -l < '{log_file_path}')"
+    echo "FILE_SIZE:$(stat -c%s '{log_file_path}' 2>/dev/null || echo '0')"
+    echo "LAST_MODIFIED:$(stat -c%Y '{log_file_path}' 2>/dev/null || echo '0')"
+    echo "TOTAL_LINES:$(wc -l < '{log_file_path}' 2>/dev/null || echo '0')"
     echo "PREVIEW_CONTENT:"
-    tail -n {lines} "{log_file_path}"
+    # UTF-8 강제 및 비-ASCII 문자 필터링
+    tail -n {lines} "{log_file_path}" 2>/dev/null | iconv -f utf-8 -t utf-8//IGNORE 2>/dev/null || echo "Content encoding error"
     echo "END_PREVIEW_CONTENT"
 else
     echo "FILE_EXISTS:false"
@@ -1140,6 +1194,8 @@ fi
                 ssh_command,
                 capture_output=True,
                 text=True,
+                encoding='utf-8',
+                errors='ignore',  # 인코딩 오류 무시
                 timeout=30
             )
             
@@ -1182,21 +1238,34 @@ fi
         for line in lines:
             line = line.strip()
             
-            if line.startswith('FILE_EXISTS:'):
-                result['file_exists'] = line.split(':')[1] == 'true'
-            elif line.startswith('FILE_SIZE:'):
-                result['file_size'] = int(line.split(':')[1])
-            elif line.startswith('LAST_MODIFIED:'):
-                timestamp = int(line.split(':')[1])
-                result['last_modified'] = datetime.fromtimestamp(timestamp).isoformat()
-            elif line.startswith('TOTAL_LINES:'):
-                result['total_lines'] = int(line.split(':')[1])
-            elif line == 'PREVIEW_CONTENT:':
-                in_content = True
-            elif line == 'END_PREVIEW_CONTENT':
-                in_content = False
-            elif in_content:
-                result['content'].append(line)
+            try:
+                if line.startswith('FILE_EXISTS:'):
+                    parts = line.split(':', 1)
+                    if len(parts) > 1:
+                        result['file_exists'] = parts[1] == 'true'
+                elif line.startswith('FILE_SIZE:'):
+                    parts = line.split(':', 1)
+                    if len(parts) > 1 and parts[1].isdigit():
+                        result['file_size'] = int(parts[1])
+                elif line.startswith('LAST_MODIFIED:'):
+                    parts = line.split(':', 1)
+                    if len(parts) > 1 and parts[1].isdigit():
+                        timestamp = int(parts[1])
+                        result['last_modified'] = datetime.fromtimestamp(timestamp).isoformat()
+                elif line.startswith('TOTAL_LINES:'):
+                    parts = line.split(':', 1)
+                    if len(parts) > 1 and parts[1].isdigit():
+                        result['total_lines'] = int(parts[1])
+                elif line == 'PREVIEW_CONTENT:':
+                    in_content = True
+                elif line == 'END_PREVIEW_CONTENT':
+                    in_content = False
+                elif in_content:
+                    result['content'].append(line)
+            except (ValueError, IndexError, OSError) as e:
+                # 파싱 오류가 발생해도 계속 진행
+                logger.warning(f"Log preview parsing warning for line '{line}': {e}")
+                continue
         
         # 내용을 하나의 문자열로 합치기
         result['formatted_content'] = '\n'.join(result['content'])
@@ -1220,6 +1289,7 @@ fi
             cloudwatch_status = self.check_cloudwatch_status(account)
             cloudtrail_status = self.check_cloudtrail_status(account)
             guardduty_status = self.check_guardduty_status(account)
+            security_hub_status = self.check_security_hub_status(account)
             
             # 전체 상태 요약
             overall_status = {
@@ -1229,12 +1299,14 @@ fi
                 'services': {
                     'cloudwatch': cloudwatch_status,
                     'cloudtrail': cloudtrail_status,
-                    'guardduty': guardduty_status
+                    'guardduty': guardduty_status,
+                    'security_hub': security_hub_status
                 },
                 'overall_health': 'healthy' if all([
                     cloudwatch_status.get('active', False),
                     cloudtrail_status.get('active', False),
-                    guardduty_status.get('active', False)
+                    guardduty_status.get('active', False),
+                    security_hub_status.get('active', False)
                 ]) else 'degraded',
                 'last_checked': datetime.now().isoformat()
             }

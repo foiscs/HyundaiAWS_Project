@@ -33,8 +33,8 @@ log_error() {
 log_info "AWS Load Balancer Controller Helm Chart 배포를 위한 terraform.tfvars 파일을 생성합니다..."
 
 # Terraform 디렉토리 경로 설정
-TERRAFORM_DIR="../terraform"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+TERRAFORM_DIR="$SCRIPT_DIR/../walb_terraform"
 TFVARS_FILE="$SCRIPT_DIR/terraform.tfvars"
 
 # Terraform 디렉토리 존재 확인
@@ -52,8 +52,13 @@ cd "$TERRAFORM_DIR"
 
 # Terraform 초기화 및 상태 확인 (S3 backend 지원)
 log_info "Terraform 초기화 중..."
-if ! terraform init -input=false >/dev/null 2>&1; then
+log_info "현재 작업 디렉토리: $(pwd)"
+log_info "Terraform 디렉토리: $TERRAFORM_DIR"
+
+INIT_OUTPUT=$(terraform init -input=false 2>&1)
+if [ $? -ne 0 ]; then
     log_error "Terraform 초기화에 실패했습니다."
+    log_error "에러 메시지: $INIT_OUTPUT"
     log_info "AWS 자격증명과 S3 backend 설정을 확인해주세요."
     exit 1
 fi
@@ -69,11 +74,11 @@ fi
 # Terraform output 실행 및 JSON 파싱
 log_info "Terraform outputs 가져오는 중..."
 
-# 필요한 값들을 개별적으로 가져오기
-CLUSTER_NAME=$(terraform output -json eks_cluster_info 2>/dev/null | jq -r '.cluster_name' 2>/dev/null || echo "")
-VPC_ID=$(terraform output -json vpc_info 2>/dev/null | jq -r '.vpc_id' 2>/dev/null || echo "")
-AWS_REGION=$(terraform output -raw aws_region 2>/dev/null || echo "ap-northeast-2")
-PROJECT_NAME=$(terraform output -raw project_name 2>/dev/null || echo "walb-app")
+# 필요한 값들을 개별적으로 가져오기 (jq 없이)
+CLUSTER_NAME=$(terraform output -json eks_cluster_info 2>/dev/null | grep -o '"cluster_name"[[:space:]]*:[[:space:]]*"[^"]*"' | sed 's/.*"cluster_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/' || echo "")
+VPC_ID=$(terraform output -json vpc_info 2>/dev/null | grep -o '"vpc_id"[[:space:]]*:[[:space:]]*"[^"]*"' | sed 's/.*"vpc_id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/' || echo "")
+AWS_REGION=$(terraform output -json deployment_info 2>/dev/null | grep -o '"aws_region"[[:space:]]*:[[:space:]]*"[^"]*"' | sed 's/.*"aws_region"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/' || echo "ap-northeast-2")
+PROJECT_NAME=$(terraform output -json deployment_info 2>/dev/null | grep -o '"project_name"[[:space:]]*:[[:space:]]*"[^"]*"' | sed 's/.*"project_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/' || echo "walb-app")
 
 # 값 검증
 if [ -z "$CLUSTER_NAME" ] || [ "$CLUSTER_NAME" = "null" ]; then

@@ -5,8 +5,8 @@
         <div class="flex items-center mb-4">
             <span class="text-4xl mr-4 animate-pulse">📊</span>
             <div>
-                <h1 class="text-3xl font-bold mb-2">Splunk & Kinesis 실시간 모니터링</h1>
-                <p class="text-indigo-100">GuardDuty, CloudTrail, CloudWatch 로부터 수집되는 로그를 통해 AWS 리소스의 실시간 상태를 모니터링합니다.</p>
+                <h1 class="text-3xl font-bold mb-2">통합 보안 로그 모니터링 (Splunk SIEM)</h1>
+                <p class="text-indigo-100">Security Hub, GuardDuty, CloudTrail 로그를 Kinesis Data Streams를 통해 Splunk로 실시간 전송하여 종합적인 보안 모니터링을 제공합니다.</p>
             </div>
         </div>
     </div>
@@ -57,22 +57,179 @@
     <div class="empty-state">
         <div class="empty-icon">📋</div>
         <h3>등록된 AWS 계정이 없습니다</h3>
-        <p>모니터링을 시작하려면 먼저 AWS 계정을 연결해주세요.</p>
+        <p>SIEM 모니터링을 시작하려면 먼저 AWS 계정을 연결해주세요.</p>
         <a href="{{ url_for('connection.index') }}" class="btn btn-primary"> <span>💫</span> AWS 계정 연결하기 </a>
     </div>
     {% endif %}
 </div>
 
+<!-- 데이터 소스 섹션 -->
+<div class="data-sources-section mb-8">
+    <h2 class="section-title">
+        <span class="section-icon">📡</span>
+        모니터링 데이터 소스
+    </h2>
+
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <!-- 보안 서비스 -->
+        <div class="bg-white rounded-xl shadow-sm p-6">
+            <h3 class="text-lg font-bold text-gray-800 mb-4">
+                <span class="mr-2">🛡️</span>
+                보안 서비스
+            </h3>
+            <div class="space-y-3">
+                <div class="source-item">
+                    <div class="flex items-center">
+                        <div class="w-3 h-3 bg-red-500 rounded-full mr-3"></div>
+                        <div>
+                            <div class="font-medium">Security Hub</div>
+                            <div class="text-sm text-gray-600">보안 상태 통합</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="source-item">
+                    <div class="flex items-center">
+                        <div class="w-3 h-3 bg-orange-500 rounded-full mr-3"></div>
+                        <div>
+                            <div class="font-medium">GuardDuty</div>
+                            <div class="text-sm text-gray-600">위협 탐지</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="source-item">
+                    <div class="flex items-center">
+                        <div class="w-3 h-3 bg-blue-500 rounded-full mr-3"></div>
+                        <div>
+                            <div class="font-medium">CloudTrail</div>
+                            <div class="text-sm text-gray-600">API 감사 로그</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 네트워크 서비스 -->
+        <div class="bg-white rounded-xl shadow-sm p-6">
+            <h3 class="text-lg font-bold text-gray-800 mb-4">
+                <span class="mr-2">🌐</span>
+                네트워크 서비스
+            </h3>
+            <div class="space-y-3">
+                <div class="source-item">
+                    <div class="flex items-center">
+                        <div class="w-3 h-3 bg-purple-500 rounded-full mr-3"></div>
+                        <div>
+                            <div class="font-medium">AWS WAF</div>
+                            <div class="text-sm text-gray-600">웹 방화벽 로그</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="source-item">
+                    <div class="flex items-center">
+                        <div class="w-3 h-3 bg-green-500 rounded-full mr-3"></div>
+                        <div>
+                            <div class="font-medium">VPC Flow Logs</div>
+                            <div class="text-sm text-gray-600">네트워크 트래픽</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="source-item">
+                    <div class="flex items-center">
+                        <div class="w-3 h-3 bg-indigo-500 rounded-full mr-3"></div>
+                        <div>
+                            <div class="font-medium">DNS Resolve</div>
+                            <div class="text-sm text-gray-600">DNS 쿼리 로그</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 데이터 파이프라인 -->
+        <div class="bg-white rounded-xl shadow-sm p-6">
+            <h3 class="text-lg font-bold text-gray-800 mb-4">
+                <span class="mr-2">📊</span>
+                데이터 파이프라인
+            </h3>
+            <div class="space-y-3">
+                <div class="source-item">
+                    <div class="flex items-center">
+                        <div class="w-3 h-3 bg-cyan-500 rounded-full mr-3"></div>
+                        <div>
+                            <div class="font-medium">CloudWatch</div>
+                            <div class="text-sm text-gray-600">로그 집계</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="source-item">
+                    <div class="flex items-center">
+                        <div class="w-3 h-3 bg-violet-500 rounded-full mr-3"></div>
+                        <div>
+                            <div class="font-medium">Kinesis Data Streams</div>
+                            <div class="text-sm text-gray-600">실시간 스트리밍</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="source-item">
+                    <div class="flex items-center">
+                        <div class="w-3 h-3 bg-gray-800 rounded-full mr-3"></div>
+                        <div>
+                            <div class="font-medium">Splunk Forwarder</div>
+                            <div class="text-sm text-gray-600">SIEM 전송</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 아키텍처 플로우 다이어그램 -->
+    <div class="bg-gradient-to-r from-gray-50 to-gray-100 rounded-xl p-6 mt-6">
+        <h3 class="text-lg font-bold text-gray-800 mb-4">
+            <span class="mr-2">🔄</span>
+            데이터 흐름 아키텍처
+        </h3>
+        <div class="flex items-center justify-center overflow-x-auto">
+            <div class="flex items-center space-x-4 min-w-max">
+                <div class="flex flex-col items-center">
+                    <div class="bg-red-100 text-red-800 px-3 py-2 rounded-lg text-sm font-medium">AWS 보안 서비스</div>
+                    <div class="text-xs text-gray-600 mt-1">Security Hub, GuardDuty, etc.</div>
+                </div>
+                <div class="text-2xl text-gray-400">→</div>
+                <div class="flex flex-col items-center">
+                    <div class="bg-blue-100 text-blue-800 px-3 py-2 rounded-lg text-sm font-medium">CloudWatch Logs</div>
+                    <div class="text-xs text-gray-600 mt-1">로그 집계</div>
+                </div>
+                <div class="text-2xl text-gray-400">→</div>
+                <div class="flex flex-col items-center">
+                    <div class="bg-purple-100 text-purple-800 px-3 py-2 rounded-lg text-sm font-medium">Kinesis Data Streams</div>
+                    <div class="text-xs text-gray-600 mt-1">실시간 스트리밍</div>
+                </div>
+                <div class="text-2xl text-gray-400">→</div>
+                <div class="flex flex-col items-center">
+                    <div class="bg-green-100 text-green-800 px-3 py-2 rounded-lg text-sm font-medium">Splunk Forwarder</div>
+                    <div class="text-xs text-gray-600 mt-1">SIEM 전송</div>
+                </div>
+                <div class="text-2xl text-gray-400">→</div>
+                <div class="flex flex-col items-center">
+                    <div class="bg-gray-100 text-gray-800 px-3 py-2 rounded-lg text-sm font-medium">Splunk SIEM</div>
+                    <div class="text-xs text-gray-600 mt-1">통합 분석</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- 모니터링 콘텐츠 -->
 {% if selected_account %}
 <div class="monitoring-content mt-8">
-    <!-- 기존 Kinesis 서비스 관리 카드 (주석처리 - 스크립트 실행으로 대체됨) -->
+    <!-- 기존 Splunk 로그 파이프라인 관리 카드 (주석처리 - 스크립트 실행으로 대체됨) -->
     <!--
     <div class="bg-white rounded-xl shadow-sm p-6 mb-6">
         <div class="flex items-center justify-between mb-4">
             <h2 class="text-xl font-bold text-gray-800">
                 <span class="mr-2">⚙️</span>
-                Kinesis 로그 수집 서비스 (기존)
+                Splunk 통합 로그 파이프라인 (기존)
             </h2>
             <div class="service-status-badge" id="serviceStatusBadge">
                 {% if service_status and service_status.running %}
@@ -132,7 +289,7 @@
     </div>
     -->
 
-    <!-- Kinesis 서비스 생성/관리 카드 -->
+    <!-- Splunk 로그 파이프라인 생성/관리 카드 -->
     <div class="bg-white rounded-xl shadow-sm p-6 mb-6" id="kinesisServiceCard">
         <div class="flex items-center justify-between mb-4">
             <h2 class="text-xl font-bold text-gray-800">
@@ -204,7 +361,7 @@
 
             <!-- 실행 버튼 -->
             <div class="flex gap-3">
-                <button onclick="executeKinesisScript()" class="btn btn-primary" id="createServiceBtn"><span>🚀</span> Kinesis 서비스 생성 실행</button>
+                <button onclick="executeKinesisScript()" class="btn btn-primary" id="createServiceBtn"><span>🚀</span> Splunk 로그 파이프라인 구축</button>
                 <button onclick="copyScriptCommand()" class="btn btn-secondary"><span>📋</span> 명령어 복사</button>
             </div>
         </div>
@@ -286,13 +443,13 @@
         </div>
 
         <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-            <!-- CloudWatch 상태 -->
+            <!-- CloudTrail 상태 -->
             <div class="service-status-card">
                 <div class="service-header">
-                    <span class="service-icon">📊</span>
-                    <h3 class="service-name">CloudWatch</h3>
+                    <span class="service-icon">🔍</span>
+                    <h3 class="service-name">CloudTrail</h3>
                     <div class="service-badge">
-                        {% if comprehensive_status and comprehensive_status.services and comprehensive_status.services.cloudwatch and comprehensive_status.services.cloudwatch.active %}
+                        {% if comprehensive_status and comprehensive_status.services and comprehensive_status.services.cloudtrail and comprehensive_status.services.cloudtrail.active %}
                         <span class="badge badge-success">Active</span>
                         {% else %}
                         <span class="badge badge-error">Inactive</span>
@@ -301,8 +458,8 @@
                 </div>
                 <div class="service-details">
                     <div class="stat-item">
-                        <span class="stat-label">로그 그룹</span>
-                        <span class="stat-value">{{ comprehensive_status.services.cloudwatch.log_groups|length if comprehensive_status and comprehensive_status.services and comprehensive_status.services.cloudwatch and comprehensive_status.services.cloudwatch.log_groups else 0 }}개</span>
+                        <span class="stat-label">Trail 수</span>
+                        <span class="stat-value">{{ comprehensive_status.services.cloudtrail.total_trails if comprehensive_status and comprehensive_status.services and comprehensive_status.services.cloudtrail and comprehensive_status.services.cloudtrail.total_trails else 0 }}개</span>
                     </div>
                     <div class="stat-item">
                         <span class="stat-label">파일 수집</span>
@@ -324,13 +481,13 @@
                 </div>
             </div>
 
-            <!-- CloudTrail 상태 -->
+            <!-- GuardDuty 상태 -->
             <div class="service-status-card">
                 <div class="service-header">
-                    <span class="service-icon">🔍</span>
-                    <h3 class="service-name">CloudTrail</h3>
+                    <span class="service-icon">🛡️</span>
+                    <h3 class="service-name">GuardDuty</h3>
                     <div class="service-badge">
-                        {% if comprehensive_status and comprehensive_status.services and comprehensive_status.services.cloudtrail and comprehensive_status.services.cloudtrail.active %}
+                        {% if comprehensive_status and comprehensive_status.services and comprehensive_status.services.guardduty and comprehensive_status.services.guardduty.active %}
                         <span class="badge badge-success">Active</span>
                         {% else %}
                         <span class="badge badge-error">Inactive</span>
@@ -339,8 +496,8 @@
                 </div>
                 <div class="service-details">
                     <div class="stat-item">
-                        <span class="stat-label">Trail 수</span>
-                        <span class="stat-value">{{ comprehensive_status.services.cloudtrail.total_trails if comprehensive_status and comprehensive_status.services and comprehensive_status.services.cloudtrail and comprehensive_status.services.cloudtrail.total_trails else 0 }}개</span>
+                        <span class="stat-label">탐지기</span>
+                        <span class="stat-value">{{ comprehensive_status.services.guardduty.detectors|length if comprehensive_status and comprehensive_status.services and comprehensive_status.services.guardduty and comprehensive_status.services.guardduty.detectors else 0 }}개</span>
                     </div>
                     <div class="stat-item">
                         <span class="stat-label">파일 수집</span>
@@ -362,13 +519,13 @@
                 </div>
             </div>
 
-            <!-- GuardDuty 상태 -->
+            <!-- Security Hub 상태 -->
             <div class="service-status-card">
                 <div class="service-header">
-                    <span class="service-icon">🛡️</span>
-                    <h3 class="service-name">GuardDuty</h3>
+                    <span class="service-icon">🔒</span>
+                    <h3 class="service-name">Security Hub</h3>
                     <div class="service-badge">
-                        {% if comprehensive_status and comprehensive_status.services and comprehensive_status.services.guardduty and comprehensive_status.services.guardduty.active %}
+                        {% if comprehensive_status and comprehensive_status.services and comprehensive_status.services.security_hub and comprehensive_status.services.security_hub.active %}
                         <span class="badge badge-success">Active</span>
                         {% else %}
                         <span class="badge badge-error">Inactive</span>
@@ -377,8 +534,8 @@
                 </div>
                 <div class="service-details">
                     <div class="stat-item">
-                        <span class="stat-label">탐지기</span>
-                        <span class="stat-value">{{ comprehensive_status.services.guardduty.detectors|length if comprehensive_status and comprehensive_status.services and comprehensive_status.services.guardduty and comprehensive_status.services.guardduty.detectors else 0 }}개</span>
+                        <span class="stat-label">통합 표준</span>
+                        <span class="stat-value">{{ comprehensive_status.services.security_hub.standards_count if comprehensive_status and comprehensive_status.services and comprehensive_status.services.security_hub and comprehensive_status.services.security_hub.standards_count else 0 }}개</span>
                     </div>
                     <div class="stat-item">
                         <span class="stat-label">파일 수집</span>
@@ -404,72 +561,7 @@
         <!-- 상세 서비스 상태 확인 -->
         <div class="service-controls">
             <button onclick="checkServiceStatus()" class="btn btn-secondary"><span>🔄</span> 상태 새로고침</button>
-            <button onclick="showServiceDetails()" class="btn btn-info"><span>📋</span> 상세 정보</button>
         </div>
-    </div>
-    {% endif %}
-
-    <!-- Splunk 모니터링 카드 -->
-    {% if service_status and service_status.running %}
-    <div class="bg-white rounded-xl shadow-sm p-6 mb-6">
-        <h2 class="text-xl font-bold text-gray-800 mb-4">
-            <span class="mr-2">📊</span>
-            Splunk 모니터링 대시보드
-        </h2>
-
-        {% if monitoring_status and monitoring_status.monitoring_active %}
-        <div class="monitoring-stats mb-6">
-            <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <div class="stat-card">
-                    <div class="stat-label">사용 가능한 로그</div>
-                    <div class="stat-value">{{ monitoring_status.available_logs|length }}개</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-label">총 로그 크기</div>
-                    <div class="stat-value">{{ '%.1f'|format(monitoring_status.total_log_size / 1024 / 1024) }} MB</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-label">마지막 업데이트</div>
-                    <div class="stat-value">{% if monitoring_status.last_activity %} {{ monitoring_status.last_activity[:19] }} {% else %} 없음 {% endif %}</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-label">모니터링 상태</div>
-                    <div class="stat-value">
-                        <span class="badge badge-success">활성</span>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Splunk 대시보드 링크 -->
-        <div class="splunk-dashboards">
-            <h3 class="text-lg font-semibold mb-3">📈 대시보드 바로가기</h3>
-            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
-                <a href="http://3.39.158.137:8000/ko-KR/app/search/main_dashboard?tab=layout_1" target="_blank" class="dashboard-link">
-                    <span class="dashboard-icon">🔍</span>
-                    <span class="dashboard-name">CloudTrail</span>
-                </a>
-                <a href="http://3.39.158.137:8000/ko-KR/app/search/main_dashboard?tab=layout_1" target="_blank" class="dashboard-link">
-                    <span class="dashboard-icon">🛡️</span>
-                    <span class="dashboard-name">GuardDuty</span>
-                </a>
-                <a href="http://3.39.158.137:8000/ko-KR/app/search/main_dashboard?tab=layout_1" target="_blank" class="dashboard-link">
-                    <span class="dashboard-icon">🔒</span>
-                    <span class="dashboard-name">Security Hub</span>
-                </a>
-                <a href="http://3.39.158.137:8000/ko-KR/app/search/main_dashboard?tab=layout_1" target="_blank" class="dashboard-link">
-                    <span class="dashboard-icon">📊</span>
-                    <span class="dashboard-name">전체 로그</span>
-                </a>
-            </div>
-        </div>
-        {% else %}
-        <div class="text-center py-8">
-            <div class="text-6xl mb-4">⏳</div>
-            <h3 class="text-lg font-semibold mb-2">로그 수집 대기 중</h3>
-            <p class="text-gray-600">Kinesis 서비스가 실행된 후 로그가 수집되면 여기에 표시됩니다.</p>
-        </div>
-        {% endif %}
     </div>
     {% endif %}
 
@@ -500,9 +592,9 @@
                 </a>
                 <a href="http://3.39.158.137:8000/ko-KR/app/search/main_dashboard?tab=layout_1" target="_blank" class="splunk-redirect-link">
                     <div class="splunk-link-card">
-                        <span class="splunk-link-icon">🌐</span>
-                        <h3 class="splunk-link-title">VPC Flow</h3>
-                        <p class="splunk-link-desc">네트워크 플로우</p>
+                        <span class="splunk-link-icon">🔒</span>
+                        <h3 class="splunk-link-title">Security Hub</h3>
+                        <p class="splunk-link-desc">통합 보안 상태</p>
                     </div>
                 </a>
                 <a href="http://3.39.158.137:8000/ko-KR/app/search/main_dashboard?tab=layout_1" target="_blank" class="splunk-redirect-link">
@@ -574,7 +666,7 @@
         }
 
         setButtonLoading('createBtn');
-        showAlert('Kinesis 서비스를 생성하고 있습니다...', 'info');
+        showAlert('Splunk 로그 파이프라인을 구축하고 있습니다...', 'info');
 
         try {
             const response = await fetch('/monitoring/service/create', {
@@ -856,8 +948,8 @@
                         <p class="text-sm ${result.actual_output ? 'text-blue-800' : 'text-green-800'}">
                             ${
                                 result.actual_output
-                                    ? '<strong>🚀 실제 실행:</strong> SSH를 통해 원격 서버에서 실제로 스크립트가 실행되었습니다! Kinesis 서비스가 생성되고 작동 중입니다.'
-                                    : '<strong>✅ 시뮬레이션:</strong> 이 결과는 실제 SSH 실행 테스트를 기반으로 작성되었습니다. Kinesis 서비스가 정상적으로 생성되고 CloudTrail 로그를 수집하고 있습니다!'
+                                    ? '<strong>🚀 실제 실행:</strong> SSH를 통해 원격 서버에서 실제로 스크립트가 실행되었습니다! Splunk 로그 파이프라인이 구축되고 작동 중입니다.'
+                                    : '<strong>✅ 시뮬레이션:</strong> 이 결과는 실제 SSH 실행 테스트를 기반으로 작성되었습니다. Splunk 로그 파이프라인이 정상적으로 구축되고 다중 보안 로그를 SIEM으로 전송하고 있습니다!'
                             }
                         </p>
                     </div>
@@ -1178,7 +1270,7 @@
     // Kinesis 서비스 UI 업데이트
     function updateKinesisServiceUI(serviceData) {
         console.log('DEBUG: updateKinesisServiceUI 시작, serviceData:', serviceData);
-        
+
         const statusIndicator = document.getElementById('serviceStatusIndicator');
         const statusBadge = document.getElementById('serviceStatusBadgeNew');
         const cardTitle = document.getElementById('serviceCardTitle');
@@ -1190,7 +1282,7 @@
             statusBadge: !!statusBadge,
             cardTitle: !!cardTitle,
             installSection: !!installSection,
-            manageSection: !!manageSection
+            manageSection: !!manageSection,
         });
 
         // 상태 표시기 업데이트
@@ -1227,7 +1319,7 @@
             updateLogFilesSummary(serviceData.log_files);
         } else {
             // 서비스가 설치되지 않은 경우
-            cardTitle.textContent = 'Kinesis 로그 수집 서비스 생성';
+            cardTitle.textContent = 'Splunk 로그 파이프라인 구축';
             installSection.style.display = 'block';
             manageSection.style.display = 'none';
 
@@ -1243,7 +1335,7 @@
         const manageSection = document.getElementById('serviceManageSection');
         const statusIndicator = document.getElementById('serviceStatusIndicator');
 
-        cardTitle.textContent = 'Kinesis 로그 수집 서비스 생성';
+        cardTitle.textContent = 'Splunk 로그 파이프라인 구축';
         installSection.style.display = 'block';
         manageSection.style.display = 'none';
         statusIndicator.style.display = 'none';
@@ -2040,7 +2132,7 @@
         color: #1f2937;
     }
 
-    /* Kinesis 서비스 생성 관련 스타일 */
+    /* Splunk 로그 파이프라인 관련 스타일 */
     .account-info-item {
         display: flex;
         flex-direction: column;

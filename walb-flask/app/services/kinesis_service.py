@@ -1,7 +1,7 @@
 """
-Kinesis 서비스 관리 모듈
+Splunk 로그 파이프라인 관리 모듈
 splunk-forwarder 인스턴스의 create_kinesis_service.sh 스크립트를 통해
-계정별 Kinesis 로그 수집 서비스를 원격으로 관리
+계정별 Splunk 통합 로그 파이프라인을 원격으로 관리
 """
 
 import subprocess
@@ -14,7 +14,7 @@ from app.config.ssh_config import SSHConfig
 logger = logging.getLogger(__name__)
 
 class KinesisServiceManager:
-    """Kinesis 로그 수집 서비스 관리"""
+    """Splunk 통합 로그 파이프라인 관리"""
     
     def __init__(self):
         # 환경별 SSH 설정 자동 로드
@@ -57,7 +57,7 @@ class KinesisServiceManager:
             return False, "", str(e)
     
     def create_kinesis_service(self, account: AWSAccount) -> Dict[str, Any]:
-        """계정에 대한 Kinesis 서비스 생성"""
+        """계정에 대한 Splunk 로그 파이프라인 구축"""
         try:
             # 스크립트 실행 명령어 구성 (sudo 권한 필요)
             if account.connection_type == 'role':
@@ -72,7 +72,7 @@ class KinesisServiceManager:
                 logger.info(f"Kinesis service created successfully for {account.account_id}")
                 return {
                     "success": True,
-                    "message": f"Kinesis 서비스가 성공적으로 생성되었습니다 (계정: {account.account_id})",
+                    "message": f"Splunk 로그 파이프라인이 성공적으로 구축되었습니다 (계정: {account.account_id})",
                     "output": stdout,
                     "service_name": f"kinesis-splunk-forwarder-{account.account_id}"
                 }
@@ -80,7 +80,7 @@ class KinesisServiceManager:
                 logger.error(f"Failed to create Kinesis service for {account.account_id}: {stderr}")
                 return {
                     "success": False,
-                    "message": f"Kinesis 서비스 생성 실패: {stderr}",
+                    "message": f"Splunk 로그 파이프라인 구축 실패: {stderr}",
                     "output": stdout,
                     "error": stderr
                 }

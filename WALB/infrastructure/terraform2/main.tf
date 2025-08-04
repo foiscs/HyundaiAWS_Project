@@ -105,9 +105,7 @@ resource "aws_kms_alias" "main" {
   target_key_id = aws_kms_key.main.key_id
 }
 
-# =========================================
 # EKS Module - Kubernetes 클러스터
-# =========================================
 module "eks" {
   source = "./modules/eks"
 
@@ -172,6 +170,8 @@ module "eks" {
 
   depends_on = [module.vpc, aws_kms_key.main]
 }
+
+
 
 # =========================================
 # DynamoDB Module - NoSQL 데이터베이스
@@ -302,7 +302,7 @@ module "rds" {
  
   allowed_security_groups = [
     module.eks.cluster_security_group_id,
-    module.eks.node_group_security_group_id,
+    module.eks.node_security_group_id,
     aws_security_group.bastion.id
   ]
   
@@ -471,7 +471,7 @@ resource "kubernetes_config_map" "aws_auth" {
     mapRoles = yamlencode([
       # EKS 노드 그룹 역할
       {
-        rolearn  = module.eks.node_group_iam_role_arn
+        rolearn  = module.eks.eks_managed_node_groups.main.iam_role_arn
         username = "system:node:{{EC2PrivateDNSName}}"
         groups   = ["system:bootstrappers", "system:nodes"]
       },
@@ -934,19 +934,19 @@ data "aws_ami" "amazon_linux" {
   }
 }
 
-# IAM Security Module  
-module "iam_security" {                             
-  source = "./modules/iam-security"                 
-  project_name        = var.project_name            
-  s3_logs_bucket_name = module.s3.logs_bucket_name  
-  #s3_logs_bucket_name = "walb2-app-logs-walb-87d08755"
-  create_access_keys  = true  # 보안상 기본값 false
-  common_tags = merge(local.common_tags, {          
-    Component = "Security"                          
-    Purpose   = "User Management"                   
-  })
-  depends_on = [module.s3]
-}
+# # IAM Security Module  
+# module "iam_security" {                             
+#   source = "./modules/iam-security"                 
+#   project_name        = var.project_name            
+#   s3_logs_bucket_name = module.s3.logs_bucket_name  
+#   #s3_logs_bucket_name = "walb2-app-logs-walb-87d08755"
+#   create_access_keys  = true  # 보안상 기본값 false
+#   common_tags = merge(local.common_tags, {          
+#     Component = "Security"                          
+#     Purpose   = "User Management"                   
+#   })
+#   depends_on = [module.s3]
+# }
 
 # # CloudTrail Hub Module
 # module "cloudtrail" {

@@ -287,7 +287,7 @@ Region: {account.primary_region}
                 "python_script": "/opt/kinesis_splunk_forwarder.py",
                 "status": "active (running)",
                 "streams_connected": ["cloudtrail-stream"],
-                "log_destination": f"/var/log/splunk/{account.account_id}/cloudtrail.log"
+                "log_destination": f"/var/log/splunk/{account.account_id}/ (다중 보안 로그 파일)"
             },
             "ssh_info": {
                 "host": ssh_config['host'],

@@ -24,7 +24,7 @@ jobs:
     # 워킹 디렉토리를 WALB로 설정
     defaults:
       run:
-        working-directory: ./WALB/infrastructure/terraform
+        working-directory: ./WALB/infrastructure/walb_terraform
     
     permissions:
       id-token: write
@@ -104,7 +104,7 @@ jobs:
           const { execSync } = require('child_process');
           
           try {
-            const planOutput = execSync('cd infrastructure/terraform && terraform show -no-color tfplan', { encoding: 'utf8' });
+            const planOutput = execSync('cd infrastructure/walb_terraform && terraform show -no-color tfplan', { encoding: 'utf8' });
             
             const comment = `## 🏗️ Terraform Plan 결과
             

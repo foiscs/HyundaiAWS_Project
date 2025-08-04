@@ -294,3 +294,17 @@ resource "aws_security_group_rule" "node_webhook_ingress" {
   security_group_id        = module.eks.node_group_security_group_id
   description              = "Node to node webhook communication"
 }
+
+# =========================================
+# ALB에서 EKS 워커 노드로의 HTTP 접근 허용
+# =========================================
+# ALB Security Group에서 EKS Worker Node로 HTTP 트래픽 허용
+resource "aws_security_group_rule" "alb_to_eks_http" {
+  type              = "ingress"
+  from_port         = 80
+  to_port           = 80
+  protocol          = "tcp"
+  cidr_blocks       = ["10.0.0.0/16"]  # VPC CIDR 범위에서 허용
+  security_group_id = module.eks.node_group_security_group_id
+  description       = "ALB to EKS worker nodes HTTP traffic"
+}

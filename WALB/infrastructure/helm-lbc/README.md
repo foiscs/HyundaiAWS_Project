@@ -22,7 +22,7 @@
 cp terraform.tfvars.example terraform.tfvars
 
 # terraform output에서 필요한 값들을 확인
-cd ../terraform
+cd ../walb_terraform
 terraform output eks_cluster_info
 terraform output vpc_info
 
@@ -133,7 +133,7 @@ terraform apply
 kubectl get serviceaccount aws-load-balancer-controller -n kube-system
 
 # 메인 terraform에서 다시 적용 필요
-cd ../terraform
+cd ../walb_terraform
 terraform apply
 ```
 

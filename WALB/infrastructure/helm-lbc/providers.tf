@@ -19,14 +19,14 @@ terraform {
     }
   }
   
-  # Backend 설정 (선택사항)
+  # Backend 설정 (helm-lbc 전용 상태 파일)
   backend "s3" {
-    bucket         = "walb-terraform-state-3163"
+    bucket         = "walb-terraform-state-6026"
     key            = "helm-lbc/terraform.tfstate"
     region         = "ap-northeast-2"
-    dynamodb_table = "walb-terraform-lock-3163"
     encrypt        = true
-    kms_key_id     = "arn:aws:kms:ap-northeast-2:253157413163:key/4c10b1b0-e7df-4ace-a79c-37763dd29fc3"
+    dynamodb_table = "walb-terraform-lock-6026"
+    kms_key_id     = "arn:aws:kms:ap-northeast-2:902597156026:key/bc9a4347-e66d-4127-b605-549944cdc942" 
   }
 }
 
