@@ -1,18 +1,11 @@
 # WALB - AWS 보안 인프라 자동화 & 통합 모니터링 플랫폼
-
-<div align="center">
-
-![WALB Logo](https://img.shields.io/badge/WALB-AWS_Security_Platform-blue?style=for-the-badge)
 ![Python](https://img.shields.io/badge/Python-3.9.0-blue?style=flat-square&logo=python)
 ![Terraform](https://img.shields.io/badge/Terraform-1.5+-purple?style=flat-square&logo=terraform)
 ![Flask](https://img.shields.io/badge/Flask-2.3.3-green?style=flat-square&logo=flask)
 ![AWS](https://img.shields.io/badge/AWS-Multi_Service-orange?style=flat-square&logo=amazon-aws)
 
-</div>
-
 ## 📋 프로젝트 개요
-
-**WALB(AWS 보안 인프라 자동화 & 통합 모니터링 플랫폼)**는 AWS 클라우드 환경에서 보안 컴플라이언스 자동화와 실시간 모니터링을 제공하는 DevSecOps 플랫폼입니다.
+**WALB**는 AWS 클라우드 환경에서 보안 컴플라이언스 자동화와 실시간 모니터링을 제공하는 DevSecOps 플랫폼입니다.
 
 ### 핵심 목표
 - **Infrastructure as Code (IaC)**: Terraform을 활용한 보안 강화 AWS 인프라 자동 구축
@@ -39,7 +32,6 @@
 ```bash
 # 저장소 클론
 git clone <repository-url>
-cd aws_pjt
 
 # Python 패키지 설치 (루트 디렉토리의 requirements.txt 참조)
 pip install -r requirements.txt
@@ -85,7 +77,7 @@ Flask 애플리케이션이 http://localhost:5000 에서 실행됩니다.
 ### 기술적 연동 구조
 ```
 Terraform(IaC) ──┐
-                 ├──▶ AWS Infrastructure ──▶ Security Events
+                 ├──▶ AWS Infrastructure ──▶ Security Events ( CloudWatch <== CloudTrail & GuardDuty & SecurityHub ) 
 Flask Web UI ────┘                            │
                                               ▼
                                          Kinesis Streams
